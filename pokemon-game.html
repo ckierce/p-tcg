@@ -7,85 +7,23 @@
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0a0a12;
-  --surface: #13121f;
-  --surface2: #1c1a2e;
-  --border: #2a2740;
-  --accent: #f5c542;
-  --accent2: #e05c5c;
-  --p1color: #4fc3f7;
-  --p2color: #ef9a9a;
-  --text: #e8e4f0;
-  --muted: #6a6485;
-  --radius: 8px;
-  --card-w: 72px;
-  --card-h: 100px;
-  --card-w-lg: 110px;
-  --card-h-lg: 154px;
+  --bg: #0a0a12; --surface: #13121f; --surface2: #1c1a2e; --border: #2a2740;
+  --accent: #f5c542; --accent2: #e05c5c; --p1color: #4fc3f7; --p2color: #ef9a9a;
+  --text: #e8e4f0; --muted: #6a6485; --radius: 8px;
+  --card-w: 72px; --card-h: 100px; --card-w-lg: 110px; --card-h-lg: 154px;
 }
-
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
 
 /* ── HEADER ── */
-header {
-  display: flex;
-  align-items: center;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  gap: 16px;
-  flex-shrink: 0;
-  z-index: 50;
-}
-
-header h1 {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
-  color: var(--accent);
-  text-shadow: 0 0 16px rgba(245,197,66,0.3);
-}
-
-.turn-badge {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
-  padding: 6px 14px;
-  border-radius: 20px;
-  transition: all 0.3s;
-}
+header { display: flex; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--surface); gap: 16px; flex-shrink: 0; z-index: 50; }
+header h1 { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--accent); text-shadow: 0 0 16px rgba(245,197,66,0.3); }
+.turn-badge { font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 6px 14px; border-radius: 20px; transition: all 0.3s; }
 .turn-badge.p1 { background: rgba(79,195,247,0.15); color: var(--p1color); border: 1px solid var(--p1color); }
 .turn-badge.p2 { background: rgba(239,154,154,0.15); color: var(--p2color); border: 1px solid var(--p2color); }
-
-.phase-badge {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  color: var(--muted);
-  padding: 5px 10px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
+.phase-badge { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--muted); padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; }
 .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-
-.btn {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-  letter-spacing: 0.3px;
-}
+.btn { font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 8px 12px; border-radius: var(--radius); border: none; cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px; }
 .btn-primary { background: var(--accent); color: #0a0a12; }
 .btn-primary:hover { background: #ffd54f; transform: translateY(-1px); }
 .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
@@ -95,551 +33,140 @@ header h1 {
 .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none !important; }
 
 /* ── MAIN BOARD LAYOUT ── */
-.board {
-  flex: 1;
-  display: grid;
-  grid-template-rows: 1fr 36px 1fr;
-  grid-template-columns: 1fr 100px;
-  overflow: hidden;
-  position: relative;
-}
+.board { flex: 1; display: grid; grid-template-rows: 1fr 36px 1fr; grid-template-columns: 1fr 100px; overflow: hidden; position: relative; }
 
 /* ── PLAYER FIELD ── */
-.field {
-  display: flex;
-  flex-direction: column;
-  padding: 10px 16px;
-  gap: 8px;
-  position: relative;
-  overflow: hidden;
-}
-
+.field { display: flex; flex-direction: column; padding: 10px 16px; gap: 8px; position: relative; overflow: hidden; }
 .field.p1 { border-top: 2px solid rgba(79,195,247,0.2); }
 .field.p2 { border-bottom: 2px solid rgba(239,154,154,0.2); flex-direction: column-reverse; }
-
-.field-label {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  opacity: 0.5;
-  letter-spacing: 1px;
-}
+.field-label { font-family: 'Press Start 2P', monospace; font-size: 7px; opacity: 0.5; letter-spacing: 1px; }
 .field.p1 .field-label { color: var(--p1color); }
 .field.p2 .field-label { color: var(--p2color); }
 
 /* ── ZONES ROW ── */
-.zones-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.zones-row { display: flex; align-items: center; gap: 10px; }
 
 /* ── CARD ZONE ── */
-.zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-.zone-label {
-  font-size: 9px;
-  color: var(--muted);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.zone-slot {
-  width: var(--card-w);
-  height: var(--card-h);
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: border-color 0.2s, background 0.2s;
-  cursor: pointer;
-  background: rgba(255,255,255,0.01);
-}
-
+.zone { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.zone-label { font-size: 9px; color: var(--muted); text-align: center; white-space: nowrap; }
+.zone-slot { width: var(--card-w); height: var(--card-h); border: 1px dashed var(--border); border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative; transition: border-color 0.2s, background 0.2s; cursor: pointer; background: rgba(255,255,255,0.01); }
 .zone-slot:hover { border-color: var(--accent); background: rgba(245,197,66,0.04); }
 .zone-slot.highlight { border-color: var(--accent) !important; border-style: solid !important; box-shadow: 0 0 12px rgba(245,197,66,0.2); animation: pulse 1s ease-in-out infinite; }
 .zone-slot.occupied { border-style: solid; border-color: var(--border); cursor: default; }
 .zone-slot.occupied:hover { border-color: var(--muted); background: transparent; }
-
 @keyframes pulse { 0%,100%{box-shadow:0 0 8px rgba(245,197,66,0.2)} 50%{box-shadow:0 0 18px rgba(245,197,66,0.4)} }
-
-.zone-slot img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 5px;
-  pointer-events: none;
-  display: block;
-}
-
-.zone-slot-empty {
-  font-size: 10px;
-  color: var(--border);
-  text-align: center;
-  line-height: 1.4;
-  padding: 4px;
-  pointer-events: none;
-}
+.zone-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; pointer-events: none; display: block; }
+.zone-slot-empty { font-size: 10px; color: var(--border); text-align: center; line-height: 1.4; padding: 4px; pointer-events: none; }
 
 /* damage counter overlay */
-.damage-overlay {
-  position: absolute;
-  bottom: 3px;
-  right: 3px;
-  background: var(--accent2);
-  color: #fff;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  pointer-events: none;
-}
-
+.damage-overlay { position: absolute; bottom: 3px; right: 3px; background: var(--accent2); color: #fff; font-family: 'Press Start 2P', monospace; font-size: 6px; padding: 2px 4px; border-radius: 3px; pointer-events: none; }
 /* status overlay */
-.status-overlay {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  font-size: 10px;
-  pointer-events: none;
-}
-
+.status-overlay { position: absolute; top: 3px; left: 3px; font-size: 10px; pointer-events: none; }
 /* energy overlay */
-.energy-overlay {
-  position: absolute;
-  bottom: 3px;
-  left: 3px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  max-width: 40px;
-  pointer-events: none;
-}
-.energy-pip {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1px solid rgba(0,0,0,0.3);
-}
+.energy-overlay { position: absolute; bottom: 3px; left: 3px; display: flex; flex-wrap: wrap; gap: 2px; max-width: 40px; pointer-events: none; }
+.energy-pip { width: 8px; height: 8px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.3); }
 
 /* active slot is bigger */
-.active-slot .zone-slot {
-  width: calc(var(--card-w) * 1.3);
-  height: calc(var(--card-h) * 1.3);
-}
+.active-slot .zone-slot { width: calc(var(--card-w) * 1.3); height: calc(var(--card-h) * 1.3); }
 
 /* bench row */
-.bench-row {
-  display: flex;
-  gap: 6px;
-  align-items: flex-end;
-}
+.bench-row { display: flex; gap: 6px; align-items: flex-end; }
 
 /* ── PRIZES ── */
-.prizes-col {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: center;
-}
-.prize-slot {
-  width: 44px;
-  height: 60px;
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  background: rgba(255,255,255,0.01);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-  overflow: hidden;
-}
+.prizes-col { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.prize-slot { width: 44px; height: 60px; border: 1px dashed var(--border); border-radius: 4px; background: rgba(255,255,255,0.01); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; position: relative; overflow: hidden; }
 .prize-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 3px; }
 .prize-slot.face-down { background: var(--surface2); border-style: solid; }
-.prize-slot.face-down::after {
-  content: '?';
-  font-family: 'Press Start 2P', monospace;
-  font-size: 12px;
-  color: var(--border);
-  position: absolute;
-}
+.prize-slot.face-down::after { content: '?'; font-family: 'Press Start 2P', monospace; font-size: 12px; color: var(--border); position: absolute; }
 .prize-slot.claimable { border-color: var(--accent); border-style: solid; animation: pulse 1s ease-in-out infinite; }
 
 /* ── DECK/DISCARD ── */
-.deck-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.deck-pile {
-  width: var(--card-w);
-  height: var(--card-h);
-  border-radius: 6px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-  overflow: hidden;
-}
+.deck-zone { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.deck-pile { width: var(--card-w); height: var(--card-h); border-radius: 6px; background: var(--surface2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; position: relative; overflow: hidden; }
 .deck-pile:hover { border-color: var(--accent); }
-.deck-pile .deck-count {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 11px;
-  color: var(--muted);
-  text-align: center;
-  line-height: 1.6;
-}
+.deck-pile .deck-count { font-family: 'Press Start 2P', monospace; font-size: 11px; color: var(--muted); text-align: center; line-height: 1.6; }
 .deck-pile .deck-count span { display: block; font-size: 7px; margin-top: 2px; }
-.discard-pile {
-  width: var(--card-w);
-  height: var(--card-h);
-  border-radius: 6px;
-  border: 1px dashed var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
-}
+.discard-pile { width: var(--card-w); height: var(--card-h); border-radius: 6px; border: 1px dashed var(--border); display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 .discard-pile img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; }
-.discard-pile .discard-count {
-  position: absolute;
-  bottom: 3px;
-  right: 3px;
-  background: rgba(0,0,0,0.7);
-  color: var(--muted);
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
+.discard-pile .discard-count { position: absolute; bottom: 3px; right: 3px; background: rgba(0,0,0,0.7); color: var(--muted); font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 2px 4px; border-radius: 3px; }
 
 /* ── MIDLINE ── */
-.midline {
-  grid-column: 1 / 2;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 20px;
-  padding: 0 20px;
-}
-
-.midline-info {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  color: var(--muted);
-}
+.midline { grid-column: 1 / 2; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: center; gap: 20px; padding: 0 20px; }
+.midline-info { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--muted); }
 
 /* ── SIDEBAR ── */
-.sidebar {
-  grid-row: 1 / 4;
-  grid-column: 2 / 3;
-  border-left: 1px solid var(--border);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.sidebar-tab-row {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-}
-.sidebar-tab {
-  flex: 1;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
-  padding: 8px 4px;
-  text-align: center;
-  cursor: pointer;
-  color: var(--muted);
-  border: none;
-  background: transparent;
-  border-bottom: 2px solid transparent;
-  transition: all 0.15s;
-}
+.sidebar { grid-row: 1 / 4; grid-column: 2 / 3; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; overflow: hidden; }
+.sidebar-tab-row { display: flex; border-bottom: 1px solid var(--border); }
+.sidebar-tab { flex: 1; font-family: 'Press Start 2P', monospace; font-size: 6px; padding: 8px 4px; text-align: center; cursor: pointer; color: var(--muted); border: none; background: transparent; border-bottom: 2px solid transparent; transition: all 0.15s; }
 .sidebar-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
 .sidebar-content { flex: 1; overflow-y: auto; padding: 8px; }
 
 /* ── HAND ── */
-.hand-section {
-  margin-bottom: 12px;
-}
-.hand-label {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
-  margin-bottom: 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
-}
+.hand-section { margin-bottom: 12px; }
+.hand-label { font-family: 'Press Start 2P', monospace; font-size: 6px; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
 .hand-label.p1 { color: var(--p1color); }
 .hand-label.p2 { color: var(--p2color); }
-
-.hand-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hand-card {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: 5px;
-  border: 1px solid var(--border);
-  background: var(--surface2);
-  cursor: pointer;
-  transition: all 0.15s;
-  position: relative;
-}
+.hand-cards { display: flex; flex-direction: column; gap: 4px; }
+.hand-card { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 5px; border: 1px solid var(--border); background: var(--surface2); cursor: pointer; transition: all 0.15s; position: relative; }
 .hand-card:hover { border-color: var(--accent); background: rgba(245,197,66,0.06); }
 .hand-card.selected { border-color: var(--accent); background: rgba(245,197,66,0.1); box-shadow: 0 0 8px rgba(245,197,66,0.2); }
 .hand-card.face-down { cursor: default; filter: brightness(0.4); }
 .hand-card.face-down:hover { border-color: var(--border); background: var(--surface2); }
-
-.hand-card-img {
-  width: 28px;
-  height: 39px;
-  object-fit: cover;
-  border-radius: 3px;
-  flex-shrink: 0;
-  background: var(--surface);
-}
+.hand-card-img { width: 28px; height: 39px; object-fit: cover; border-radius: 3px; flex-shrink: 0; background: var(--surface); }
 .hand-card-info { flex: 1; overflow: hidden; }
 .hand-card-name { font-size: 10px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hand-card-sub { font-size: 9px; color: var(--muted); margin-top: 1px; }
 
 /* ── LOG ── */
-.game-log {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.log-entry {
-  font-size: 9px;
-  color: var(--muted);
-  padding: 3px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
-  line-height: 1.4;
-}
+.game-log { display: flex; flex-direction: column; gap: 3px; }
+.log-entry { font-size: 9px; color: var(--muted); padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.03); line-height: 1.4; }
 .log-entry .log-turn { color: var(--accent); font-weight: 600; }
 .log-entry.important { color: var(--text); }
 
 /* ── CARD DETAIL OVERLAY ── */
-.card-detail {
-  position: fixed;
-  z-index: 200;
-  pointer-events: none;
-  transition: opacity 0.15s;
-  opacity: 0;
-}
+.card-detail { position: fixed; z-index: 200; pointer-events: none; transition: opacity 0.15s; opacity: 0; }
 .card-detail.show { opacity: 1; pointer-events: none; }
-.card-detail img {
-  width: var(--card-w-lg);
-  height: var(--card-h-lg);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0,0,0,0.7);
-  display: block;
-}
+.card-detail img { width: var(--card-w-lg); height: var(--card-h-lg); border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.7); display: block; }
 
 /* ── ACTION MENU ── */
-.action-menu {
-  position: fixed;
-  z-index: 300;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px;
-  display: none;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 150px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-}
+.action-menu { position: fixed; z-index: 300; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: none; flex-direction: column; gap: 3px; min-width: 150px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
 .action-menu.show { display: flex; }
-.action-btn {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 8px 10px;
-  border-radius: 5px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s;
-}
+.action-btn { font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 8px 10px; border-radius: 5px; border: none; background: transparent; color: var(--text); cursor: pointer; text-align: left; transition: background 0.1s; }
 .action-btn:hover { background: var(--surface2); color: var(--accent); }
 .action-btn.danger { color: var(--accent2); }
 .action-btn.danger:hover { background: rgba(224,92,92,0.1); }
-.action-menu-title {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
-  color: var(--muted);
-  padding: 4px 10px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 2px;
-}
+.action-menu-title { font-family: 'Press Start 2P', monospace; font-size: 6px; color: var(--muted); padding: 4px 10px 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 
 /* ── MODAL ── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.8);
-  z-index: 400;
-  display: none;
-  align-items: center;
-  justify-content: center;
-}
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 400; display: none; align-items: center; justify-content: center; }
 .modal-overlay.show { display: flex; }
-.modal {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px;
-  width: 360px;
-  max-width: 90vw;
-  max-height: 80vh;
-  overflow-y: auto;
-}
-.modal h2 {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
-  color: var(--accent);
-  margin-bottom: 16px;
-}
-.modal-deck-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 8px;
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 360px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+.modal h2 { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--accent); margin-bottom: 16px; }
+.modal-deck-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
 .modal-deck-item:hover { border-color: var(--accent); }
 .modal-deck-item .d-name { flex: 1; font-weight: 600; font-size: 13px; }
 .modal-deck-item .d-count { font-size: 11px; color: var(--muted); }
-.modal-player-select {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-.player-opt {
-  flex: 1;
-  padding: 12px;
-  border-radius: 8px;
-  border: 2px solid var(--border);
-  background: transparent;
-  cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
-  color: var(--muted);
-  transition: all 0.15s;
-  text-align: center;
-}
+.modal-player-select { display: flex; gap: 10px; margin-bottom: 16px; }
+.player-opt { flex: 1; padding: 12px; border-radius: 8px; border: 2px solid var(--border); background: transparent; cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--muted); transition: all 0.15s; text-align: center; }
 .player-opt.p1:hover,.player-opt.p1.sel { border-color: var(--p1color); color: var(--p1color); background: rgba(79,195,247,0.08); }
 .player-opt.p2:hover,.player-opt.p2.sel { border-color: var(--p2color); color: var(--p2color); background: rgba(239,154,154,0.08); }
-
 .no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
 
 /* ── TOAST ── */
-.toast {
-  position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%) translateY(60px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  padding: 10px 18px;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  z-index: 500;
-  transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
-  white-space: nowrap;
-}
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(60px); background: var(--surface); border: 1px solid var(--border); color: var(--text); font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 10px 18px; border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); z-index: 500; transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1); white-space: nowrap; }
 .toast.show { transform: translateX(-50%) translateY(0); }
 .toast.ok { border-color: #66bb6a; color: #66bb6a; }
 .toast.err { border-color: var(--accent2); color: var(--accent2); }
 
 /* ── SETUP SCREEN ── */
-.setup-screen {
-  position: fixed;
-  inset: 0;
-  background: var(--bg);
-  z-index: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-}
-.setup-screen h1 {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 14px;
-  color: var(--accent);
-  text-shadow: 0 0 24px rgba(245,197,66,0.4);
-  margin-bottom: 8px;
-  text-align: center;
-  line-height: 1.8;
-}
-.setup-screen p {
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
-  max-width: 360px;
-  line-height: 1.6;
-}
-.setup-cards {
-  display: flex;
-  gap: 20px;
-  margin: 16px 0;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.setup-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px 24px;
-  width: 220px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
+.setup-screen { position: fixed; inset: 0; background: var(--bg); z-index: 600; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; }
+.setup-screen h1 { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--accent); text-shadow: 0 0 24px rgba(245,197,66,0.4); margin-bottom: 8px; text-align: center; line-height: 1.8; }
+.setup-screen p { color: var(--muted); font-size: 13px; text-align: center; max-width: 360px; line-height: 1.6; }
+.setup-cards { display: flex; gap: 20px; margin: 16px 0; flex-wrap: wrap; justify-content: center; }
+.setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; width: 220px; text-align: center; cursor: pointer; transition: all 0.2s; }
 .setup-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
 .setup-card .setup-icon { font-size: 32px; margin-bottom: 10px; }
-.setup-card h3 {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
-  color: var(--accent);
-  margin-bottom: 8px;
-  line-height: 1.6;
-}
+.setup-card h3 { font-family: 'Press Start 2P', monospace; font-size: 8px; color: var(--accent); margin-bottom: 8px; line-height: 1.6; }
 .setup-card p { font-size: 11px; color: var(--muted); line-height: 1.5; }
 
 /* scrollbar */
@@ -686,7 +213,6 @@ header h1 {
 
 <!-- BOARD -->
 <div class="board">
-
   <!-- P2 FIELD (top, flipped) -->
   <div class="field p2" id="field-p2">
     <div class="field-label">PLAYER 2</div>
@@ -707,11 +233,11 @@ header h1 {
       <!-- Bench -->
       <div class="zone">
         <div class="bench-row" id="bench-p2">
-          <div class="zone" onclick="playToBench(2,0)"><div class="zone-slot" id="bench-p2-0"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(2,1)"><div class="zone-slot" id="bench-p2-1"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(2,2)"><div class="zone-slot" id="bench-p2-2"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(2,3)"><div class="zone-slot" id="bench-p2-3"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(2,4)"><div class="zone-slot" id="bench-p2-4"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(2,0)"><div class="zone-slot" id="bench-p2-0"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(2,1)"><div class="zone-slot" id="bench-p2-1"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(2,2)"><div class="zone-slot" id="bench-p2-2"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(2,3)"><div class="zone-slot" id="bench-p2-3"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(2,4)"><div class="zone-slot" id="bench-p2-4"><div class="zone-slot-empty">bench</div></div></div>
         </div>
         <div class="zone-label">Bench</div>
       </div>
@@ -740,11 +266,11 @@ header h1 {
       <!-- Bench -->
       <div class="zone">
         <div class="bench-row" id="bench-p1">
-          <div class="zone" onclick="playToBench(1,0)"><div class="zone-slot" id="bench-p1-0"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(1,1)"><div class="zone-slot" id="bench-p1-1"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(1,2)"><div class="zone-slot" id="bench-p1-2"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(1,3)"><div class="zone-slot" id="bench-p1-3"><div class="zone-slot-empty">bench</div></div></div>
-          <div class="zone" onclick="playToBench(1,4)"><div class="zone-slot" id="bench-p1-4"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(1,0)"><div class="zone-slot" id="bench-p1-0"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(1,1)"><div class="zone-slot" id="bench-p1-1"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(1,2)"><div class="zone-slot" id="bench-p1-2"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(1,3)"><div class="zone-slot" id="bench-p1-3"><div class="zone-slot-empty">bench</div></div></div>
+          <div class="zone" onclick="handleBenchClick(1,4)"><div class="zone-slot" id="bench-p1-4"><div class="zone-slot-empty">bench</div></div></div>
         </div>
         <div class="zone-label">Bench</div>
       </div>
@@ -782,7 +308,6 @@ header h1 {
       </div>
     </div>
   </div>
-
 </div>
 
 <!-- Prizes overlay on board sides -->
@@ -842,37 +367,19 @@ const db = firebase.database();
 // ══════════════════════════════════════════════════
 // GAME STATE
 // ══════════════════════════════════════════════════
-const PHASES = ['DRAW', 'MAIN', 'ATTACK', 'END'];
-
 let G = {
   started: false,
-  turn: 1,          // 1 or 2
+  turn: 1,
   phase: 'DRAW',
   turnNum: 1,
   energyPlayedThisTurn: false,
-  pendingAction: null,  // { type, player, card, handIdx }
-
+  pendingAction: null,
   players: {
     1: { name:'Player 1', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null },
     2: { name:'Player 2', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null }
   },
   log: []
 };
-
-// ══════════════════════════════════════════════════
-// CARD DATA CACHE
-// ══════════════════════════════════════════════════
-let cardCache = {};  // id -> full card object
-
-async function fetchCard(id) {
-  if (cardCache[id]) return cardCache[id];
-  try {
-    const r = await fetch(`https://api.pokemontcg.io/v2/cards/${id}`);
-    const d = await r.json();
-    cardCache[id] = d.data;
-    return d.data;
-  } catch(e) { return null; }
-}
 
 // ══════════════════════════════════════════════════
 // DECK LOADING
@@ -900,23 +407,38 @@ async function openLoadModal(player) {
     const snap = await db.ref('decks').once('value');
     const saved = snap.val() || {};
     const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
+
     if (!entries.length) {
       list.innerHTML = `<div class="no-saved">No saved decks. <a href="index.html" style="color:var(--accent)">Build one first →</a></div>`;
     } else {
       list.innerHTML = entries.map(d => {
-        const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
-        return `<div class="modal-deck-item" onclick="loadDeck('${encodeURIComponent(d.name)}')">
+        const total = Object.values(d.deck).reduce((s,c) => s + c.qty, 0);
+        // Use data-name attribute to avoid encoding issues in onclick
+        return `<div class="modal-deck-item" data-name="${escapeAttr(d.name)}">
           <div>
-            <div class="d-name">${d.name}</div>
+            <div class="d-name">${escapeHtml(d.name)}</div>
             <div class="d-count">${total} cards</div>
           </div>
           <span style="color:var(--muted);font-size:18px">›</span>
         </div>`;
       }).join('');
+
+      // Attach click handlers via JS (avoids all encoding issues)
+      list.querySelectorAll('.modal-deck-item').forEach(el => {
+        el.addEventListener('click', () => loadDeck(el.dataset.name));
+      });
     }
   } catch(e) {
     list.innerHTML = `<div class="no-saved" style="color:var(--accent2)">Could not connect to Firebase.</div>`;
+    console.error('Firebase error:', e);
   }
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escapeAttr(str) {
+  return String(str).replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function selectPlayer(p) {
@@ -929,13 +451,17 @@ function closeLoadModal() {
   document.getElementById('load-modal').classList.remove('show');
 }
 
-async function loadDeck(encodedName) {
+// ══════════════════════════════════════════════════
+// FIX: loadDeck builds cards entirely from Firebase
+// data — no pokemontcg.io API calls needed.
+// ══════════════════════════════════════════════════
+async function loadDeck(deckName) {
   const p = loadingForPlayer;
   if (!p) { showToast('Select a player first', true); return; }
-  const name = decodeURIComponent(encodedName);
-  const key = name.replace(/[.#$[\]]/g, '_');
+
+  const key = deckName.replace(/[.#$[\]]/g, '_');
   closeLoadModal();
-  showToast(`Loading ${name}...`);
+  showToast(`Loading ${deckName}...`);
 
   try {
     const snap = await db.ref(`decks/${key}`).once('value');
@@ -944,14 +470,30 @@ async function loadDeck(encodedName) {
 
     const flat = [];
     for (const entry of Object.values(d.deck)) {
-      const full = await fetchCard(entry.cardId);
-      const card = full || { id: entry.cardId, name: entry.name, supertype: entry.supertype, images: { small: entry.img }, subtypes: [], hp: '0', attacks: [] };
+      // Build card entirely from saved Firebase data — no API call needed.
+      // index.html saves: cardId, qty, name, supertype, img
+      // (and subtypes, hp, attacks, types if you've updated index.html too)
+      const card = {
+        id: entry.cardId,
+        name: entry.name,
+        supertype: entry.supertype,
+        images: { small: entry.img || '' },
+        subtypes: entry.subtypes || [],
+        hp: entry.hp || '0',
+        attacks: entry.attacks || [],
+        types: entry.types || []
+      };
       for (let i = 0; i < entry.qty; i++) {
         flat.push({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` });
       }
     }
 
-    G.players[p].deckData = { name };
+    if (!flat.length) {
+      showToast('Deck appears empty!', true);
+      return;
+    }
+
+    G.players[p].deckData = { name: deckName };
     G.players[p].deck = shuffle([...flat]);
     G.players[p].hand = [];
     G.players[p].active = null;
@@ -959,14 +501,17 @@ async function loadDeck(encodedName) {
     G.players[p].prizes = [];
     G.players[p].discard = [];
 
-    document.getElementById(`p${p}-deck-status`).textContent = `✓ ${name} (${flat.length} cards)`;
+    document.getElementById(`p${p}-deck-status`).textContent = `✓ ${deckName} (${flat.length} cards)`;
     document.getElementById(`p${p}-deck-status`).style.color = p === 1 ? 'var(--p1color)' : 'var(--p2color)';
+
     const both = G.players[1].deckData && G.players[2].deckData;
     document.getElementById('start-btn').disabled = !both;
-    showToast(`${name} loaded for Player ${p}!`, false, 'ok');
+
+    showToast(`${deckName} loaded for Player ${p}!`, false, 'ok');
     updateDeckCounts();
   } catch(e) {
     showToast('Error loading deck', true);
+    console.error('loadDeck error:', e);
   }
 }
 
@@ -974,23 +519,18 @@ async function loadDeck(encodedName) {
 // GAME START
 // ══════════════════════════════════════════════════
 function startGame() {
-  // Deal 7 cards to each player
   for (const p of [1,2]) {
     G.players[p].hand = G.players[p].deck.splice(0, 7);
-    // Set aside 6 prize cards
     G.players[p].prizes = G.players[p].deck.splice(0, 6).map(c => ({ card: c, revealed: false }));
   }
-
   G.started = true;
   G.turn = 1;
   G.phase = 'MAIN';
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
-
   document.getElementById('setup-screen').style.display = 'none';
   addLog(`Game started! Player 1 goes first.`, true);
   addLog(`Each player drew 7 cards and set aside 6 prizes.`);
-
   renderAll();
   showToast('Game started! P1 goes first.', false, 'ok');
 }
@@ -1007,10 +547,7 @@ function endTurn() {
   G.energyPlayedThisTurn = false;
   G.pendingAction = null;
   clearHighlights();
-
   addLog(`Player ${prev} ended their turn.`, true);
-
-  // Auto-draw for new active player
   drawCard(G.turn, true);
   renderAll();
 }
@@ -1040,14 +577,11 @@ function selectHandCard(player, handIdx) {
   const card = G.players[player].hand[handIdx];
   if (!card) return;
 
-  // Show action menu
   const actions = getActionsForCard(player, card, handIdx);
   if (!actions.length) { showToast('No valid actions for this card now.', true); return; }
 
-  // Mark selected
   document.querySelectorAll('.hand-card').forEach(el => el.classList.remove('selected'));
   document.getElementById(`hand-card-${player}-${handIdx}`)?.classList.add('selected');
-
   G.pendingAction = { player, card, handIdx };
   showActionMenu(card.name, actions);
 }
@@ -1075,9 +609,7 @@ function playAsActive(player, handIdx) {
   closeActionMenu();
   const p = G.players[player];
   const card = p.hand.splice(handIdx, 1)[0];
-  card.damage = 0;
-  card.attachedEnergy = [];
-  card.status = null;
+  card.damage = 0; card.attachedEnergy = []; card.status = null;
   p.active = card;
   addLog(`Player ${player} played ${card.name} as their Active Pokémon.`, true);
   renderAll();
@@ -1086,7 +618,6 @@ function playAsActive(player, handIdx) {
 function startBenchPlay(player, handIdx) {
   closeActionMenu();
   G.pendingAction = { type: 'bench', player, handIdx };
-  // Highlight empty bench slots
   for (let i = 0; i < 5; i++) {
     if (!G.players[player].bench[i]) {
       document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
@@ -1103,9 +634,7 @@ function playToBench(player, slotIdx) {
   const { handIdx } = G.pendingAction;
   const p = G.players[player];
   const card = p.hand.splice(handIdx, 1)[0];
-  card.damage = 0;
-  card.attachedEnergy = [];
-  card.status = null;
+  card.damage = 0; card.attachedEnergy = []; card.status = null;
   p.bench[slotIdx] = card;
   G.pendingAction = null;
   clearHighlights();
@@ -1119,7 +648,11 @@ function attachEnergy(player, handIdx, target, benchIdx = null) {
   const p = G.players[player];
   const energy = p.hand.splice(handIdx, 1)[0];
   let targetCard = target === 'active' ? p.active : p.bench[benchIdx];
-  if (!targetCard) { showToast('No Pokémon there!', true); p.hand.splice(handIdx, 0, energy); return; }
+  if (!targetCard) {
+    showToast('No Pokémon there!', true);
+    p.hand.splice(handIdx, 0, energy);
+    return;
+  }
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
   targetCard.attachedEnergy.push(energy);
   G.energyPlayedThisTurn = true;
@@ -1147,14 +680,12 @@ function playTrainer(player, handIdx) {
 }
 
 function onActiveClick(player) {
-  // If pending energy attach, attach to active
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player) {
     attachEnergy(player, G.pendingAction.handIdx, 'active');
     G.pendingAction = null;
     clearHighlights();
     return;
   }
-  // If active has a Pokémon, show its action menu
   const p = G.players[player];
   if (p.active && G.turn === player && G.phase === 'MAIN') {
     showFieldActionMenu(player, 'active', null);
@@ -1167,7 +698,11 @@ function showFieldActionMenu(player, zone, benchIdx) {
   if (!card) return;
   const actions = [];
   if (zone !== 'active' && !p.active) {
-    actions.push({ label: 'Move to Active', fn: () => { p.active = card; p.bench[benchIdx] = null; addLog(`P${player} moved ${card.name} to Active.`); renderAll(); closeActionMenu(); } });
+    actions.push({ label: 'Move to Active', fn: () => {
+      p.active = card; p.bench[benchIdx] = null;
+      addLog(`P${player} moved ${card.name} to Active.`);
+      renderAll(); closeActionMenu();
+    }});
   }
   actions.push({ label: 'View Card', fn: () => { closeActionMenu(); } });
   actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
@@ -1178,7 +713,6 @@ function attemptRetreat(player) {
   const p = G.players[player];
   if (!p.active) return;
   if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to retreat to!', true); return; }
-  // Find first bench slot
   const idx = p.bench.findIndex(s => s !== null);
   const old = p.active;
   p.active = p.bench[idx];
@@ -1188,22 +722,24 @@ function attemptRetreat(player) {
 }
 
 // ══════════════════════════════════════════════════
-// BENCH CLICK (for energy attach or field actions)
+// BENCH CLICK HANDLER (unified — replaces inline onclick)
 // ══════════════════════════════════════════════════
-// Override bench slot clicks when there's a pending action
-const origPlayToBench = playToBench;
 function handleBenchClick(player, slotIdx) {
   const slot = G.players[player].bench[slotIdx];
+
+  // Pending bench play: fill empty slot
   if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
     playToBench(player, slotIdx);
     return;
   }
+  // Pending energy attach: attach to bench Pokémon
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player && slot) {
     attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
     G.pendingAction = null;
     clearHighlights();
     return;
   }
+  // No pending action: show field actions for occupied slot
   if (slot && G.turn === player) {
     showFieldActionMenu(player, 'bench', slotIdx);
   }
@@ -1232,22 +768,16 @@ function renderAll() {
 
 function renderField(player) {
   const p = G.players[player];
-  // Active
   const activeEl = document.getElementById(`active-p${player}`);
   renderSlot(activeEl, p.active);
 
-  // Bench
   for (let i = 0; i < 5; i++) {
     const slotEl = document.getElementById(`bench-p${player}-${i}`);
-    const wrapper = slotEl?.parentElement;
-    if (slotEl) {
-      renderSlot(slotEl, p.bench[i]);
-      // Re-wire onclick
-      if (wrapper) wrapper.onclick = () => handleBenchClick(player, i);
-    }
+    if (slotEl) renderSlot(slotEl, p.bench[i]);
+    // Note: bench click handlers are already set via inline onclick="handleBenchClick(...)"
+    // in the HTML — no need to re-wire here, preventing duplicate listeners.
   }
 
-  // Discard
   const discardEl = document.getElementById(`discard-p${player}`);
   if (p.discard.length > 0) {
     const top = p.discard[p.discard.length - 1];
@@ -1271,11 +801,12 @@ function renderSlot(el, card) {
   }).join('');
   const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
-  el.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}"
-    onmouseover="showCardDetail(event,'${card.images?.large || card.images?.small || ''}')"
+  const imgSrc = card.images?.small || '';
+  const largeSrc = card.images?.large || imgSrc;
+  el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
+    onmouseover="showCardDetail(event,'${largeSrc}')"
     onmouseout="hideCardDetail()">
-    <div class="energy-overlay">${energyPips}</div>
-    ${dmg}${status}`;
+    <div class="energy-overlay">${energyPips}</div>${dmg}${status}`;
 }
 
 function renderHands() {
@@ -1292,12 +823,15 @@ function renderHands() {
     }
 
     container.innerHTML = p.hand.map((card, i) => {
-      const faceDown = !isActive;  // opponent's hand shows face-down in hotseat
+      const faceDown = !isActive;
+      const imgSrc = faceDown ? '' : (card.images?.small || '');
+      const largeSrc = faceDown ? '' : (card.images?.large || imgSrc);
       return `<div class="hand-card ${faceDown ? 'face-down' : ''}" id="hand-card-${player}-${i}"
-        onclick="${faceDown ? '' : `selectHandCard(${player},${i})`}"
-        onmouseover="${faceDown ? '' : `showCardDetail(event,'${card.images?.large || card.images?.small || ''}')`}"
+        ${faceDown ? '' : `onclick="selectHandCard(${player},${i})"`}
+        ${faceDown ? '' : `onmouseover="showCardDetail(event,'${largeSrc}')"`}
         onmouseout="hideCardDetail()">
-        <img class="hand-card-img" src="${faceDown ? '' : (card.images?.small || '')}" alt="${faceDown ? '?' : card.name}" style="${faceDown ? 'background:var(--surface2)' : ''}">
+        <img class="hand-card-img" src="${imgSrc}" alt="${faceDown ? '?' : card.name}"
+          style="${faceDown ? 'background:var(--surface2)' : ''}">
         <div class="hand-card-info">
           <div class="hand-card-name">${faceDown ? '???' : card.name}</div>
           <div class="hand-card-sub">${faceDown ? '---' : (card.supertype || '')}</div>
@@ -1328,9 +862,7 @@ function updateDeckCounts() {
   }
 }
 
-function updatePhase() {
-  document.getElementById('phase-badge').textContent = G.phase;
-}
+function updatePhase() { document.getElementById('phase-badge').textContent = G.phase; }
 
 function updateTurnBadge() {
   const badge = document.getElementById('turn-badge');
@@ -1362,8 +894,7 @@ function renderLog() {
       `<div class="log-entry ${e.important ? 'important' : ''}">
         <span class="log-turn">T${e.turn}</span> ${e.msg}
       </div>`
-    ).join('') +
-    `</div>`;
+    ).join('') + `</div>`;
 }
 
 // ══════════════════════════════════════════════════
@@ -1378,10 +909,9 @@ function showTab(tab) {
 
 function showActionMenu(title, actions) {
   const menu = document.getElementById('action-menu');
-  const titleEl = document.getElementById('action-menu-title');
-  titleEl.textContent = title;
-  // Remove old buttons
+  document.getElementById('action-menu-title').textContent = title;
   menu.querySelectorAll('.action-btn').forEach(b => b.remove());
+
   actions.forEach(a => {
     const btn = document.createElement('button');
     btn.className = 'action-btn' + (a.danger ? ' danger' : '');
@@ -1389,13 +919,14 @@ function showActionMenu(title, actions) {
     btn.onclick = a.fn;
     menu.appendChild(btn);
   });
+
   const cancel = document.createElement('button');
   cancel.className = 'action-btn';
   cancel.textContent = 'Cancel';
   cancel.style.color = 'var(--muted)';
   cancel.onclick = () => { closeActionMenu(); cancelAction(); };
   menu.appendChild(cancel);
-  // Position near center
+
   menu.style.left = '50%';
   menu.style.top = '50%';
   menu.style.transform = 'translate(-50%, -50%)';
@@ -1422,12 +953,9 @@ function hideCardDetail() {
   document.getElementById('card-detail').classList.remove('show');
 }
 
-// Close action menu on outside click
 document.addEventListener('click', e => {
   const menu = document.getElementById('action-menu');
-  if (menu.classList.contains('show') && !menu.contains(e.target)) {
-    closeActionMenu();
-  }
+  if (menu.classList.contains('show') && !menu.contains(e.target)) closeActionMenu();
 });
 
 document.getElementById('load-modal').addEventListener('click', e => {
