@@ -644,6 +644,7 @@
     </div>
     <button class="btn btn-ghost" onclick="openDecksModal()">MY DECKS</button>
     <button class="btn btn-primary" onclick="saveDeck()">SAVE DECK</button>
+    <a href="pokemon-game.html" class="btn btn-ghost" style="text-decoration:none">▶ PLAY</a>
   </div>
 </header>
 
@@ -719,7 +720,35 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+// ─── FIREBASE ─────────────────────────────────────────────────
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, set, get, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
+  authDomain: "p-tcg-a6b2c.firebaseapp.com",
+  databaseURL: "https://p-tcg-a6b2c-default-rtdb.firebaseio.com",
+  projectId: "p-tcg-a6b2c",
+  storageBucket: "p-tcg-a6b2c.firebasestorage.app",
+  messagingSenderId: "660283340232",
+  appId: "1:660283340232:web:68722a7b5f60de8cda7cfd"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// Make key functions global so onclick attributes still work
+window.saveDeck = saveDeck;
+window.openDecksModal = openDecksModal;
+window.closeDecksModal = closeDecksModal;
+window.loadDeck = loadDeck;
+window.deleteDeck = deleteDeck;
+window.addCard = addCard;
+window.changeQty = changeQty;
+window.clearDeck = clearDeck;
+window.validateDeck = validateDeck;
+window.filterCards = filterCards;
+
 // ─── STATE ────────────────────────────────────────────────────
 const SETS = ['base1', 'base2', 'base3'];
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
@@ -1026,63 +1055,69 @@ function validateDeck(showResult) {
   return issues.length === 0;
 }
 
-// ─── SAVE / LOAD ──────────────────────────────────────────────
-function saveDeck() {
+// ─── SAVE / LOAD (Firebase) ───────────────────────────────────
+async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim() || 'My Deck';
   if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
-
-  const saved = getSavedDecks();
-  saved[name] = { name, deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [id, { cardId: id, qty, name: card.name, supertype: card.supertype, img: card.images?.small || '' }])), savedAt: Date.now() };
-  localStorage.setItem('ptcg_decks', JSON.stringify(saved));
+  showToast('Saving...');
+  const deckData = {
+    name,
+    savedAt: Date.now(),
+    deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [
+      id, { cardId: id, qty, name: card.name, supertype: card.supertype, img: card.images?.small || '' }
+    ]))
+  };
+  // Firebase keys can't contain . so replace with _
+  const key = name.replace(/[.#$[\]]/g, '_');
+  await set(ref(db, `decks/${key}`), deckData);
   showToast(`"${name}" saved!`);
 }
 
-function getSavedDecks() {
-  try { return JSON.parse(localStorage.getItem('ptcg_decks') || '{}'); }
-  catch { return {}; }
-}
-
-function openDecksModal() {
-  const saved = getSavedDecks();
+async function openDecksModal() {
   const list = document.getElementById('saved-deck-list');
-  const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
-
-  if (!entries.length) {
-    list.innerHTML = `<div class="no-saved">No saved decks yet.</div>`;
-  } else {
-    list.innerHTML = entries.map(d => {
-      const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
-      return `<div class="saved-deck-item">
-        <div>
-          <div class="d-name">${d.name}</div>
-          <div class="d-count">${total} cards</div>
-        </div>
-        <button class="d-load" onclick="loadDeck('${encodeURIComponent(d.name)}')">LOAD</button>
-        <button class="d-del" onclick="deleteDeck('${encodeURIComponent(d.name)}')">DEL</button>
-      </div>`;
-    }).join('');
-  }
+  list.innerHTML = `<div class="no-saved">Loading...</div>`;
   document.getElementById('decks-modal').classList.add('show');
+  try {
+    const snap = await get(ref(db, 'decks'));
+    const saved = snap.val() || {};
+    const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
+    if (!entries.length) {
+      list.innerHTML = `<div class="no-saved">No saved decks yet.</div>`;
+    } else {
+      list.innerHTML = entries.map(d => {
+        const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
+        return `<div class="saved-deck-item">
+          <div>
+            <div class="d-name">${d.name}</div>
+            <div class="d-count">${total} cards</div>
+          </div>
+          <button class="d-load" onclick="loadDeck('${encodeURIComponent(d.name)}')">LOAD</button>
+          <button class="d-del" onclick="deleteDeck('${encodeURIComponent(d.name)}')">DEL</button>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    list.innerHTML = `<div class="no-saved" style="color:var(--accent2)">Could not connect to Firebase.</div>`;
+  }
 }
 
 function closeDecksModal() {
   document.getElementById('decks-modal').classList.remove('show');
 }
 
-function loadDeck(encodedName) {
+async function loadDeck(encodedName) {
   const name = decodeURIComponent(encodedName);
-  const saved = getSavedDecks();
-  const d = saved[name];
-  if (!d) return;
+  const key = name.replace(/[.#$[\]]/g, '_');
+  const snap = await get(ref(db, `decks/${key}`));
+  const d = snap.val();
+  if (!d) { showToast('Deck not found', true); return; }
 
   deck = {};
-  // Rebuild deck from saved data using full card objects from allCards
   Object.values(d.deck).forEach(entry => {
     const full = allCards.find(c => c.id === entry.cardId);
     if (full) {
       deck[entry.cardId] = { card: full, qty: entry.qty };
     } else {
-      // Card not in allCards cache yet — create stub
       deck[entry.cardId] = {
         qty: entry.qty,
         card: { id: entry.cardId, name: entry.name, supertype: entry.supertype, images: { small: entry.img }, subtypes: [] }
@@ -1098,11 +1133,10 @@ function loadDeck(encodedName) {
   showToast(`"${name}" loaded!`);
 }
 
-function deleteDeck(encodedName) {
+async function deleteDeck(encodedName) {
   const name = decodeURIComponent(encodedName);
-  const saved = getSavedDecks();
-  delete saved[name];
-  localStorage.setItem('ptcg_decks', JSON.stringify(saved));
+  const key = name.replace(/[.#$[\]]/g, '_');
+  await remove(ref(db, `decks/${key}`));
   openDecksModal();
   showToast(`"${name}" deleted.`);
 }

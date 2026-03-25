@@ -668,6 +668,7 @@ header h1 {
   </div>
   <button class="btn btn-primary" id="start-btn" onclick="startGame()" disabled style="font-size:9px;padding:14px 28px">START GAME</button>
   <p style="font-size:10px;margin-top:8px">Both players must load a deck first</p>
+  <a href="index.html" style="font-size:10px;color:var(--muted);margin-top:6px">← Back to Deck Builder</a>
 </div>
 
 <!-- HEADER -->
@@ -676,6 +677,7 @@ header h1 {
   <div class="turn-badge p1" id="turn-badge">P1 TURN</div>
   <div class="phase-badge" id="phase-badge">DRAW</div>
   <div class="header-actions">
+    <a href="index.html" class="btn btn-ghost" style="text-decoration:none">← BUILD</a>
     <button class="btn btn-ghost" onclick="openLoadModal(0)">LOAD DECK</button>
     <button class="btn btn-ghost" onclick="showTab('log')">LOG</button>
     <button class="btn btn-end" onclick="endTurn()">END TURN</button>
@@ -819,7 +821,40 @@ header h1 {
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script>
+<script type="module">
+// ══════════════════════════════════════════════════
+// FIREBASE
+// ══════════════════════════════════════════════════
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
+  authDomain: "p-tcg-a6b2c.firebaseapp.com",
+  databaseURL: "https://p-tcg-a6b2c-default-rtdb.firebaseio.com",
+  projectId: "p-tcg-a6b2c",
+  storageBucket: "p-tcg-a6b2c.firebasestorage.app",
+  messagingSenderId: "660283340232",
+  appId: "1:660283340232:web:68722a7b5f60de8cda7cfd"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// Expose functions used by onclick attributes
+window.openLoadModal = openLoadModal;
+window.closeLoadModal = closeLoadModal;
+window.selectPlayer = selectPlayer;
+window.loadDeck = loadDeck;
+window.startGame = startGame;
+window.endTurn = endTurn;
+window.drawCard = drawCard;
+window.selectHandCard = selectHandCard;
+window.playToBench = playToBench;
+window.onActiveClick = onActiveClick;
+window.handleBenchClick = handleBenchClick;
+window.cancelAction = cancelAction;
+window.showTab = showTab;
+
 // ══════════════════════════════════════════════════
 // GAME STATE
 // ══════════════════════════════════════════════════
@@ -858,21 +893,13 @@ async function fetchCard(id) {
 // ══════════════════════════════════════════════════
 // DECK LOADING
 // ══════════════════════════════════════════════════
-function getSavedDecks() {
-  try { return JSON.parse(localStorage.getItem('ptcg_decks') || '{}'); }
-  catch { return {}; }
-}
-
 let loadingForPlayer = 0;
 
-function openLoadModal(player) {
+async function openLoadModal(player) {
   loadingForPlayer = player;
-  const saved = getSavedDecks();
-  const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
   const list = document.getElementById('saved-decks-list');
   const psel = document.getElementById('player-select');
 
-  // If called from setup screen with specific player pre-selected
   if (player === 1 || player === 2) {
     document.querySelectorAll('.player-opt').forEach(b => b.classList.remove('sel'));
     document.querySelector(`.player-opt.p${player}`).classList.add('sel');
@@ -882,21 +909,30 @@ function openLoadModal(player) {
     document.querySelectorAll('.player-opt').forEach(b => b.classList.remove('sel'));
   }
 
-  if (!entries.length) {
-    list.innerHTML = `<div class="no-saved">No saved decks. Build one in the Deck Builder first.</div>`;
-  } else {
-    list.innerHTML = entries.map(d => {
-      const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
-      return `<div class="modal-deck-item" onclick="loadDeck('${encodeURIComponent(d.name)}')">
-        <div>
-          <div class="d-name">${d.name}</div>
-          <div class="d-count">${total} cards</div>
-        </div>
-        <span style="color:var(--muted);font-size:18px">›</span>
-      </div>`;
-    }).join('');
-  }
+  list.innerHTML = `<div class="no-saved">Loading decks...</div>`;
   document.getElementById('load-modal').classList.add('show');
+
+  try {
+    const snap = await get(ref(db, 'decks'));
+    const saved = snap.val() || {};
+    const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
+    if (!entries.length) {
+      list.innerHTML = `<div class="no-saved">No saved decks. <a href="index.html" style="color:var(--accent)">Build one first →</a></div>`;
+    } else {
+      list.innerHTML = entries.map(d => {
+        const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
+        return `<div class="modal-deck-item" onclick="loadDeck('${encodeURIComponent(d.name)}')">
+          <div>
+            <div class="d-name">${d.name}</div>
+            <div class="d-count">${total} cards</div>
+          </div>
+          <span style="color:var(--muted);font-size:18px">›</span>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    list.innerHTML = `<div class="no-saved" style="color:var(--accent2)">Could not connect to Firebase.</div>`;
+  }
 }
 
 function selectPlayer(p) {
@@ -913,39 +949,41 @@ async function loadDeck(encodedName) {
   const p = loadingForPlayer;
   if (!p) { showToast('Select a player first', true); return; }
   const name = decodeURIComponent(encodedName);
-  const saved = getSavedDecks();
-  const d = saved[name];
-  if (!d) return;
+  const key = name.replace(/[.#$[\]]/g, '_');
   closeLoadModal();
   showToast(`Loading ${name}...`);
 
-  // Expand qty into flat card list, fetch full data
-  const flat = [];
-  for (const entry of Object.values(d.deck)) {
-    const full = await fetchCard(entry.cardId);
-    const card = full || { id: entry.cardId, name: entry.name, supertype: entry.supertype, images: { small: entry.img }, subtypes: [], hp: '0', attacks: [] };
-    for (let i = 0; i < entry.qty; i++) {
-      flat.push({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` });
+  try {
+    const snap = await get(ref(db, `decks/${key}`));
+    const d = snap.val();
+    if (!d) { showToast('Deck not found', true); return; }
+
+    const flat = [];
+    for (const entry of Object.values(d.deck)) {
+      const full = await fetchCard(entry.cardId);
+      const card = full || { id: entry.cardId, name: entry.name, supertype: entry.supertype, images: { small: entry.img }, subtypes: [], hp: '0', attacks: [] };
+      for (let i = 0; i < entry.qty; i++) {
+        flat.push({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` });
+      }
     }
+
+    G.players[p].deckData = { name };
+    G.players[p].deck = shuffle([...flat]);
+    G.players[p].hand = [];
+    G.players[p].active = null;
+    G.players[p].bench = [null,null,null,null,null];
+    G.players[p].prizes = [];
+    G.players[p].discard = [];
+
+    document.getElementById(`p${p}-deck-status`).textContent = `✓ ${name} (${flat.length} cards)`;
+    document.getElementById(`p${p}-deck-status`).style.color = p === 1 ? 'var(--p1color)' : 'var(--p2color)';
+    const both = G.players[1].deckData && G.players[2].deckData;
+    document.getElementById('start-btn').disabled = !both;
+    showToast(`${name} loaded for Player ${p}!`, false, 'ok');
+    updateDeckCounts();
+  } catch(e) {
+    showToast('Error loading deck', true);
   }
-
-  G.players[p].deckData = { name };
-  G.players[p].deck = shuffle([...flat]);
-  G.players[p].hand = [];
-  G.players[p].active = null;
-  G.players[p].bench = [null,null,null,null,null];
-  G.players[p].prizes = [];
-  G.players[p].discard = [];
-
-  // Update setup screen
-  document.getElementById(`p${p}-deck-status`).textContent = `✓ ${name} (${flat.length} cards)`;
-  document.getElementById(`p${p}-deck-status`).style.color = p === 1 ? 'var(--p1color)' : 'var(--p2color)';
-
-  const both = G.players[1].deckData && G.players[2].deckData;
-  document.getElementById('start-btn').disabled = !both;
-
-  showToast(`${name} loaded for Player ${p}!`, false, 'ok');
-  updateDeckCounts();
 }
 
 // ══════════════════════════════════════════════════
