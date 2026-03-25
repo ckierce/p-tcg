@@ -720,11 +720,10 @@
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script type="module">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
 // ─── FIREBASE ─────────────────────────────────────────────────
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, set, get, remove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-
 const firebaseConfig = {
   apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
   authDomain: "p-tcg-a6b2c.firebaseapp.com",
@@ -734,8 +733,8 @@ const firebaseConfig = {
   messagingSenderId: "660283340232",
   appId: "1:660283340232:web:68722a7b5f60de8cda7cfd"
 };
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 // ─── STATE ────────────────────────────────────────────────────
 const SETS = ['base1', 'base2', 'base3'];
@@ -1057,7 +1056,7 @@ async function saveDeck() {
   };
   // Firebase keys can't contain . so replace with _
   const key = name.replace(/[.#$[\]]/g, '_');
-  await set(ref(db, `decks/${key}`), deckData);
+  await db.ref(`decks/${key}`).set(deckData);
   showToast(`"${name}" saved!`);
 }
 
@@ -1066,7 +1065,7 @@ async function openDecksModal() {
   list.innerHTML = `<div class="no-saved">Loading...</div>`;
   document.getElementById('decks-modal').classList.add('show');
   try {
-    const snap = await get(ref(db, 'decks'));
+    const snap = await db.ref('decks').once('value');
     const saved = snap.val() || {};
     const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
     if (!entries.length) {
@@ -1096,7 +1095,7 @@ function closeDecksModal() {
 async function loadDeck(encodedName) {
   const name = decodeURIComponent(encodedName);
   const key = name.replace(/[.#$[\]]/g, '_');
-  const snap = await get(ref(db, `decks/${key}`));
+  const snap = await db.ref(`decks/${key}`).once('value');
   const d = snap.val();
   if (!d) { showToast('Deck not found', true); return; }
 
@@ -1124,7 +1123,7 @@ async function loadDeck(encodedName) {
 async function deleteDeck(encodedName) {
   const name = decodeURIComponent(encodedName);
   const key = name.replace(/[.#$[\]]/g, '_');
-  await remove(ref(db, `decks/${key}`));
+  await db.ref(`decks/${key}`).remove();
   openDecksModal();
   showToast(`"${name}" deleted.`);
 }
@@ -1156,20 +1155,6 @@ document.getElementById('decks-modal').addEventListener('click', e => {
 
 // ─── INIT ─────────────────────────────────────────────────────
 fetchAllCards();
-
-// Expose all functions used by onclick attributes
-// Must be here at the bottom — module scope means functions
-// aren't on window until explicitly assigned after definition
-window.saveDeck = saveDeck;
-window.openDecksModal = openDecksModal;
-window.closeDecksModal = closeDecksModal;
-window.loadDeck = loadDeck;
-window.deleteDeck = deleteDeck;
-window.addCard = addCard;
-window.changeQty = changeQty;
-window.clearDeck = clearDeck;
-window.validateDeck = validateDeck;
-window.filterCards = filterCards;
 </script>
 </body>
 </html>

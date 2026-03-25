@@ -821,13 +821,12 @@ header h1 {
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
-<script type="module">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
 // ══════════════════════════════════════════════════
 // FIREBASE
 // ══════════════════════════════════════════════════
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
-
 const firebaseConfig = {
   apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
   authDomain: "p-tcg-a6b2c.firebaseapp.com",
@@ -837,8 +836,8 @@ const firebaseConfig = {
   messagingSenderId: "660283340232",
   appId: "1:660283340232:web:68722a7b5f60de8cda7cfd"
 };
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
 // ══════════════════════════════════════════════════
 // GAME STATE
@@ -898,7 +897,7 @@ async function openLoadModal(player) {
   document.getElementById('load-modal').classList.add('show');
 
   try {
-    const snap = await get(ref(db, 'decks'));
+    const snap = await db.ref('decks').once('value');
     const saved = snap.val() || {};
     const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
     if (!entries.length) {
@@ -939,7 +938,7 @@ async function loadDeck(encodedName) {
   showToast(`Loading ${name}...`);
 
   try {
-    const snap = await get(ref(db, `decks/${key}`));
+    const snap = await db.ref(`decks/${key}`).once('value');
     const d = snap.val();
     if (!d) { showToast('Deck not found', true); return; }
 
@@ -1476,23 +1475,6 @@ function statusEmoji(s) {
 // INIT
 // ══════════════════════════════════════════════════
 setMidline('Load decks and press Start Game');
-
-// Expose all functions used by onclick attributes in HTML
-// Must be at the bottom — module scope means functions aren't
-// available on window until explicitly assigned after definition
-window.openLoadModal = openLoadModal;
-window.closeLoadModal = closeLoadModal;
-window.selectPlayer = selectPlayer;
-window.loadDeck = loadDeck;
-window.startGame = startGame;
-window.endTurn = endTurn;
-window.drawCard = drawCard;
-window.selectHandCard = selectHandCard;
-window.playToBench = playToBench;
-window.onActiveClick = onActiveClick;
-window.handleBenchClick = handleBenchClick;
-window.cancelAction = cancelAction;
-window.showTab = showTab;
 </script>
 </body>
 </html>
