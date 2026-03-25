@@ -840,21 +840,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Expose functions used by onclick attributes
-window.openLoadModal = openLoadModal;
-window.closeLoadModal = closeLoadModal;
-window.selectPlayer = selectPlayer;
-window.loadDeck = loadDeck;
-window.startGame = startGame;
-window.endTurn = endTurn;
-window.drawCard = drawCard;
-window.selectHandCard = selectHandCard;
-window.playToBench = playToBench;
-window.onActiveClick = onActiveClick;
-window.handleBenchClick = handleBenchClick;
-window.cancelAction = cancelAction;
-window.showTab = showTab;
-
 // ══════════════════════════════════════════════════
 // GAME STATE
 // ══════════════════════════════════════════════════
@@ -1491,6 +1476,23 @@ function statusEmoji(s) {
 // INIT
 // ══════════════════════════════════════════════════
 setMidline('Load decks and press Start Game');
+
+// Expose all functions used by onclick attributes in HTML
+// Must be at the bottom — module scope means functions aren't
+// available on window until explicitly assigned after definition
+window.openLoadModal = openLoadModal;
+window.closeLoadModal = closeLoadModal;
+window.selectPlayer = selectPlayer;
+window.loadDeck = loadDeck;
+window.startGame = startGame;
+window.endTurn = endTurn;
+window.drawCard = drawCard;
+window.selectHandCard = selectHandCard;
+window.playToBench = playToBench;
+window.onActiveClick = onActiveClick;
+window.handleBenchClick = handleBenchClick;
+window.cancelAction = cancelAction;
+window.showTab = showTab;
 </script>
 </body>
 </html>

@@ -737,18 +737,6 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Make key functions global so onclick attributes still work
-window.saveDeck = saveDeck;
-window.openDecksModal = openDecksModal;
-window.closeDecksModal = closeDecksModal;
-window.loadDeck = loadDeck;
-window.deleteDeck = deleteDeck;
-window.addCard = addCard;
-window.changeQty = changeQty;
-window.clearDeck = clearDeck;
-window.validateDeck = validateDeck;
-window.filterCards = filterCards;
-
 // ─── STATE ────────────────────────────────────────────────────
 const SETS = ['base1', 'base2', 'base3'];
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
@@ -1168,6 +1156,20 @@ document.getElementById('decks-modal').addEventListener('click', e => {
 
 // ─── INIT ─────────────────────────────────────────────────────
 fetchAllCards();
+
+// Expose all functions used by onclick attributes
+// Must be here at the bottom — module scope means functions
+// aren't on window until explicitly assigned after definition
+window.saveDeck = saveDeck;
+window.openDecksModal = openDecksModal;
+window.closeDecksModal = closeDecksModal;
+window.loadDeck = loadDeck;
+window.deleteDeck = deleteDeck;
+window.addCard = addCard;
+window.changeQty = changeQty;
+window.clearDeck = clearDeck;
+window.validateDeck = validateDeck;
+window.filterCards = filterCards;
 </script>
 </body>
 </html>
