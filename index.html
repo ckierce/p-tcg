@@ -6,631 +6,125 @@
 <title>Pokémon TCG — Deck Builder</title>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0f0e17;
-    --surface: #1a1828;
-    --surface2: #221f35;
-    --border: #2e2a45;
-    --accent: #f5c542;
-    --accent2: #e05c5c;
-    --text: #e8e4f0;
-    --muted: #7a7494;
-    --fire: #ff6b35;
-    --water: #4fc3f7;
-    --grass: #66bb6a;
-    --lightning: #ffd54f;
-    --psychic: #ce93d8;
-    --fighting: #a1887f;
-    --colorless: #90a4ae;
-    --darkness: #7986cb;
-    --metal: #b0bec5;
-    --radius: 10px;
-    --card-w: 160px;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    font-family: 'DM Sans', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    overflow-x: hidden;
-  }
-
-  /* scanline overlay */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
-    pointer-events: none;
-    z-index: 999;
-  }
-
-  header {
-    padding: 20px 32px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    position: sticky;
-    top: 0;
-    background: rgba(15,14,23,0.95);
-    backdrop-filter: blur(8px);
-    z-index: 100;
-  }
-
-  header h1 {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 13px;
-    color: var(--accent);
-    letter-spacing: 1px;
-    text-shadow: 0 0 20px rgba(245,197,66,0.4);
-    line-height: 1.5;
-  }
-
-  header h1 span { color: var(--accent2); }
-
-  .header-right {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .deck-summary {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
-    color: var(--muted);
-    text-align: right;
-  }
-  .deck-summary strong { color: var(--accent); display: block; font-size: 14px; margin-bottom: 4px; }
-  .deck-summary.full strong { color: var(--accent2); }
-
-  .btn {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    padding: 10px 14px;
-    border-radius: var(--radius);
-    border: none;
-    cursor: pointer;
-    transition: all 0.15s;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .btn-primary {
-    background: var(--accent);
-    color: #0f0e17;
-  }
-  .btn-primary:hover { background: #ffd54f; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(245,197,66,0.3); }
-  .btn-ghost {
-    background: transparent;
-    color: var(--muted);
-    border: 1px solid var(--border);
-  }
-  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
-  .btn-danger {
-    background: transparent;
-    color: var(--accent2);
-    border: 1px solid var(--accent2);
-    font-size: 7px;
-    padding: 6px 10px;
-  }
-  .btn-danger:hover { background: var(--accent2); color: #fff; }
-
-  .layout {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    height: calc(100vh - 65px);
-  }
-
-  /* LEFT: card browser */
-  .browser {
-    overflow-y: auto;
-    padding: 24px 28px;
-    border-right: 1px solid var(--border);
-  }
-
-  .controls {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  .search-wrap {
-    flex: 1;
-    min-width: 200px;
-    position: relative;
-  }
-
-  .search-wrap input {
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 14px 10px 38px;
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .search-wrap input:focus { border-color: var(--accent); }
-  .search-wrap::before {
-    content: '🔍';
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 14px;
-    pointer-events: none;
-  }
-
-  select {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 14px;
-    color: var(--text);
-    font-family: 'DM Sans', sans-serif;
-    font-size: 14px;
-    outline: none;
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-  select:focus { border-color: var(--accent); }
-
-  .set-tabs {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  .set-tab {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 7px;
-    padding: 7px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--muted);
-    cursor: pointer;
-    transition: all 0.15s;
-    letter-spacing: 0.5px;
-  }
-  .set-tab:hover { color: var(--text); border-color: var(--muted); }
-  .set-tab.active {
-    background: var(--accent);
-    color: #0f0e17;
-    border-color: var(--accent);
-  }
-
-  .results-info {
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 14px;
-  }
-
-  .card-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr));
-    gap: 14px;
-  }
-
-  .card-item {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
-    position: relative;
-  }
-  .card-item:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    border-color: var(--accent);
-  }
-  .card-item.maxed { opacity: 0.4; pointer-events: none; }
-  .card-item.in-deck { border-color: var(--accent); }
-  .card-item.in-deck::after {
-    content: attr(data-count);
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    background: var(--accent);
-    color: #0f0e17;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    padding: 3px 6px;
-    border-radius: 4px;
-    min-width: 20px;
-    text-align: center;
-  }
-
-  .card-img-wrap {
-    width: 100%;
-    aspect-ratio: 3/4.2;
-    overflow: hidden;
-    background: var(--surface2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .card-img-wrap img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.2s;
-  }
-  .card-item:hover .card-img-wrap img { transform: scale(1.04); }
-
-  .card-img-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-  }
-
-  .card-info {
-    padding: 8px 10px;
-    border-top: 1px solid var(--border);
-  }
-  .card-name {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .card-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 3px;
-  }
-  .card-type {
-    font-size: 10px;
-    color: var(--muted);
-  }
-  .card-set-badge {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 6px;
-    padding: 2px 5px;
-    border-radius: 3px;
-    background: var(--surface2);
-    color: var(--muted);
-  }
-
-  .type-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 4px;
-    vertical-align: middle;
-  }
-
-  /* RIGHT: deck panel */
-  .deck-panel {
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    overflow: hidden;
-  }
-
-  .deck-header {
-    padding: 18px 20px 14px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .deck-name-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-
-  .deck-name-input {
-    flex: 1;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 10px;
-    color: var(--text);
-    font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  .deck-name-input:focus { border-color: var(--accent); }
-
-  .deck-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 8px;
-  }
-  .stat-box {
-    background: var(--surface2);
-    border-radius: 6px;
-    padding: 8px;
-    text-align: center;
-  }
-  .stat-box .stat-val {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 14px;
-    color: var(--text);
-  }
-  .stat-box .stat-lbl {
-    font-size: 10px;
-    color: var(--muted);
-    margin-top: 3px;
-  }
-
-  .validation-strip {
-    margin-top: 10px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 500;
-    text-align: center;
-    display: none;
-  }
-  .validation-strip.show { display: block; }
-  .validation-strip.ok { background: rgba(102,187,106,0.15); color: #66bb6a; border: 1px solid rgba(102,187,106,0.3); }
-  .validation-strip.warn { background: rgba(224,92,92,0.15); color: var(--accent2); border: 1px solid rgba(224,92,92,0.3); }
-
-  .deck-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 16px;
-  }
-
-  .deck-group {
-    margin-bottom: 16px;
-  }
-  .deck-group-label {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 7px;
-    color: var(--muted);
-    letter-spacing: 1px;
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .deck-card-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 0;
-  }
-
-  .deck-card-img {
-    width: 32px;
-    height: 45px;
-    border-radius: 4px;
-    object-fit: cover;
-    flex-shrink: 0;
-    background: var(--surface2);
-  }
-
-  .deck-card-name {
-    flex: 1;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .qty-ctrl {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .qty-btn {
-    width: 22px;
-    height: 22px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--surface2);
-    color: var(--text);
-    font-size: 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.1s;
-    flex-shrink: 0;
-  }
-  .qty-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .qty-num {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
-    width: 14px;
-    text-align: center;
-    color: var(--accent);
-  }
-
-  .deck-actions {
-    padding: 14px 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .deck-actions .btn { flex: 1; text-align: center; }
-
-  .empty-deck {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--muted);
-  }
-  .empty-deck .poke-emoji { font-size: 40px; margin-bottom: 12px; }
-  .empty-deck p { font-family: 'Press Start 2P', monospace; font-size: 8px; line-height: 1.8; }
-
-  .loading {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--muted);
-  }
-  .loading .spinner {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 10px;
-    color: var(--accent);
-    animation: blink 0.8s step-end infinite;
-    display: block;
-    margin-bottom: 12px;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-
-  .error-msg {
-    text-align: center;
-    padding: 40px 20px;
-    color: var(--accent2);
-    font-size: 13px;
-  }
-
-  .toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
-    transform: translateX(-50%) translateY(80px);
-    background: var(--accent);
-    color: #0f0e17;
-    font-family: 'Press Start 2P', monospace;
-    font-size: 8px;
-    padding: 12px 20px;
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    z-index: 1000;
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    white-space: nowrap;
-  }
-  .toast.show { transform: translateX(-50%) translateY(0); }
-  .toast.error { background: var(--accent2); color: #fff; }
-
-  /* Deck management modal */
-  .modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.7);
-    z-index: 200;
-    display: none;
-    align-items: center;
-    justify-content: center;
-  }
-  .modal-overlay.show { display: flex; }
-  .modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 28px;
-    width: 400px;
-    max-width: 90vw;
-  }
-  .modal h2 {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 10px;
-    color: var(--accent);
-    margin-bottom: 20px;
-  }
-  .saved-deck-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 280px; overflow-y: auto; }
-  .saved-deck-item {
-    display: flex;
-    align-items: center;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
-    gap: 10px;
-  }
-  .saved-deck-item .d-name { flex:1; font-weight: 600; font-size: 13px; }
-  .saved-deck-item .d-count { font-size: 11px; color: var(--muted); }
-  .saved-deck-item .d-load {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 7px;
-    padding: 5px 8px;
-    background: var(--accent);
-    color: #0f0e17;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .saved-deck-item .d-del {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 7px;
-    padding: 5px 8px;
-    background: transparent;
-    color: var(--accent2);
-    border: 1px solid var(--accent2);
-    border-radius: 4px;
-    cursor: pointer;
-  }
-  .modal-close {
-    width: 100%;
-  }
-
-  .no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
-
-  .card-grid {
-    display: block;
-  }
-  .card-grid-inner {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr));
-    gap: 14px;
-    margin-bottom: 8px;
-  }
-  .grid-section-header {
-    font-family: 'Press Start 2P', monospace;
-    font-size: 9px;
-    color: var(--accent);
-    letter-spacing: 1px;
-    padding: 18px 0 10px;
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 14px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .grid-type-header {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--muted);
-    padding: 10px 0 8px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    margin-top: 4px;
-  }
-  .grid-section-count {
-    font-family: 'DM Sans', sans-serif;
-    font-size: 11px;
-    font-weight: 400;
-    color: var(--muted);
-    margin-left: 4px;
-  }
-
-  /* scrollbar */
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
-
-  @media (max-width: 800px) {
-    .layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-    .deck-panel { max-height: 40vh; }
-  }
+:root {
+  --bg: #0f0e17; --surface: #1a1828; --surface2: #221f35; --border: #2e2a45;
+  --accent: #f5c542; --accent2: #e05c5c; --text: #e8e4f0; --muted: #7a7494;
+  --fire: #ff6b35; --water: #4fc3f7; --grass: #66bb6a; --lightning: #ffd54f;
+  --psychic: #ce93d8; --fighting: #a1887f; --colorless: #90a4ae;
+  --darkness: #7986cb; --metal: #b0bec5; --radius: 10px; --card-w: 160px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+/* scanline overlay */
+body::before { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px); pointer-events: none; z-index: 999; }
+header { padding: 20px 32px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 20px; position: sticky; top: 0; background: rgba(15,14,23,0.95); backdrop-filter: blur(8px); z-index: 100; }
+header h1 { font-family: 'Press Start 2P', monospace; font-size: 13px; color: var(--accent); letter-spacing: 1px; text-shadow: 0 0 20px rgba(245,197,66,0.4); line-height: 1.5; }
+header h1 span { color: var(--accent2); }
+.header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.deck-summary { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--muted); text-align: right; }
+.deck-summary strong { color: var(--accent); display: block; font-size: 14px; margin-bottom: 4px; }
+.deck-summary.full strong { color: var(--accent2); }
+.btn { font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 10px 14px; border-radius: var(--radius); border: none; cursor: pointer; transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.5px; }
+.btn-primary { background: var(--accent); color: #0f0e17; }
+.btn-primary:hover { background: #ffd54f; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(245,197,66,0.3); }
+.btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+.btn-danger { background: transparent; color: var(--accent2); border: 1px solid var(--accent2); font-size: 7px; padding: 6px 10px; }
+.btn-danger:hover { background: var(--accent2); color: #fff; }
+.layout { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 65px); }
+/* LEFT: card browser */
+.browser { overflow-y: auto; padding: 24px 28px; border-right: 1px solid var(--border); }
+.controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.search-wrap { flex: 1; min-width: 200px; position: relative; }
+.search-wrap input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px 10px 38px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; }
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap::before { content: '🔍'; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; pointer-events: none; }
+select { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; cursor: pointer; transition: border-color 0.2s; }
+select:focus { border-color: var(--accent); }
+.set-tabs { display: flex; gap: 6px; margin-bottom: 20px; flex-wrap: wrap; }
+.set-tab { font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; transition: all 0.15s; letter-spacing: 0.5px; }
+.set-tab:hover { color: var(--text); border-color: var(--muted); }
+.set-tab.active { background: var(--accent); color: #0f0e17; border-color: var(--accent); }
+.results-info { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr)); gap: 14px; }
+.card-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s; position: relative; }
+.card-item:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); border-color: var(--accent); }
+.card-item.maxed { opacity: 0.4; pointer-events: none; }
+.card-item.in-deck { border-color: var(--accent); }
+.card-item.in-deck::after { content: attr(data-count); position: absolute; top: 6px; right: 6px; background: var(--accent); color: #0f0e17; font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 3px 6px; border-radius: 4px; min-width: 20px; text-align: center; }
+.card-img-wrap { width: 100%; aspect-ratio: 3/4.2; overflow: hidden; background: var(--surface2); display: flex; align-items: center; justify-content: center; }
+.card-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.2s; }
+.card-item:hover .card-img-wrap img { transform: scale(1.04); }
+.card-img-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+.card-info { padding: 8px 10px; border-top: 1px solid var(--border); }
+.card-name { font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 3px; }
+.card-type { font-size: 10px; color: var(--muted); }
+.card-set-badge { font-family: 'Press Start 2P', monospace; font-size: 6px; padding: 2px 5px; border-radius: 3px; background: var(--surface2); color: var(--muted); }
+.type-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+/* RIGHT: deck panel */
+.deck-panel { display: flex; flex-direction: column; background: var(--surface); overflow: hidden; }
+.deck-header { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
+.deck-name-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.deck-name-input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: 'Press Start 2P', monospace; font-size: 8px; outline: none; transition: border-color 0.2s; }
+.deck-name-input:focus { border-color: var(--accent); }
+.deck-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.stat-box { background: var(--surface2); border-radius: 6px; padding: 8px; text-align: center; }
+.stat-box .stat-val { font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--text); }
+.stat-box .stat-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.validation-strip { margin-top: 10px; padding: 8px 10px; border-radius: 6px; font-size: 11px; font-weight: 500; text-align: center; display: none; }
+.validation-strip.show { display: block; }
+.validation-strip.ok { background: rgba(102,187,106,0.15); color: #66bb6a; border: 1px solid rgba(102,187,106,0.3); }
+.validation-strip.warn { background: rgba(224,92,92,0.15); color: var(--accent2); border: 1px solid rgba(224,92,92,0.3); }
+.deck-list { flex: 1; overflow-y: auto; padding: 12px 16px; }
+.deck-group { margin-bottom: 16px; }
+.deck-group-label { font-family: 'Press Start 2P', monospace; font-size: 7px; color: var(--muted); letter-spacing: 1px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.deck-card-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.deck-card-img { width: 32px; height: 45px; border-radius: 4px; object-fit: cover; flex-shrink: 0; background: var(--surface2); }
+.deck-card-name { flex: 1; font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qty-ctrl { display: flex; align-items: center; gap: 4px; }
+.qty-btn { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.1s; flex-shrink: 0; }
+.qty-btn:hover { border-color: var(--accent); color: var(--accent); }
+.qty-num { font-family: 'Press Start 2P', monospace; font-size: 9px; width: 14px; text-align: center; color: var(--accent); }
+.deck-actions { padding: 14px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; }
+.deck-actions .btn { flex: 1; text-align: center; }
+.empty-deck { text-align: center; padding: 40px 20px; color: var(--muted); }
+.empty-deck .poke-emoji { font-size: 40px; margin-bottom: 12px; }
+.empty-deck p { font-family: 'Press Start 2P', monospace; font-size: 8px; line-height: 1.8; }
+.loading { text-align: center; padding: 60px 20px; color: var(--muted); }
+.loading .spinner { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--accent); animation: blink 0.8s step-end infinite; display: block; margin-bottom: 12px; }
+@keyframes blink { 50% { opacity: 0; } }
+.error-msg { text-align: center; padding: 40px 20px; color: var(--accent2); font-size: 13px; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--accent); color: #0f0e17; font-family: 'Press Start 2P', monospace; font-size: 8px; padding: 12px 20px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 1000; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); white-space: nowrap; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--accent2); color: #fff; }
+/* Deck management modal */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: none; align-items: center; justify-content: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 400px; max-width: 90vw; }
+.modal h2 { font-family: 'Press Start 2P', monospace; font-size: 10px; color: var(--accent); margin-bottom: 20px; }
+.saved-deck-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; max-height: 280px; overflow-y: auto; }
+.saved-deck-item { display: flex; align-items: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; gap: 10px; }
+.saved-deck-item .d-name { flex:1; font-weight: 600; font-size: 13px; }
+.saved-deck-item .d-count { font-size: 11px; color: var(--muted); }
+.saved-deck-item .d-load { font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 5px 8px; background: var(--accent); color: #0f0e17; border: none; border-radius: 4px; cursor: pointer; }
+.saved-deck-item .d-del { font-family: 'Press Start 2P', monospace; font-size: 7px; padding: 5px 8px; background: transparent; color: var(--accent2); border: 1px solid var(--accent2); border-radius: 4px; cursor: pointer; }
+.modal-close { width: 100%; }
+.no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+.card-grid { display: block; }
+.card-grid-inner { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr)); gap: 14px; margin-bottom: 8px; }
+.grid-section-header { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--accent); letter-spacing: 1px; padding: 18px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+.grid-type-header { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 0 8px; display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.grid-section-count { font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+/* scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
+  .deck-panel { max-height: 40vh; }
+}
 </style>
 </head>
 <body>
@@ -639,8 +133,7 @@
   <h1>POKÉMON TCG<br><span>DECK BUILDER</span></h1>
   <div class="header-right">
     <div class="deck-summary" id="deck-summary">
-      <strong>0 / 60</strong>
-      cards
+      <strong>0 / 60</strong> cards
     </div>
     <button class="btn btn-ghost" onclick="openDecksModal()">MY DECKS</button>
     <button class="btn btn-primary" onclick="saveDeck()">SAVE DECK</button>
@@ -657,7 +150,6 @@
       <button class="set-tab" data-set="base2">JUNGLE</button>
       <button class="set-tab" data-set="base3">FOSSIL</button>
     </div>
-
     <div class="controls">
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search cards..." oninput="filterCards()">
@@ -668,9 +160,7 @@
         <option value="Trainer">Trainer</option>
         <option value="Energy">Energy</option>
       </select>
-
     </div>
-
     <div class="results-info" id="results-info"></div>
     <div class="card-grid" id="card-grid">
       <div class="loading">
@@ -693,14 +183,12 @@
       </div>
       <div class="validation-strip" id="validation-strip"></div>
     </div>
-
     <div class="deck-list" id="deck-list">
       <div class="empty-deck">
         <div class="poke-emoji">🎴</div>
         <p>CLICK CARDS<br>TO ADD THEM<br>TO YOUR DECK</p>
       </div>
     </div>
-
     <div class="deck-actions">
       <button class="btn btn-ghost" onclick="clearDeck()">CLEAR</button>
       <button class="btn btn-primary" onclick="validateDeck(true)">VALIDATE</button>
@@ -723,7 +211,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
-// ─── FIREBASE ─────────────────────────────────────────────────
+// ─── FIREBASE ───────────────────────────────────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
   authDomain: "p-tcg-a6b2c.firebaseapp.com",
@@ -736,17 +224,16 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ─── STATE ────────────────────────────────────────────────────
+// ─── STATE ──────────────────────────────────────────────────────────────────
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
 const MAX_COPIES = 4;
 const MAX_DECK = 60;
-
-let allCards = [];       // all fetched cards
-let filteredCards = [];  // after search/filter
-let deck = {};           // { cardId: { card, qty } }
+let allCards = [];
+let filteredCards = [];
+let deck = {};
 let activeSet = '';
 
-// ─── FETCH ────────────────────────────────────────────────────
+// ─── FETCH ──────────────────────────────────────────────────────────────────
 async function fetchAllCards() {
   const grid = document.getElementById('card-grid');
   try {
@@ -759,10 +246,13 @@ async function fetchAllCards() {
   }
 }
 
-// ─── FILTER / RENDER ──────────────────────────────────────────
+// ─── FILTER / RENDER ────────────────────────────────────────────────────────
 const TYPE_ORDER = ['Fire','Water','Grass','Lightning','Psychic','Fighting','Colorless','Darkness','Metal'];
-const TYPE_LABELS = { Fire:'🔥 Fire', Water:'💧 Water', Grass:'🌿 Grass', Lightning:'⚡ Lightning',
-  Psychic:'🔮 Psychic', Fighting:'👊 Fighting', Colorless:'⭐ Colorless', Darkness:'🌑 Darkness', Metal:'⚙️ Metal' };
+const TYPE_LABELS = {
+  Fire:'🔥 Fire', Water:'💧 Water', Grass:'🌿 Grass', Lightning:'⚡ Lightning',
+  Psychic:'🔮 Psychic', Fighting:'👊 Fighting', Colorless:'⭐ Colorless',
+  Darkness:'🌑 Darkness', Metal:'⚙️ Metal'
+};
 
 function cardEnergyType(c) {
   return (c.types && c.types[0]) ? c.types[0] : 'Colorless';
@@ -771,14 +261,12 @@ function cardEnergyType(c) {
 function filterCards() {
   const q = document.getElementById('search').value.toLowerCase();
   const typeF = document.getElementById('type-filter').value;
-
   filteredCards = allCards.filter(c => {
     const matchSet = !activeSet || c.set.id === activeSet;
     const matchQ = !q || c.name.toLowerCase().includes(q);
     const matchType = !typeF || c.supertype === typeF;
     return matchSet && matchQ && matchType;
   });
-
   filteredCards.sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('results-info').textContent = `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''}`;
   renderGrid();
@@ -787,9 +275,9 @@ function filterCards() {
 function typeColor(types) {
   const t = types && types[0] ? types[0].toLowerCase() : '';
   const map = {
-    fire:'#ff6b35', water:'#4fc3f7', grass:'#66bb6a',
-    lightning:'#ffd54f', psychic:'#ce93d8', fighting:'#a1887f',
-    colorless:'#90a4ae', darkness:'#7986cb', metal:'#b0bec5',
+    fire:'#ff6b35', water:'#4fc3f7', grass:'#66bb6a', lightning:'#ffd54f',
+    psychic:'#ce93d8', fighting:'#a1887f', colorless:'#90a4ae',
+    darkness:'#7986cb', metal:'#b0bec5',
   };
   return map[t] || '#90a4ae';
 }
@@ -808,10 +296,7 @@ function cardHTML(c) {
   const deckFull = deckTotal() >= MAX_DECK;
   const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
   const imgSrc = c.images?.small || '';
-  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}"
-       data-count="${qty}"
-       onclick="addCard('${c.id}')"
-       title="${c.name} — click to add">
+  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-count="${qty}" onclick="addCard('${c.id}')" title="${c.name} — click to add">
     <div class="card-img-wrap">
       ${imgSrc
         ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">`
@@ -836,14 +321,11 @@ function renderGrid() {
     grid.innerHTML = `<div class="error-msg" style="grid-column:1/-1;padding:40px">No cards match your search.</div>`;
     return;
   }
-
-  const pokemon   = filteredCards.filter(c => c.supertype === 'Pokémon');
-  const trainers  = filteredCards.filter(c => c.supertype === 'Trainer');
-  const energies  = filteredCards.filter(c => c.supertype === 'Energy');
-
+  const pokemon = filteredCards.filter(c => c.supertype === 'Pokémon');
+  const trainers = filteredCards.filter(c => c.supertype === 'Trainer');
+  const energies = filteredCards.filter(c => c.supertype === 'Energy');
   let html = '';
 
-  // Pokémon grouped by energy type
   if (pokemon.length) {
     html += sectionHeader('Pokémon', pokemon.length);
     const byType = {};
@@ -857,40 +339,34 @@ function renderGrid() {
       html += typeGroupHeader(t, typeColor([t]), byType[t].length);
       html += `<div class="card-grid-inner">` + byType[t].map(cardHTML).join('') + `</div>`;
     }
-    // Any unexpected types
     Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)).forEach(t => {
       html += typeGroupHeader(t, typeColor([t]), byType[t].length);
       html += `<div class="card-grid-inner">` + byType[t].map(cardHTML).join('') + `</div>`;
     });
   }
-
-  // Trainers
   if (trainers.length) {
     html += sectionHeader('Trainers', trainers.length);
     html += `<div class="card-grid-inner">` + trainers.map(cardHTML).join('') + `</div>`;
   }
-
-  // Energy
   if (energies.length) {
     html += sectionHeader('Energy', energies.length);
     html += `<div class="card-grid-inner">` + energies.map(cardHTML).join('') + `</div>`;
   }
-
   grid.innerHTML = html;
 }
 
 function sectionHeader(label, count) {
   return `<div class="grid-section-header">${label} <span class="grid-section-count">${count}</span></div>`;
 }
+
 function typeGroupHeader(type, color, count) {
   return `<div class="grid-type-header">
     <span class="type-dot" style="background:${color};width:10px;height:10px;display:inline-block;border-radius:50%;margin-right:6px;vertical-align:middle"></span>
-    ${TYPE_LABELS[type] || type}
-    <span class="grid-section-count">${count}</span>
+    ${TYPE_LABELS[type] || type} <span class="grid-section-count">${count}</span>
   </div>`;
 }
 
-// ─── DECK OPS ─────────────────────────────────────────────────
+// ─── DECK OPS ───────────────────────────────────────────────────────────────
 function deckTotal() {
   return Object.values(deck).reduce((s, v) => s + v.qty, 0);
 }
@@ -898,18 +374,13 @@ function deckTotal() {
 function addCard(id) {
   const card = allCards.find(c => c.id === id);
   if (!card) return;
-
   const isEnergy = card.supertype === 'Energy';
   const existing = deck[id];
   const qty = existing ? existing.qty : 0;
-
   if (!isEnergy && qty >= MAX_COPIES) { showToast('Max 4 copies allowed!', true); return; }
   if (deckTotal() >= MAX_DECK) { showToast('Deck is full! (60 cards)', true); return; }
-
   deck[id] = { card, qty: qty + 1 };
-  renderDeck();
-  renderGrid();
-  validateDeck(false);
+  renderDeck(); renderGrid(); validateDeck(false);
 }
 
 function changeQty(id, delta) {
@@ -917,62 +388,47 @@ function changeQty(id, delta) {
   const card = deck[id].card;
   const isEnergy = card.supertype === 'Energy';
   const newQty = deck[id].qty + delta;
-
   if (delta > 0) {
     if (!isEnergy && newQty > MAX_COPIES) { showToast('Max 4 copies!', true); return; }
     if (deckTotal() >= MAX_DECK) { showToast('Deck full!', true); return; }
   }
-
-  if (newQty <= 0) {
-    delete deck[id];
-  } else {
-    deck[id].qty = newQty;
-  }
-  renderDeck();
-  renderGrid();
-  validateDeck(false);
+  if (newQty <= 0) { delete deck[id]; }
+  else { deck[id].qty = newQty; }
+  renderDeck(); renderGrid(); validateDeck(false);
 }
 
 function clearDeck() {
   if (!Object.keys(deck).length) return;
   deck = {};
-  renderDeck();
-  renderGrid();
-  updateHeader();
+  renderDeck(); renderGrid(); updateHeader();
   document.getElementById('validation-strip').className = 'validation-strip';
 }
 
-// ─── RENDER DECK ──────────────────────────────────────────────
+// ─── RENDER DECK ────────────────────────────────────────────────────────────
 function renderDeck() {
   const list = document.getElementById('deck-list');
   const entries = Object.values(deck);
-
   if (!entries.length) {
     list.innerHTML = `<div class="empty-deck"><div class="poke-emoji">🎴</div><p>CLICK CARDS<br>TO ADD THEM<br>TO YOUR DECK</p></div>`;
-    updateHeader();
-    updateStats(0,0,0);
-    return;
+    updateHeader(); updateStats(0,0,0); return;
   }
-
   const groups = { 'Pokémon': [], 'Trainer': [], 'Energy': [] };
   entries.forEach(e => {
     const g = e.card.supertype;
-    if (groups[g]) groups[g].push(e);
-    else groups['Trainer'].push(e);
+    if (groups[g]) groups[g].push(e); else groups['Trainer'].push(e);
   });
-
   Object.values(groups).forEach(g => g.sort((a,b) => a.card.name.localeCompare(b.card.name)));
-
   let html = '';
   for (const [label, cards] of Object.entries(groups)) {
     if (!cards.length) continue;
     const groupTotal = cards.reduce((s,c) => s+c.qty, 0);
-    html += `<div class="deck-group">
-      <div class="deck-group-label">${label.toUpperCase()} (${groupTotal})</div>`;
+    html += `<div class="deck-group"><div class="deck-group-label">${label.toUpperCase()} (${groupTotal})</div>`;
     cards.forEach(({card, qty}) => {
       const img = card.images?.small;
       html += `<div class="deck-card-row">
-        ${img ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy">` : `<div class="deck-card-img" style="display:flex;align-items:center;justify-content:center;font-size:18px;">${typeEmoji(card.supertype)}</div>`}
+        ${img
+          ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy">`
+          : `<div class="deck-card-img" style="display:flex;align-items:center;justify-content:center;font-size:18px;">${typeEmoji(card.supertype)}</div>`}
         <span class="deck-card-name">${card.name}</span>
         <div class="qty-ctrl">
           <button class="qty-btn" onclick="changeQty('${card.id}', -1)">−</button>
@@ -984,7 +440,6 @@ function renderDeck() {
     html += '</div>';
   }
   list.innerHTML = html;
-
   const poke = groups['Pokémon'].reduce((s,c)=>s+c.qty,0);
   const trainer = groups['Trainer'].reduce((s,c)=>s+c.qty,0);
   const energy = groups['Energy'].reduce((s,c)=>s+c.qty,0);
@@ -1005,18 +460,15 @@ function updateHeader() {
   summary.className = 'deck-summary' + (total >= MAX_DECK ? ' full' : '');
 }
 
-// ─── VALIDATE ─────────────────────────────────────────────────
+// ─── VALIDATE ───────────────────────────────────────────────────────────────
 function validateDeck(showResult) {
   const total = deckTotal();
   const issues = [];
-
   if (total < MAX_DECK) issues.push(`Need ${MAX_DECK - total} more card${MAX_DECK - total !== 1 ? 's' : ''}`);
   if (total > MAX_DECK) issues.push(`${total - MAX_DECK} cards over limit`);
-
   const pokemon = Object.values(deck).filter(e => e.card.supertype === 'Pokémon');
   const basics = pokemon.filter(e => e.card.subtypes && e.card.subtypes.includes('Basic'));
   if (!basics.length) issues.push('Need at least 1 Basic Pokémon');
-
   const strip = document.getElementById('validation-strip');
   if (showResult || total > 0) {
     if (!issues.length) {
@@ -1030,19 +482,31 @@ function validateDeck(showResult) {
   return issues.length === 0;
 }
 
-// ─── SAVE / LOAD (Firebase) ───────────────────────────────────
+// ─── SAVE / LOAD (Firebase) ──────────────────────────────────────────────────
 async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim() || 'My Deck';
   if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
   showToast('Saving...');
+
   const deckData = {
     name,
     savedAt: Date.now(),
     deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [
-      id, { cardId: id, qty, name: card.name, supertype: card.supertype, img: card.images?.small || '' }
+      id, {
+        cardId: id,
+        qty,
+        name: card.name,
+        supertype: card.supertype,
+        img: card.images?.small || '',
+        // ── PATCH: extra fields needed by pokemon-game.html ──
+        subtypes: card.subtypes || [],
+        hp: card.hp || '',
+        attacks: card.attacks || [],
+        types: card.types || []
+      }
     ]))
   };
-  // Firebase keys can't contain . so replace with _
+
   const key = name.replace(/[.#$[\]]/g, '_');
   await db.ref(`decks/${key}`).set(deckData);
   showToast(`"${name}" saved!`);
@@ -1086,7 +550,6 @@ async function loadDeck(encodedName) {
   const snap = await db.ref(`decks/${key}`).once('value');
   const d = snap.val();
   if (!d) { showToast('Deck not found', true); return; }
-
   deck = {};
   Object.values(d.deck).forEach(entry => {
     const full = allCards.find(c => c.id === entry.cardId);
@@ -1095,15 +558,21 @@ async function loadDeck(encodedName) {
     } else {
       deck[entry.cardId] = {
         qty: entry.qty,
-        card: { id: entry.cardId, name: entry.name, supertype: entry.supertype, images: { small: entry.img }, subtypes: [] }
+        card: {
+          id: entry.cardId,
+          name: entry.name,
+          supertype: entry.supertype,
+          images: { small: entry.img },
+          subtypes: entry.subtypes || [],
+          hp: entry.hp || '',
+          attacks: entry.attacks || [],
+          types: entry.types || []
+        }
       };
     }
   });
-
   document.getElementById('deck-name').value = name;
-  renderDeck();
-  renderGrid();
-  validateDeck(false);
+  renderDeck(); renderGrid(); validateDeck(false);
   closeDecksModal();
   showToast(`"${name}" loaded!`);
 }
@@ -1116,7 +585,7 @@ async function deleteDeck(encodedName) {
   showToast(`"${name}" deleted.`);
 }
 
-// ─── UI HELPERS ───────────────────────────────────────────────
+// ─── UI HELPERS ──────────────────────────────────────────────────────────────
 let toastTimer;
 function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
@@ -1141,7 +610,7 @@ document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
 });
 
-// ─── INIT ─────────────────────────────────────────────────────
+// ─── INIT ────────────────────────────────────────────────────────────────────
 fetchAllCards();
 </script>
 </body>
