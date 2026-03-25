@@ -737,7 +737,6 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
 // ─── STATE ────────────────────────────────────────────────────
-const SETS = ['base1', 'base2', 'base3'];
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
 const MAX_COPIES = 4;
 const MAX_DECK = 60;
@@ -751,23 +750,12 @@ let activeSet = '';
 async function fetchAllCards() {
   const grid = document.getElementById('card-grid');
   try {
-    const promises = SETS.map(setId =>
-      fetch(`https://api.pokemontcg.io/v2/cards?q=set.id:${setId}&pageSize=250&orderBy=number`)
-        .then(r => r.json())
-        .then(d => d.data || [])
-    );
-    const results = await Promise.all(promises);
-    const raw = results.flat();
-    // Dedup: keep first card per (name + supertype) — non-holo comes first by set number
-    const seen = new Map();
-    allCards = [];
-    for (const c of raw) {
-      const key = c.name.toLowerCase() + '|' + c.supertype + '|' + c.set.id;
-      if (!seen.has(key)) { seen.set(key, true); allCards.push(c); }
-    }
+    const res = await fetch('cards.json');
+    if (!res.ok) throw new Error('cards.json not found');
+    allCards = await res.json();
     filterCards();
-  } catch (e) {
-    grid.innerHTML = `<div class="error-msg">⚠️ Could not load cards.<br>Check your connection and reload.</div>`;
+  } catch(e) {
+    grid.innerHTML = `<div class="error-msg">⚠️ Could not load cards.json.<br>Make sure it's in your repo.</div>`;
   }
 }
 
