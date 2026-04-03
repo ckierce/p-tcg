@@ -1478,7 +1478,7 @@ function renderHands() {
       const imgSrc = card.images?.small || '';
       const largeSrc = card.images?.large || imgSrc;
       return `<div class="hand-card" id="hand-card-1-${i}"
-        onclick="selectHandCard(1,${i})"
+        onclick="event.stopPropagation();selectHandCard(1,${i})"
         onmouseover="showCardDetail(event,'${largeSrc}')"
         onmouseout="hideCardDetail()">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
@@ -1518,7 +1518,7 @@ function renderSidebarP2Hand() {
       const largeSrc = faceDown ? '' : (card.images?.large || imgSrc);
       return `<div class="hand-card ${faceDown ? 'face-down' : ''}"
         id="hand-card-2-${i}"
-        ${faceDown ? '' : `onclick="selectHandCard(2,${i})"`}
+        ${faceDown ? '' : `onclick="event.stopPropagation();selectHandCard(2,${i})"`}
         ${faceDown ? '' : `onmouseover="showCardDetail(event,'${largeSrc}')"`}
         onmouseout="hideCardDetail()">
         <img class="hand-card-img" src="${imgSrc}" alt="${faceDown ? '?' : card.name}"
