@@ -596,6 +596,12 @@ html, body {
   color: var(--muted);
 }
 
+/* Prevent child elements swallowing clicks on hand cards */
+.hand-card img,
+.hand-card-info,
+.hand-card-name,
+.hand-card-sub { pointer-events: none; }
+
 /* ── SIDEBAR ──────────────────────────────────────────────── */
 #sidebar {
   display: flex;
