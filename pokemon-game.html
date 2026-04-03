@@ -405,7 +405,8 @@ html, body {
   flex-shrink: 0;
 }
 .zone-slot:hover { border-color: var(--border2); }
-.zone-slot.highlight { border-color: var(--accent); box-shadow: 0 0 6px rgba(232,200,74,.3); }
+.zone-slot.highlight,
+.opp-bench-slot.highlight { border-color: var(--accent) !important; box-shadow: 0 0 6px rgba(232,200,74,.3); opacity: 1 !important; }
 .zone-slot.occupied { border-color: var(--border2); }
 .zone-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
 
@@ -2599,6 +2600,7 @@ function renderField(player) {
     for (let i = 0; i < 5; i++) {
       const slotEl = document.getElementById(`bench-p2-${i}`);
       if (!slotEl) continue;
+      const wasHighlighted = slotEl.classList.contains('highlight');
       slotEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
       const card = p.bench[i];
       if (card) {
@@ -2615,6 +2617,7 @@ function renderField(player) {
         slotEl.innerHTML = '';
         slotEl.classList.add('empty');
       }
+      if (wasHighlighted) slotEl.classList.add('highlight');
     }
     // Opponent discard
     const discardEl = document.getElementById('discard-p2');
