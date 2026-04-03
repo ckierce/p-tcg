@@ -441,6 +441,38 @@ html, body {
   font-size: 10px;
   z-index: 2;
 }
+
+/* Status colored borders */
+.zone-slot.status-asleep,
+.opp-active-slot.status-asleep,
+.opp-bench-slot.status-asleep    { border-color: #9b8fd4 !important; box-shadow: 0 0 5px rgba(155,143,212,.5); }
+.zone-slot.status-paralyzed,
+.opp-active-slot.status-paralyzed,
+.opp-bench-slot.status-paralyzed { border-color: #f5d84a !important; box-shadow: 0 0 5px rgba(245,216,74,.5); }
+.zone-slot.status-poisoned,
+.opp-active-slot.status-poisoned,
+.opp-bench-slot.status-poisoned  { border-color: #9c6fc6 !important; box-shadow: 0 0 5px rgba(156,111,198,.5); }
+.zone-slot.status-confused,
+.opp-active-slot.status-confused,
+.opp-bench-slot.status-confused  { border-color: #e98cc0 !important; box-shadow: 0 0 5px rgba(233,140,192,.5); }
+.zone-slot.status-burned,
+.opp-active-slot.status-burned,
+.opp-bench-slot.status-burned    { border-color: #e8683a !important; box-shadow: 0 0 5px rgba(232,104,58,.5); }
+
+/* Defender / PlusPower badge */
+.card-badge {
+  position: absolute; top: 2px; right: 2px;
+  font-size: 6px;
+  font-family: var(--font);
+  padding: 1px 3px;
+  border-radius: 2px;
+  z-index: 3;
+  line-height: 1.4;
+}
+.card-badge.defender  { background: rgba(91,156,246,.9); color: #fff; }
+.card-badge.pluspower { background: rgba(232,200,74,.9); color: #000; }
+  z-index: 2;
+}
 }
 
 /* Active Pokémon — larger, prominent, separated from bench */
@@ -800,6 +832,33 @@ html, body {
 }
 .modal-close-btn:hover { border-color: var(--text); color: var(--text); }
 
+/* Card picker grid */
+.picker-card {
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  cursor: pointer;
+  overflow: hidden;
+  position: relative;
+  transition: border-color .1s;
+}
+.picker-card:hover { border-color: var(--border2); }
+.picker-card.selected { border-color: var(--accent); box-shadow: 0 0 6px rgba(232,200,74,.4); }
+.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: cover; }
+.picker-card-name {
+  font-size: 5px; color: var(--muted);
+  padding: 2px 3px;
+  background: rgba(0,0,0,.5);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.picker-card .sel-badge {
+  position: absolute; top: 2px; right: 2px;
+  background: var(--accent); color: #000;
+  font-size: 7px; padding: 1px 3px; border-radius: 2px;
+  display: none;
+}
+.picker-card.selected .sel-badge { display: block; }
+
 /* ── CARD DETAIL HOVER ────────────────────────────────────── */
 #card-detail {
   display: none;
@@ -1117,6 +1176,19 @@ html, body {
     </div>
     <div id="saved-decks-list"></div>
     <button class="modal-close-btn" onclick="closeLoadModal()">CANCEL</button>
+  </div>
+</div>
+
+<!-- Card picker modal -->
+<div class="modal-overlay" id="card-picker-modal">
+  <div class="modal-box" style="width:460px;max-height:85vh">
+    <div class="modal-title" id="card-picker-title">Pick a card</div>
+    <div id="card-picker-subtitle" style="font-size:7px;color:var(--muted);text-align:center;margin-bottom:8px"></div>
+    <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:50vh;padding:4px"></div>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+      <button class="modal-close-btn" id="card-picker-confirm" onclick="confirmCardPick()" style="background:var(--accent);color:#000;border-color:var(--accent)">CONFIRM</button>
+      <button class="modal-close-btn" onclick="cancelCardPick()">CANCEL</button>
+    </div>
   </div>
 </div>
 
@@ -1631,11 +1703,12 @@ function playTrainer(player, handIdx) {
     [p.active, ...p.bench].forEach(c => {
       if (c && c.damage > 0) {
         c.damage = 0;
+        p.discard.push(...(c.attachedEnergy || []));
         c.attachedEnergy = [];
         healed.push(c.name);
       }
     });
-    addLog(`P${player} used Pokémon Center — healed all Pokémon (energy discarded): ${healed.join(', ') || 'none'}.`, true);
+    addLog(`P${player} used Pokémon Center — healed all Pokémon, discarded their energy: ${healed.join(', ') || 'none'}.`, true);
     renderAll(); return;
   }
 
@@ -1711,19 +1784,109 @@ function playTrainer(player, handIdx) {
     const energyInDeck = p.deck.filter(c => c.supertype === 'Energy' && !(/double colorless/i.test(c.name)));
     if (!energyInDeck.length) { showToast('No basic energy in deck!', true); return; }
     consume();
-    const found = energyInDeck[0];
-    const i = p.deck.findIndex(c => c === found);
-    p.hand.push(...p.deck.splice(i, 1));
-    p.deck = shuffle(p.deck);
-    addLog(`P${player} used Energy Search — found ${found.name} from deck.`, true);
-    renderAll(); return;
+    (async () => {
+      const picked = await openCardPicker({
+        title: 'Energy Search',
+        subtitle: 'Choose 1 basic energy from your deck',
+        cards: energyInDeck,
+        maxSelect: 1
+      });
+      if (!picked) { // cancelled — put card back
+        p.hand.push(card); p.discard.pop(); return;
+      }
+      const chosenCard = energyInDeck[picked[0]];
+      const deckIdx = p.deck.findIndex(c => c === chosenCard);
+      if (deckIdx !== -1) p.hand.push(...p.deck.splice(deckIdx, 1));
+      p.deck = shuffle(p.deck);
+      addLog(`P${player} used Energy Search — took ${chosenCard.name} from deck.`, true);
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Computer Search ───────────────────────────────
+  if (name === 'Computer Search') {
+    const otherCards = p.hand.filter((_, i) => i !== handIdx);
+    if (otherCards.length < 2) { showToast('Need at least 2 other cards in hand to use Computer Search!', true); return; }
+    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
+    // Don't consume yet — need to discard 2 first
+    (async () => {
+      // Step 1: pick 2 cards from hand to discard
+      const discardPicked = await openCardPicker({
+        title: 'Computer Search',
+        subtitle: 'Discard 2 cards from your hand',
+        cards: otherCards,
+        maxSelect: 2
+      });
+      if (!discardPicked || discardPicked.length < 2) {
+        showToast('Computer Search cancelled.'); return;
+      }
+      // Remove Computer Search from hand first
+      p.hand.splice(handIdx, 1);
+      p.discard.push(card);
+      // Discard the 2 chosen cards (indices are into otherCards)
+      const toDiscard = discardPicked.map(i => otherCards[i]);
+      toDiscard.forEach(dc => {
+        const hi = p.hand.findIndex(c => c === dc);
+        if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1));
+      });
+
+      // Step 2: pick any card from deck
+      const deckPicked = await openCardPicker({
+        title: 'Computer Search',
+        subtitle: 'Choose any card from your deck',
+        cards: p.deck,
+        maxSelect: 1
+      });
+      if (!deckPicked) {
+        addLog(`P${player} used Computer Search — discarded 2 cards but found nothing.`, true);
+        renderAll(); return;
+      }
+      const foundCard = p.deck[deckPicked[0]];
+      const deckIdx = p.deck.findIndex(c => c === foundCard);
+      if (deckIdx !== -1) p.hand.push(...p.deck.splice(deckIdx, 1));
+      p.deck = shuffle(p.deck);
+      addLog(`P${player} used Computer Search — discarded 2, found ${foundCard.name}.`, true);
+      renderAll();
+    })();
+    return;
   }
 
   // ── PlusPower ─────────────────────────────────────
   if (name === 'PlusPower') {
+    if (!p.active) { showToast('No Active Pokémon!', true); return; }
     consume();
-    G.plusPowerActive = (G.plusPowerActive || 0) + 10;
-    addLog(`P${player} played PlusPower — next attack does +10 damage.`, true);
+    p.active.plusPower = (p.active.plusPower || 0) + 10;
+    addLog(`P${player} attached PlusPower to ${p.active.name} (+10 damage next attack).`, true);
+    renderAll(); return;
+  }
+
+  // ── Defender ──────────────────────────────────────
+  if (name === 'Defender') {
+    if (!p.active) { showToast('No Active Pokémon!', true); return; }
+    consume();
+    p.active.defender = true;
+    addLog(`P${player} attached Defender to ${p.active.name} (-20 damage until end of opponent's next turn).`, true);
+    renderAll(); return;
+  }
+
+  // ── Clefairy Doll ─────────────────────────────────
+  if (name === 'Clefairy Doll') {
+    const benchFull = p.bench.every(s => s !== null);
+    if (benchFull) { showToast('Bench is full!', true); return; }
+    consume();
+    const doll = {
+      id: card.id, name: 'Clefairy Doll',
+      supertype: 'Pokémon', subtypes: ['Basic'],
+      hp: '10', attacks: [], attachedEnergy: [],
+      damage: 0, status: null,
+      images: card.images,
+      isDoll: true,         // no prize on KO, can't retreat, can't have status
+      canRetreat: false,
+    };
+    const freeSlot = p.bench.findIndex(s => s === null);
+    p.bench[freeSlot] = doll;
+    addLog(`P${player} played Clefairy Doll to the bench.`, true);
     renderAll(); return;
   }
 
@@ -1921,12 +2084,28 @@ function showFieldActionMenu(player, zone, benchIdx) {
 function attemptRetreat(player) {
   const p = G.players[player];
   if (!p.active) return;
+  if (p.active.canRetreat === false) { showToast(`${p.active.name} cannot retreat!`, true); return; }
   if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to retreat to!', true); return; }
+
+  const retreatCost = p.active.convertedRetreatCost || 0;
+  const attached = p.active.attachedEnergy || [];
+
+  if (attached.length < retreatCost) {
+    showToast(`Need ${retreatCost} energy to retreat — only ${attached.length} attached!`, true);
+    return;
+  }
+
+  // Discard exactly retreatCost energy cards (any type — retreat cost is always Colorless)
+  const discarded = p.active.attachedEnergy.splice(0, retreatCost);
+  p.discard.push(...discarded);
+  if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
+
+  // Swap active and first bench — energy stays on the card object automatically
   const idx = p.bench.findIndex(s => s !== null);
   const old = p.active;
   p.active = p.bench[idx];
   p.bench[idx] = old;
-  addLog(`Player ${player} retreated ${old.name} and sent out ${p.active.name}.`);
+  addLog(`Player ${player} retreated ${old.name} → sent out ${p.active.name}.`);
   renderAll();
 }
 
@@ -2092,21 +2271,54 @@ async function performAttack(player, atk) {
   // Apply damage
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
-  // PlusPower bonus
-  if (dmg > 0 && G.plusPowerActive) {
-    dmg += G.plusPowerActive;
-    addLog(`PlusPower adds ${G.plusPowerActive} damage!`);
-    G.plusPowerActive = 0;
-  }
+
   if (dmg > 0) {
+    // PlusPower bonus (card attached to attacker)
+    if (myActive?.plusPower) {
+      dmg += myActive.plusPower;
+      addLog(`PlusPower adds ${myActive.plusPower} damage!`);
+      myActive.plusPower = 0;
+    }
+    // Also check global plusPowerActive for backward compat
+    if (G.plusPowerActive) {
+      dmg += G.plusPowerActive;
+      addLog(`PlusPower adds ${G.plusPowerActive} damage!`);
+      G.plusPowerActive = 0;
+    }
+
+    // Weakness — attacker's type vs defender's weakness (×2)
+    const attackerTypes = myActive?.types || [];
+    const weaknesses = oppActive.weaknesses || [];
+    const resistances = oppActive.resistances || [];
+    for (const w of weaknesses) {
+      if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
+        dmg *= 2;
+        addLog(`Weakness! Damage doubled to ${dmg}.`);
+        break;
+      }
+    }
+    // Resistance — subtract 30, min 0
+    for (const r of resistances) {
+      if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
+        dmg = Math.max(0, dmg - 30);
+        addLog(`Resistance! Damage reduced to ${dmg}.`);
+        break;
+      }
+    }
+    // Defender reduction — on the target, after weakness/resistance
+    if (oppActive.defender) {
+      dmg = Math.max(0, dmg - 20);
+      addLog(`Defender reduces damage to ${dmg}.`);
+    }
+
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
     const koResult = checkKO(player, opp, oppActive, false);
     if (koResult) {
       renderAll();
-      if (!G.started || koResult === 'win') return; // game over
-      if (koResult === 'promote') return; // waiting for bench selection — endTurn deferred
+      if (!G.started || koResult === 'win') return;
+      if (koResult === 'promote') return;
       if (G.started) endTurn();
       return;
     }
@@ -2149,6 +2361,26 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     const prizeWinner = isSelf ? defendingPlayer : attackingPlayer;
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
+
+    // Clefairy Doll KO — no prize, no win check
+    if (card.isDoll) {
+      addLog(`Clefairy Doll was discarded — no prize awarded.`);
+      const dollBench = G.players[owner].bench.filter(s => s !== null);
+      if (dollBench.length === 1) {
+        const idx = G.players[owner].bench.findIndex(s => s !== null);
+        G.players[owner].active = G.players[owner].bench[idx];
+        G.players[owner].bench[idx] = null;
+        addLog(`${G.players[owner].active.name} was automatically moved to Active!`, true);
+      } else if (dollBench.length > 1) {
+        G.phase = 'PROMOTE'; G.pendingPromotion = owner;
+        for (let i = 0; i < 5; i++) {
+          if (G.players[owner].bench[i]) document.getElementById(`bench-p${owner}-${i}`)?.classList.add('highlight');
+        }
+        setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
+        return 'promote';
+      }
+      return 'ko';
+    }
 
     // Award a prize card to the attacker
     const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
@@ -2255,7 +2487,17 @@ function endTurn() {
     }
   }
 
-  G.turn = prev === 1 ? 2 : 1;
+  // Discard Defender from the new active player's pokemon (end of their opponent's turn)
+  const newPlayer = prev === 1 ? 2 : 1;
+  const newActive = G.players[newPlayer].active;
+  if (newActive?.defender) {
+    newActive.defender = false;
+    addLog(`Defender on ${newActive.name} has expired.`);
+  }
+  // Also clear PlusPower from active (it was already applied or expires)
+  if (G.players[prev].active?.plusPower) {
+    G.players[prev].active.plusPower = 0;
+  }
   G.turnNum++;
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
@@ -2273,16 +2515,15 @@ function endTurn() {
   }
 
   // Sleep check: flip coin at start of new player's turn
-  const newActive = G.players[G.turn].active;
-  if (newActive?.status === 'asleep') {
-    // Schedule the coin flip after render so the board updates first
+  const sleepTarget = G.players[G.turn].active;
+  if (sleepTarget?.status === 'asleep') {
     setTimeout(async () => {
-      const wakeUp = await flipCoin(`${newActive.name} is Asleep!\nHeads = wake up, Tails = stay asleep`);
+      const wakeUp = await flipCoin(`${sleepTarget.name} is Asleep!\nHeads = wake up, Tails = stay asleep`);
       if (wakeUp) {
-        newActive.status = null;
-        addLog(`${newActive.name} woke up!`, true);
+        sleepTarget.status = null;
+        addLog(`${sleepTarget.name} woke up!`, true);
       } else {
-        addLog(`${newActive.name} is still Asleep.`);
+        addLog(`${sleepTarget.name} is still Asleep.`);
       }
       renderAll();
     }, 400);
@@ -2342,16 +2583,22 @@ function renderField(player) {
   } else {
     // Opponent active
     const activeEl = document.getElementById('active-p2');
+    activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
       const card = p.active;
+      if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
       const energyPips = (card.attachedEnergy || []).map(e =>
         `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
       ).join('');
       const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
       const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+      const badges = [
+        card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
+        card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
+      ].join('');
       activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
         <div class="slot-label">${card.name.substring(0,8)}</div>
-        <div class="energy-overlay">${energyPips}</div>${dmg}${status}`;
+        <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
     }
@@ -2359,11 +2606,17 @@ function renderField(player) {
     for (let i = 0; i < 5; i++) {
       const slotEl = document.getElementById(`bench-p2-${i}`);
       if (!slotEl) continue;
+      slotEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
       const card = p.bench[i];
       if (card) {
+        if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
         const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
-        slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}`;
+        const badges = [
+          card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
+          card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
+        ].join('');
+        slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}${badges}`;
         slotEl.classList.remove('empty');
       } else {
         slotEl.innerHTML = '';
@@ -2383,24 +2636,32 @@ function renderField(player) {
 
 function renderSlotP1(el, card) {
   if (!el) return;
+  // Clear status classes
+  el.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
   if (!card) {
     el.classList.remove('occupied');
     el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
     return;
   }
   el.classList.add('occupied');
+  if (card.status) el.classList.add(`status-${card.status.replace('-toxic','')}`);
+
   const energyPips = (card.attachedEnergy || []).map(e => {
     const col = energyColor(e.name);
     return `<div class="energy-pip" style="background:${col}"></div>`;
   }).join('');
   const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+  const badges = [
+    card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
+    card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
+  ].join('');
   const imgSrc = card.images?.small || '';
   const largeSrc = card.images?.large || imgSrc;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
     onmouseover="showCardDetail(event,'${largeSrc}')"
     onmouseout="hideCardDetail()">
-    <div class="energy-overlay">${energyPips}</div>${dmg}${status}`;
+    <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
 }
 
 function renderHands() {
@@ -2636,6 +2897,9 @@ document.addEventListener('click', e => {
 document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();
 });
+document.getElementById('card-picker-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) cancelCardPick();
+});
 
 // ══════════════════════════════════════════════════
 // TOAST
@@ -2699,6 +2963,10 @@ function enrichCard(card) {
     rules: full.rules || [],
     attacks: card.attacks?.length ? card.attacks : (full.attacks || []),
     hp: card.hp || full.hp || '0',
+    weaknesses: full.weaknesses || [],
+    resistances: full.resistances || [],
+    retreatCost: full.retreatCost || [],
+    convertedRetreatCost: full.convertedRetreatCost || 0,
   };
 }
 
@@ -2717,6 +2985,81 @@ function showTurnFlash(player) {
   void inner.offsetWidth;
   inner.style.animation = '';
   setTimeout(() => el.classList.remove('show'), 1300);
+}
+
+// ══════════════════════════════════════════════════
+// CARD PICKER MODAL
+// ══════════════════════════════════════════════════
+let _cardPickerResolve = null;
+let _cardPickerSelected = [];
+let _cardPickerMax = 1;
+
+function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
+  return new Promise(resolve => {
+    _cardPickerResolve = resolve;
+    _cardPickerSelected = [];
+    _cardPickerMax = maxSelect;
+
+    document.getElementById('card-picker-title').textContent = title;
+    document.getElementById('card-picker-subtitle').textContent = subtitle || '';
+    document.getElementById('card-picker-confirm').disabled = maxSelect > 0;
+
+    const grid = document.getElementById('card-picker-grid');
+    grid.innerHTML = cards.map((card, i) => `
+      <div class="picker-card" id="picker-card-${i}"
+        onclick="event.stopPropagation();togglePickerCard(${i})"
+        onmouseover="showCardDetail(event,'${card.images?.large || card.images?.small || ''}')"
+        onmouseout="hideCardDetail()">
+        <img src="${card.images?.small || ''}" alt="${card.name}">
+        <div class="picker-card-name">${card.name}</div>
+        <div class="sel-badge">✓</div>
+      </div>
+    `).join('');
+
+    document.getElementById('card-picker-modal').classList.add('show');
+  });
+}
+
+function togglePickerCard(idx) {
+  const el = document.getElementById(`picker-card-${idx}`);
+  const alreadySelected = _cardPickerSelected.includes(idx);
+
+  if (alreadySelected) {
+    _cardPickerSelected = _cardPickerSelected.filter(i => i !== idx);
+    el.classList.remove('selected');
+  } else {
+    if (_cardPickerSelected.length >= _cardPickerMax) {
+      // Deselect oldest if at max
+      const oldest = _cardPickerSelected.shift();
+      document.getElementById(`picker-card-${oldest}`)?.classList.remove('selected');
+    }
+    _cardPickerSelected.push(idx);
+    el.classList.add('selected');
+  }
+
+  const confirmBtn = document.getElementById('card-picker-confirm');
+  confirmBtn.disabled = _cardPickerSelected.length === 0;
+
+  // Update subtitle with selection count
+  const sub = document.getElementById('card-picker-subtitle');
+  if (_cardPickerMax > 1) {
+    sub.textContent = `Selected: ${_cardPickerSelected.length} / ${_cardPickerMax}`;
+  }
+}
+
+function confirmCardPick() {
+  if (_cardPickerSelected.length === 0) return;
+  document.getElementById('card-picker-modal').classList.remove('show');
+  hideCardDetail();
+  const result = [..._cardPickerSelected];
+  _cardPickerSelected = [];
+  if (_cardPickerResolve) { _cardPickerResolve(result); _cardPickerResolve = null; }
+}
+
+function cancelCardPick() {
+  document.getElementById('card-picker-modal').classList.remove('show');
+  hideCardDetail();
+  if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
 }
 
 // ══════════════════════════════════════════════════
