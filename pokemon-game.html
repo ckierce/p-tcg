@@ -1405,6 +1405,9 @@ function drawCard(player, auto = false) {
 // PLAY CARDS
 // ══════════════════════════════════════════════════
 function selectHandCard(player, handIdx) {
+  if (G.phase === 'PROMOTE') {
+    showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true); return;
+  }
   // During setup both players can act freely; otherwise must be active player's turn
   if (G.phase !== 'SETUP' && G.turn !== player) {
     showToast(`It's Player ${G.turn}'s turn!`, true); return;
@@ -1929,6 +1932,17 @@ function attemptRetreat(player) {
 
 function handleBenchClick(player, slotIdx) {
   const slot = G.players[player].bench[slotIdx];
+
+  // During PROMOTE phase — only the KO'd player can act, and only to pick a bench slot
+  if (G.phase === 'PROMOTE') {
+    if (G.pendingPromotion === player && slot) {
+      resolvePromotion(player, slotIdx);
+    } else if (G.pendingPromotion !== player) {
+      showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
+    }
+    return;
+  }
+
   if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
     playToBench(player, slotIdx); return;
   }
@@ -2066,8 +2080,10 @@ async function performAttack(player, atk) {
     if (!confusionHeads) {
       myActive.damage = (myActive.damage || 0) + 30;
       addLog(`${myActive.name} hurt itself for 30 damage in confusion! (${myActive.damage}/${myActive.hp} HP)`, true);
-      checkKO(player, opp, myActive, true);
+      const selfKoResult = checkKO(player, opp, myActive, true);
       renderAll();
+      if (!G.started || selfKoResult === 'win') return;
+      if (selfKoResult === 'promote') return;
       endTurn();
       return;
     }
@@ -2086,9 +2102,11 @@ async function performAttack(player, atk) {
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
-    const koOccurred = checkKO(player, opp, oppActive, false);
-    if (koOccurred) {
+    const koResult = checkKO(player, opp, oppActive, false);
+    if (koResult) {
       renderAll();
+      if (!G.started || koResult === 'win') return; // game over
+      if (koResult === 'promote') return; // waiting for bench selection — endTurn deferred
       if (G.started) endTurn();
       return;
     }
@@ -2132,15 +2150,6 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
 
-    // Auto-promote if only one bench pokemon left
-    const benchPokemon = G.players[owner].bench.map((c, i) => ({ c, i })).filter(({ c }) => c !== null);
-    if (benchPokemon.length === 1) {
-      const { c, i } = benchPokemon[0];
-      G.players[owner].active = c;
-      G.players[owner].bench[i] = null;
-      addLog(`${c.name} was automatically moved to Active!`, true);
-    }
-
     // Award a prize card to the attacker
     const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
     if (prizeIdx !== -1) {
@@ -2149,27 +2158,63 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       G.players[prizeWinner].prizes[prizeIdx] = null;
       const remaining = G.players[prizeWinner].prizes.filter(p => p).length;
       addLog(`P${prizeWinner} took a prize! (${remaining} remaining)`, true);
-      // Win by taking all prizes
       if (remaining === 0) {
         addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
         showToast(`Player ${prizeWinner} wins!`, false, 'ok');
         G.started = false;
-        return true;
+        return 'win';
       }
     }
 
-    // Win by knocking out opponent's last Pokémon (no active, no bench)
-    const hasNoBench = G.players[owner].bench.every(s => s === null);
-    if (!G.players[owner].active && hasNoBench) {
+    // Win by knocking out opponent's last Pokémon
+    const benchLeft = G.players[owner].bench.filter(s => s !== null);
+    if (benchLeft.length === 0) {
       addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
       showToast(`Player ${prizeWinner} wins!`, false, 'ok');
       G.started = false;
-      return true;
+      return 'win';
     }
 
-    return true;
+    // Auto-promote if exactly one bench pokemon remains
+    if (benchLeft.length === 1) {
+      const idx = G.players[owner].bench.findIndex(s => s !== null);
+      G.players[owner].active = G.players[owner].bench[idx];
+      G.players[owner].bench[idx] = null;
+      addLog(`${G.players[owner].active.name} was automatically moved to Active!`, true);
+      return 'ko';
+    }
+
+    // Multiple bench pokemon — pause for promotion choice
+    G.phase = 'PROMOTE';
+    G.pendingPromotion = owner;
+    // Highlight available bench slots for the KO'd player
+    for (let i = 0; i < 5; i++) {
+      if (G.players[owner].bench[i]) {
+        document.getElementById(`bench-p${owner}-${i}`)?.classList.add('highlight');
+      }
+    }
+    setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
+    showToast(`P${owner}: select a bench Pokémon to promote!`, false);
+    addLog(`Player ${owner} must choose a new Active Pokémon.`, true);
+    return 'promote';
   }
   return false;
+}
+
+function resolvePromotion(player, benchIdx) {
+  if (G.phase !== 'PROMOTE' || G.pendingPromotion !== player) return;
+  const p = G.players[player];
+  const chosen = p.bench[benchIdx];
+  if (!chosen) return;
+  p.active = chosen;
+  p.bench[benchIdx] = null;
+  G.phase = 'MAIN'; // restore phase before endTurn
+  G.pendingPromotion = null;
+  addLog(`Player ${player} promoted ${chosen.name} to Active!`, true);
+  clearHighlights();
+  renderAll();
+  // Now it's safe to end the attacker's turn
+  endTurn();
 }
 
 // ══════════════════════════════════════════════════
@@ -2177,6 +2222,10 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
 // ══════════════════════════════════════════════════
 function endTurn() {
   if (!G.started) return;
+  if (G.phase === 'PROMOTE') {
+    showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
+    return;
+  }
   const prev = G.turn;
   const prevActive = G.players[prev].active;
 
@@ -2187,13 +2236,17 @@ function endTurn() {
       const dmg = prevActive.status === 'poisoned-toxic' ? 20 : 10;
       prevActive.damage = (prevActive.damage || 0) + dmg;
       addLog(`${prevActive.name} took ${dmg} Poison damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      const poisonKo = checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      if (poisonKo === 'win') { renderAll(); return; }
+      if (poisonKo === 'promote') { renderAll(); return; } // deferred
     }
-    // Burn: 20 damage (Gen 2+, but let's handle if it appears)
+    // Burn: 20 damage
     if (prevActive.status === 'burned') {
       prevActive.damage = (prevActive.damage || 0) + 20;
       addLog(`${prevActive.name} took 20 Burn damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      const burnKo = checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      if (burnKo === 'win') { renderAll(); return; }
+      if (burnKo === 'promote') { renderAll(); return; }
     }
     // Paralysis wears off after one turn
     if (prevActive.status === 'paralyzed') {
