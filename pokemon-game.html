@@ -1511,7 +1511,6 @@ function renderHands() {
 
 function renderSidebarP2Hand() {
   const p2 = G.players[2];
-  const isActive = G.turn === 2;
   const content = document.getElementById('sidebar-content');
   if (!p2.hand.length) {
     content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">P2 has no cards</div>`;
@@ -1520,19 +1519,17 @@ function renderSidebarP2Hand() {
   content.innerHTML = `<div style="font-size:8px;color:var(--p2color);margin-bottom:8px">P2 HAND (${p2.hand.length})</div>
     <div id="hand-p2">` +
     p2.hand.map((card, i) => {
-      const faceDown = !isActive;
-      const imgSrc = faceDown ? '' : (card.images?.small || '');
-      const largeSrc = faceDown ? '' : (card.images?.large || imgSrc);
-      return `<div class="hand-card ${faceDown ? 'face-down' : ''}"
+      const imgSrc = card.images?.small || '';
+      const largeSrc = card.images?.large || imgSrc;
+      return `<div class="hand-card"
         id="hand-card-2-${i}"
-        ${faceDown ? '' : `onclick="event.stopPropagation();selectHandCard(2,${i})"`}
-        ${faceDown ? '' : `onmouseover="showCardDetail(event,'${largeSrc}')"`}
+        onclick="event.stopPropagation();selectHandCard(2,${i})"
+        onmouseover="showCardDetail(event,'${largeSrc}')"
         onmouseout="hideCardDetail()">
-        <img class="hand-card-img" src="${imgSrc}" alt="${faceDown ? '?' : card.name}"
-          style="${faceDown ? 'background:var(--surface2);filter:brightness(0)' : ''}">
+        <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
-          <div class="hand-card-name">${faceDown ? '???' : card.name}</div>
-          <div class="hand-card-sub">${faceDown ? '---' : (card.supertype || '')}</div>
+          <div class="hand-card-name">${card.name}</div>
+          <div class="hand-card-sub">${card.supertype || ''}</div>
         </div>
       </div>`;
     }).join('') + `</div>`;
