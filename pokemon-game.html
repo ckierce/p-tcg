@@ -246,7 +246,7 @@ html, body {
   justify-content: center;
   font-size: 7px;
   color: var(--muted);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   flex-shrink: 0;
 }
@@ -270,7 +270,7 @@ html, body {
   justify-content: center;
   font-size: 7px;
   color: var(--muted);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   flex-shrink: 0;
 }
@@ -2184,10 +2184,22 @@ function parseStatusEffects(text) {
   const effects = [];
   const t = text;
 
-  // Pattern: "If heads, ... is now X" → coinFlip required, apply on heads
-  // Pattern: "If tails, ... is now X" → coinFlip required, apply on tails
-  // Pattern: "... is now X" (no coin) → apply directly
+  // ── Special patterns that need single coin flip with branching outcomes ──
 
+  // "Poisoned; if tails, it is now Confused" → one flip: heads=Poison, tails=Confused
+  if (/poisoned.*if tails.*confused/i.test(t)) {
+    effects.push({ type: 'either', heads: 'poisoned', tails: 'confused', self: false });
+    return effects; // handled completely
+  }
+
+  // "Confused and Poisoned" → apply both directly, no flip
+  if (/confused and poisoned/i.test(t)) {
+    effects.push({ status: 'confused', coinRequired: false, self: false });
+    effects.push({ status: 'poisoned', coinRequired: false, self: false });
+    return effects;
+  }
+
+  // ── Standard patterns ──
   const statuses = ['Paralyzed','Asleep','Poisoned','Confused','Burned'];
   for (const status of statuses) {
     const re = new RegExp(`(If (heads|tails), )?[^.]*(?:Defending|${text.match(/[A-Z][a-z]+(?= is now)/)?.[0]||''})[^.]*is now ${status}`, 'i');
@@ -2195,32 +2207,16 @@ function parseStatusEffects(text) {
     if (match) {
       const coinRequired = /if (heads|tails)/i.test(match[0]);
       const onTails = /if tails/i.test(match[0]);
-      // Check if it's self-status (attacker's own pokemon)
       const selfStatus = /(?:Vileplume|Gloom|Primeape|Tauros|[A-Z][a-z]+) is now/i.test(match[0]) &&
                          !/Defending/i.test(match[0]);
-      effects.push({
-        status: status.toLowerCase(),
-        coinRequired,
-        onTails,   // if true, apply on tails instead of heads
-        self: selfStatus
-      });
+      effects.push({ status: status.toLowerCase(), coinRequired, onTails, self: selfStatus });
     }
-  }
-
-  // Special: "Poisoned; if tails, it is now Confused" (two effects, second conditional)
-  if (/poisoned.*if tails.*confused/i.test(t)) {
-    effects.push({ status: 'confused', coinRequired: true, onTails: true, self: false });
-  }
-  // Special: "Confused and Poisoned" together
-  if (/confused and poisoned/i.test(t)) {
-    effects.push({ status: 'confused', coinRequired: false, self: false });
-    effects.push({ status: 'poisoned', coinRequired: false, self: false });
   }
 
   // Deduplicate
   const seen = new Set();
   return effects.filter(e => {
-    const key = `${e.status}-${e.self}`;
+    const key = `${e.status || e.type}-${e.self}`;
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
@@ -2331,7 +2327,17 @@ async function performAttack(player, atk) {
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
-    if (eff.coinRequired) {
+
+    // "either" type: single flip, heads=one status, tails=another
+    if (eff.type === 'either') {
+      const headsName = eff.heads.charAt(0).toUpperCase() + eff.heads.slice(1);
+      const tailsName = eff.tails.charAt(0).toUpperCase() + eff.tails.slice(1);
+      const flip = await flipCoin(`${atk.name}: Heads = ${headsName}, Tails = ${tailsName}`);
+      const appliedStatus = flip ? eff.heads : eff.tails;
+      const appliedName = flip ? headsName : tailsName;
+      applyStatus(target, appliedStatus);
+      addLog(`Coin flip: ${flip ? 'HEADS' : 'TAILS'} — ${target.name} is now ${appliedName}!`, true);
+    } else if (eff.coinRequired) {
       const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
       const flip = await flipCoin(`${atk.name}: flip for ${statusName}!\n${eff.onTails ? 'Tails' : 'Heads'} = ${statusName}`);
       const shouldApply = eff.onTails ? !flip : flip;
@@ -2498,6 +2504,7 @@ function endTurn() {
   if (G.players[prev].active?.plusPower) {
     G.players[prev].active.plusPower = 0;
   }
+  G.turn = prev === 1 ? 2 : 1;  // ← flip turn
   G.turnNum++;
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
