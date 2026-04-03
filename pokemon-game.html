@@ -472,9 +472,6 @@ html, body {
 }
 .card-badge.defender  { background: rgba(91,156,246,.9); color: #fff; }
 .card-badge.pluspower { background: rgba(232,200,74,.9); color: #000; }
-  z-index: 2;
-}
-}
 
 /* Active Pokémon — larger, prominent, separated from bench */
 #active-row {
@@ -2542,20 +2539,6 @@ function endTurn() {
   drawCard(G.turn, true);
   renderAll();
   showTurnFlash(G.turn);
-}
-
-function handleBenchClick(player, slotIdx) {
-  const slot = G.players[player].bench[slotIdx];
-  if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
-    playToBench(player, slotIdx); return;
-  }
-  if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player && slot) {
-    attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
-    G.pendingAction = null; clearHighlights(); return;
-  }
-  // During setup either player can interact with their own bench slots
-  const canAct = G.phase === 'SETUP' || G.turn === player;
-  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx); }
 }
 
 // ══════════════════════════════════════════════════
