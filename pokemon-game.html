@@ -354,7 +354,11 @@ html, body {
   align-items: flex-start;
   gap: 12px;
   overflow: hidden;
+  pointer-events: none; /* empty space shouldn't block clicks */
 }
+
+/* Re-enable clicks on actual interactive children */
+#player-zone > * { pointer-events: auto; }
 
 /* Player bench sits behind (visually above) active */
 #player-field-col {
