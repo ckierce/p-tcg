@@ -1980,6 +1980,73 @@ function playTrainer(player, handIdx) {
     return;
   }
 
+  // ── Scoop Up ──────────────────────────────────────
+  if (name === 'Scoop Up') {
+    // Must have a bench pokemon to scoop (can't scoop active if it's your only pokemon)
+    const benchCount = p.bench.filter(s => s !== null).length;
+    const hasActive = !!p.active;
+
+    // Can only target bench pokemon — or active if there's at least one bench pokemon remaining
+    // Either way need at least one pokemon left after scooping
+    const canScoopActive = hasActive && benchCount >= 1;
+    const canScoopBench = benchCount >= 1 && (hasActive || benchCount >= 2);
+
+    if (!canScoopActive && !canScoopBench) {
+      showToast('Cannot use Scoop Up — would leave you with no Pokémon!', true); return;
+    }
+
+    // Build list of eligible targets (Basic only — can't scoop evolutions)
+    const targets = [];
+    if (canScoopActive && p.active && p.active.subtypes?.includes('Basic') && !p.active.isDoll) {
+      targets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
+    }
+    p.bench.forEach((b, i) => {
+      if (b && b.subtypes?.includes('Basic') && !b.isDoll) {
+        // Can scoop from bench if we have active, or if there are 2+ bench pokemon
+        if (hasActive || benchCount >= 2) {
+          targets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
+        }
+      }
+    });
+
+    if (!targets.length) { showToast('No eligible Basic Pokémon to scoop!', true); return; }
+
+    consume();
+
+    // If only one valid target, scoop immediately
+    const doScoop = (zone, idx) => {
+      let target, returnCard;
+      if (zone === 'active') {
+        target = p.active;
+        p.active = null;
+      } else {
+        target = p.bench[idx];
+        p.bench[idx] = null;
+      }
+      // Discard all attached cards, return pokemon to hand with damage/status reset
+      p.discard.push(...(target.attachedEnergy || []));
+      target.attachedEnergy = [];
+      target.damage = 0;
+      target.status = null;
+      p.hand.push(target);
+      addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
+      renderAll();
+    };
+
+    if (targets.length === 1) {
+      doScoop(targets[0].zone, targets[0].idx);
+      return;
+    }
+
+    // Multiple targets — show action menu to pick
+    closeActionMenu();
+    showActionMenu('Scoop Up — choose a Pokémon', targets.map(t => ({
+      label: t.label,
+      fn: () => { closeActionMenu(); doScoop(t.zone, t.idx); }
+    })));
+    return;
+  }
+
   // ── Fallback for unimplemented trainers ───────────
   consume();
   addLog(`P${player} played ${name}. (effect not yet automated)`, true);
@@ -2496,7 +2563,7 @@ function endTurn() {
       prevActive.damage = (prevActive.damage || 0) + dmg;
       addLog(`${prevActive.name} took ${dmg} Poison damage! (${prevActive.damage}/${prevActive.hp} HP)`);
       const opp = prev === 1 ? 2 : 1;
-      const poisonKo = checkKO(opp, prev, prevActive, true); // isSelf=true: owner=prev, prize to opp
+      const poisonKo = checkKO(opp, prev, prevActive, false); // opp=attacker gets prize, prev=owner loses pokemon
       if (poisonKo === 'win') { renderAll(); return; }
       if (poisonKo === 'promote') { renderAll(); return; }
     }
@@ -2505,7 +2572,7 @@ function endTurn() {
       prevActive.damage = (prevActive.damage || 0) + 20;
       addLog(`${prevActive.name} took 20 Burn damage! (${prevActive.damage}/${prevActive.hp} HP)`);
       const opp = prev === 1 ? 2 : 1;
-      const burnKo = checkKO(opp, prev, prevActive, true); // isSelf=true
+      const burnKo = checkKO(opp, prev, prevActive, false); // opp=attacker gets prize, prev=owner loses pokemon
       if (burnKo === 'win') { renderAll(); return; }
       if (burnKo === 'promote') { renderAll(); return; }
     }
