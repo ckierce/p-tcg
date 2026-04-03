@@ -831,6 +831,39 @@ html, body {
 #toast.err { border-color: var(--p2color); color: var(--p2color); }
 #toast.ok { border-color: var(--ok); color: var(--ok); }
 
+/* ── TURN CHANGE OVERLAY ──────────────────────────── */
+#turn-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 950;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+#turn-overlay.show { display: flex; }
+#turn-overlay-inner {
+  font-family: var(--font);
+  font-size: 20px;
+  letter-spacing: 3px;
+  padding: 20px 48px;
+  border-radius: 6px;
+  animation: turnAnnounce 1.2s ease-out forwards;
+}
+@keyframes turnAnnounce {
+  0%   { opacity: 0; transform: scale(0.8); }
+  20%  { opacity: 1; transform: scale(1.05); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+#turn-overlay.p1 #turn-overlay-inner {
+  background: rgba(91,156,246,0.15);
+  border: 2px solid var(--p1color);
+  color: var(--p1color);
+}
+#turn-overlay.p2 #turn-overlay-inner {
+  background: rgba(245,101,101,0.15);
+  border: 2px solid var(--p2color);
+  color: var(--p2color);
+}
+
 /* ── COIN FLIP OVERLAY ───────────────────────────── */
 #coin-overlay {
   display: none;
@@ -892,6 +925,33 @@ html, body {
   text-align: center;
   max-width: 240px;
 }
+/* ── TURN CHANGE FLASH ───────────────────────────── */
+#turn-flash {
+  display: none;
+  position: fixed; inset: 0; z-index: 950;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+#turn-flash.show { display: flex; }
+#turn-flash-inner {
+  font-family: var(--font);
+  font-size: 18px;
+  letter-spacing: 3px;
+  padding: 20px 40px;
+  border-radius: 6px;
+  background: rgba(0,0,0,.85);
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  animation: flashFade 1.2s ease-out forwards;
+}
+@keyframes flashFade {
+  0%   { opacity: 0; transform: scale(.85); }
+  20%  { opacity: 1; transform: scale(1); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.05); }
+}
+#turn-flash-inner.p1 { border-color: var(--p1color); color: var(--p1color); }
+#turn-flash-inner.p2 { border-color: var(--p2color); color: var(--p2color); }
 </style>
 </head>
 <body>
@@ -1070,8 +1130,16 @@ html, body {
   <img id="card-detail-img" src="" alt="">
 </div>
 
+<!-- Turn change flash -->
+<div id="turn-flash"><div id="turn-flash-inner"></div></div>
+
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- Turn change overlay -->
+<div id="turn-overlay">
+  <div id="turn-overlay-inner"></div>
+</div>
 
 <!-- Coin flip overlay -->
 <div id="coin-overlay">
@@ -1117,10 +1185,11 @@ let G = {
   phase: 'DRAW',
   turnNum: 1,
   energyPlayedThisTurn: false,
+  plusPowerThisTurn: false,
   pendingAction: null,
   players: {
-    1: { name:'Player 1', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null },
-    2: { name:'Player 2', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null }
+    1: { name:'Player 1', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 },
+    2: { name:'Player 2', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 }
   },
   log: []
 };
@@ -1209,7 +1278,7 @@ async function loadDeck(deckName) {
         types: entry.types || []
       };
       for (let i = 0; i < entry.qty; i++) {
-        flat.push({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` });
+        flat.push(enrichCard({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` }));
       }
     }
     if (!flat.length) { showToast('Deck appears empty!', true); return; }
@@ -1240,11 +1309,28 @@ async function loadDeck(deckName) {
 // ══════════════════════════════════════════════════
 // GAME START
 // ══════════════════════════════════════════════════
+function hasBasic(hand) {
+  return hand.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+}
+
 function startGame() {
+  let mulligans = { 1: 0, 2: 0 };
+
   for (const p of [1,2]) {
+    // Deal initial hand
     G.players[p].hand = G.players[p].deck.splice(0, 7);
+    // Mulligan: reshuffle and redraw up to 4 times if no basics
+    let attempts = 0;
+    while (!hasBasic(G.players[p].hand) && attempts < 4) {
+      // Reshuffle hand back into deck
+      G.players[p].deck = shuffle([...G.players[p].deck, ...G.players[p].hand]);
+      G.players[p].hand = G.players[p].deck.splice(0, 7);
+      attempts++;
+      mulligans[p]++;
+    }
     G.players[p].prizes = G.players[p].deck.splice(0, 6).map(c => ({ card: c, revealed: false }));
   }
+
   G.started = true;
   G.turn = 1;
   G.phase = 'SETUP';
@@ -1252,8 +1338,14 @@ function startGame() {
   G.energyPlayedThisTurn = false;
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('end-turn-btn').textContent = 'DONE SETUP';
-  addLog(`Game started! Both players place their starting Pokémon.`, true);
-  addLog(`Each player drew 7 cards and set aside 6 prizes.`);
+
+  addLog('Game started! Both players place their starting Pokémon.', true);
+  if (mulligans[1] > 0) addLog(`P1 mulliganed ${mulligans[1]} time(s) — opponent draws ${mulligans[1]} extra card(s) next turn.`);
+  if (mulligans[2] > 0) addLog(`P2 mulliganed ${mulligans[2]} time(s) — opponent draws ${mulligans[2]} extra card(s) next turn.`);
+  // Store mulligans so opponent draws extras on first turn
+  G.pendingExtraDraws = mulligans;
+
+  addLog('Each player drew 7 cards and set aside 6 prizes.');
   renderAll();
   setMidline('Both players: place your Active Pokémon (and optionally bench basics)');
   showToast('Place your starting Pokémon!', false, 'ok');
@@ -1268,23 +1360,19 @@ function handleEndTurnBtn() {
 }
 
 function doneSetup() {
-  // Both players must have an active pokemon
-  if (!G.players[1].active) {
-    showToast('Player 1 must place an Active Pokémon first!', true);
-    return;
-  }
-  if (!G.players[2].active) {
-    showToast('Player 2 must place an Active Pokémon first!', true);
-    return;
-  }
+  if (!G.players[1].active) { showToast('Player 1 must place an Active Pokémon first!', true); return; }
+  if (!G.players[2].active) { showToast('Player 2 must place an Active Pokémon first!', true); return; }
   G.phase = 'DRAW';
   G.turn = 1;
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
-  drawCard(1, true);
+  // P1 draws first card + any extra draws owed due to P2 mulligans
+  const extras = G.pendingExtraDraws?.[1] || 0;
+  for (let i = 0; i <= extras; i++) drawCard(1, true);
   addLog('Setup complete! Player 1 goes first.', true);
   renderAll();
+  showTurnFlash(1);
   showToast('Game on! P1 goes first.', false, 'ok');
 }
 
@@ -1335,6 +1423,7 @@ function getActionsForCard(player, card, handIdx) {
   const p = G.players[player];
   const actions = [];
   const isSetup = G.phase === 'SETUP';
+
   if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
     if (!p.active) actions.push({ label: 'Play as Active', fn: () => playAsActive(player, handIdx) });
     const benchFull = p.bench.every(s => s !== null);
@@ -1347,6 +1436,25 @@ function getActionsForCard(player, card, handIdx) {
       tooltip: onlyBasic ? 'Only Basic — must play as Active' : null
     });
   }
+
+  // Evolution — Stage 1 or Stage 2 can evolve a matching pokemon on the board
+  if (!isSetup && card.supertype === 'Pokémon' &&
+      (card.subtypes?.includes('Stage 1') || card.subtypes?.includes('Stage 2'))) {
+    const evolvesFrom = card.evolvesFrom;
+    if (evolvesFrom) {
+      // Check active
+      if (p.active?.name === evolvesFrom) {
+        actions.push({ label: `Evolve Active (${evolvesFrom} → ${card.name})`, fn: () => evolve(player, handIdx, 'active', null) });
+      }
+      // Check bench
+      p.bench.forEach((b, i) => {
+        if (b?.name === evolvesFrom) {
+          actions.push({ label: `Evolve Bench ${i+1} (${evolvesFrom} → ${card.name})`, fn: () => evolve(player, handIdx, 'bench', i) });
+        }
+      });
+    }
+  }
+
   if (!isSetup && card.supertype === 'Energy' && !G.energyPlayedThisTurn) {
     actions.push({ label: 'Attach to Active', fn: () => attachEnergy(player, handIdx, 'active') });
     const hasBench = p.bench.some(s => s !== null);
@@ -1365,6 +1473,28 @@ function playAsActive(player, handIdx) {
   card.damage = 0; card.attachedEnergy = []; card.status = null;
   p.active = card;
   addLog(`Player ${player} played ${card.name} as their Active Pokémon.`, true);
+  renderAll();
+}
+
+function evolve(player, handIdx, zone, benchIdx) {
+  closeActionMenu();
+  const p = G.players[player];
+  const evoCard = p.hand.splice(handIdx, 1)[0];
+  const target = zone === 'active' ? p.active : p.bench[benchIdx];
+  if (!target) { showToast('Target not found!', true); p.hand.splice(handIdx, 0, evoCard); return; }
+
+  // Carry over damage, energy, status from the base pokemon
+  evoCard.damage = target.damage || 0;
+  evoCard.attachedEnergy = target.attachedEnergy || [];
+  evoCard.status = null; // evolving cures status conditions
+
+  if (zone === 'active') {
+    p.active = evoCard;
+  } else {
+    p.bench[benchIdx] = evoCard;
+  }
+
+  addLog(`Player ${player} evolved ${target.name} into ${evoCard.name}!`, true);
   renderAll();
 }
 
@@ -1422,11 +1552,274 @@ function startEnergyAttach(player, handIdx) {
 function playTrainer(player, handIdx) {
   closeActionMenu();
   const p = G.players[player];
-  const card = p.hand.splice(handIdx, 1)[0];
-  p.discard.push(card);
-  addLog(`Player ${player} played Trainer: ${card.name}.`, true);
+  const opp = G.players[player === 1 ? 2 : 1];
+  const card = p.hand[handIdx];
+  const name = card.name;
+  const rules = card.rules?.[0] || '';
+
+  // Helper: remove card from hand and discard it
+  const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
+
+  // ── Bill ──────────────────────────────────────────
+  if (name === 'Bill') {
+    consume();
+    drawCard(player, true); drawCard(player, true);
+    addLog(`P${player} played Bill — drew 2 cards.`, true);
+    renderAll(); return;
+  }
+
+  // ── Professor Oak ─────────────────────────────────
+  if (name === 'Professor Oak') {
+    // Discard hand then draw 7
+    p.hand.splice(handIdx, 1); // remove oak first
+    p.discard.push(...p.hand, card);
+    p.hand = [];
+    for (let i = 0; i < 7; i++) drawCard(player, true);
+    addLog(`P${player} played Professor Oak — discarded hand and drew 7.`, true);
+    renderAll(); return;
+  }
+
+  // ── Impostor Professor Oak ────────────────────────
+  if (name === 'Impostor Professor Oak') {
+    consume();
+    opp.discard.push(...opp.hand);
+    opp.hand = [];
+    opp.deck = shuffle(opp.deck);
+    for (let i = 0; i < 7; i++) {
+      if (opp.deck.length) opp.hand.push(opp.deck.shift());
+    }
+    addLog(`P${player} played Impostor Professor Oak — opponent reshuffled and drew 7.`, true);
+    renderAll(); return;
+  }
+
+  // ── Potion ────────────────────────────────────────
+  if (name === 'Potion') {
+    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
+    consume();
+    p.active.damage = Math.max(0, p.active.damage - 20);
+    addLog(`P${player} used Potion — removed 20 damage from ${p.active.name}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Super Potion ──────────────────────────────────
+  if (name === 'Super Potion') {
+    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
+    if (!p.active.attachedEnergy?.length) { showToast('Must discard 1 energy to use Super Potion!', true); return; }
+    consume();
+    p.active.attachedEnergy.splice(0, 1); // discard one energy
+    p.active.damage = Math.max(0, p.active.damage - 40);
+    addLog(`P${player} used Super Potion — discarded 1 energy, removed 40 damage from ${p.active.name}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Full Heal ─────────────────────────────────────
+  if (name === 'Full Heal') {
+    if (!p.active) { showToast('No active Pokémon!', true); return; }
+    consume();
+    p.active.status = null;
+    addLog(`P${player} used Full Heal — ${p.active.name} is cured of all status conditions.`, true);
+    renderAll(); return;
+  }
+
+  // ── Pokémon Center ────────────────────────────────
+  if (name === 'Pokémon Center') {
+    consume();
+    const healed = [];
+    [p.active, ...p.bench].forEach(c => {
+      if (c && c.damage > 0) {
+        c.damage = 0;
+        c.attachedEnergy = [];
+        healed.push(c.name);
+      }
+    });
+    addLog(`P${player} used Pokémon Center — healed all Pokémon (energy discarded): ${healed.join(', ') || 'none'}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Switch ────────────────────────────────────────
+  if (name === 'Switch') {
+    if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
+    consume();
+    // Auto-pick first bench slot
+    const idx = p.bench.findIndex(s => s !== null);
+    const old = p.active;
+    p.active = p.bench[idx];
+    p.bench[idx] = old;
+    addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Gust of Wind ─────────────────────────────────
+  if (name === 'Gust of Wind') {
+    const oppBench = opp.bench.filter(s => s !== null);
+    if (!oppBench.length) { showToast("Opponent has no bench Pokémon!", true); return; }
+    consume();
+    // Pull first bench pokemon to active (swap)
+    const idx = opp.bench.findIndex(s => s !== null);
+    const old = opp.active;
+    opp.active = opp.bench[idx];
+    opp.bench[idx] = old;
+    addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
+    renderAll(); return;
+  }
+
+  // ── Energy Removal ────────────────────────────────
+  if (name === 'Energy Removal') {
+    if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
+    consume();
+    const removed = opp.active.attachedEnergy.splice(0, 1)[0];
+    opp.discard.push(removed);
+    addLog(`P${player} used Energy Removal — discarded 1 energy from opponent's ${opp.active.name}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Super Energy Removal ──────────────────────────
+  if (name === 'Super Energy Removal') {
+    if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
+    if (!p.active?.attachedEnergy?.length) { showToast("Must discard 1 of your energy first!", true); return; }
+    consume();
+    const myRemoved = p.active.attachedEnergy.splice(0, 1)[0];
+    p.discard.push(myRemoved);
+    const count = Math.min(2, opp.active.attachedEnergy.length);
+    const removed = opp.active.attachedEnergy.splice(0, count);
+    opp.discard.push(...removed);
+    addLog(`P${player} used Super Energy Removal — discarded ${count} energy from opponent's ${opp.active.name}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Energy Retrieval ──────────────────────────────
+  if (name === 'Energy Retrieval') {
+    const energyInDiscard = p.discard.filter(c => c.supertype === 'Energy');
+    if (!energyInDiscard.length) { showToast('No energy in discard pile!', true); return; }
+    consume();
+    // Return up to 2 basic energy from discard to hand
+    const basicEnergy = p.discard.filter(c => c.supertype === 'Energy' && !(/double colorless/i.test(c.name)));
+    const toRetrieve = basicEnergy.slice(0, 2);
+    toRetrieve.forEach(e => {
+      const i = p.discard.findIndex(c => c === e);
+      if (i !== -1) { p.hand.push(...p.discard.splice(i, 1)); }
+    });
+    addLog(`P${player} used Energy Retrieval — returned ${toRetrieve.length} energy card(s) to hand.`, true);
+    renderAll(); return;
+  }
+
+  // ── Energy Search ─────────────────────────────────
+  if (name === 'Energy Search') {
+    const energyInDeck = p.deck.filter(c => c.supertype === 'Energy' && !(/double colorless/i.test(c.name)));
+    if (!energyInDeck.length) { showToast('No basic energy in deck!', true); return; }
+    consume();
+    const found = energyInDeck[0];
+    const i = p.deck.findIndex(c => c === found);
+    p.hand.push(...p.deck.splice(i, 1));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Energy Search — found ${found.name} from deck.`, true);
+    renderAll(); return;
+  }
+
+  // ── PlusPower ─────────────────────────────────────
+  if (name === 'PlusPower') {
+    consume();
+    G.plusPowerActive = (G.plusPowerActive || 0) + 10;
+    addLog(`P${player} played PlusPower — next attack does +10 damage.`, true);
+    renderAll(); return;
+  }
+
+  // ── Revive ────────────────────────────────────────
+  if (name === 'Revive') {
+    const basicInDiscard = p.discard.find(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+    if (!basicInDiscard) { showToast('No Basic Pokémon in discard!', true); return; }
+    const benchFull = p.bench.every(s => s !== null);
+    if (benchFull) { showToast('Bench is full!', true); return; }
+    consume();
+    const idx2 = p.discard.findIndex(c => c === basicInDiscard);
+    const revived = p.discard.splice(idx2, 1)[0];
+    revived.damage = Math.floor((parseInt(revived.hp) || 0) / 2);
+    revived.attachedEnergy = []; revived.status = null;
+    const freeSlot = p.bench.findIndex(s => s === null);
+    p.bench[freeSlot] = revived;
+    addLog(`P${player} used Revive — ${revived.name} returned to bench at half HP.`, true);
+    renderAll(); return;
+  }
+
+  // ── Mr. Fuji ──────────────────────────────────────
+  if (name === 'Mr. Fuji') {
+    const benchPokemon = p.bench.filter(s => s !== null);
+    if (!benchPokemon.length) { showToast('No bench Pokémon to choose!', true); return; }
+    consume();
+    // Shuffle first bench pokemon and its attachments into deck
+    const idx3 = p.bench.findIndex(s => s !== null);
+    const fujiTarget = p.bench[idx3];
+    p.bench[idx3] = null;
+    p.deck.push(fujiTarget, ...(fujiTarget.attachedEnergy || []));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Mr. Fuji — ${fujiTarget.name} and attached cards shuffled into deck.`, true);
+    renderAll(); return;
+  }
+
+  // ── Gambler ───────────────────────────────────────
+  if (name === 'Gambler') {
+    consume();
+    p.deck = shuffle([...p.deck, ...p.hand]);
+    p.hand = [];
+    // Coin flip handled via flipCoin async
+    (async () => {
+      const heads = await flipCoin('Gambler: Heads = draw 8, Tails = draw 1');
+      const count = heads ? 8 : 1;
+      for (let i = 0; i < count && p.deck.length; i++) drawCard(player, true);
+      addLog(`P${player} used Gambler — ${heads ? 'HEADS' : 'TAILS'}, drew ${count} card(s).`, true);
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Recycle ───────────────────────────────────────
+  if (name === 'Recycle') {
+    if (!p.discard.length) { showToast('Discard pile is empty!', true); return; }
+    consume();
+    (async () => {
+      const heads = await flipCoin('Recycle: Heads = put top discard card on deck');
+      if (heads) {
+        const recycled = p.discard[p.discard.length - 1];
+        p.deck.unshift(p.discard.pop());
+        addLog(`P${player} used Recycle — HEADS! ${recycled.name} returned to top of deck.`, true);
+      } else {
+        addLog(`P${player} used Recycle — TAILS! No effect.`);
+      }
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Poké Ball ─────────────────────────────────────
+  if (name === 'Poké Ball') {
+    consume();
+    (async () => {
+      const heads = await flipCoin('Poké Ball: Heads = search deck for any Basic or Evolution');
+      if (heads) {
+        const pokemon = p.deck.filter(c => c.supertype === 'Pokémon');
+        if (pokemon.length) {
+          // Pull first pokemon found (in a real game player would choose)
+          const found = pokemon[0];
+          const i = p.deck.findIndex(c => c === found);
+          p.hand.push(...p.deck.splice(i, 1));
+          p.deck = shuffle(p.deck);
+          addLog(`P${player} used Poké Ball — HEADS! Found ${found.name}.`, true);
+        } else {
+          addLog(`P${player} used Poké Ball — HEADS but no Pokémon in deck.`);
+        }
+      } else {
+        addLog(`P${player} used Poké Ball — TAILS! No effect.`);
+      }
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Fallback for unimplemented trainers ───────────
+  consume();
+  addLog(`P${player} played ${name}. (effect not yet automated)`, true);
+  showToast(`${name}: ${rules.substring(0, 60)}...`);
   renderAll();
-  showToast(`${card.name} played! (effect not automated yet)`);
 }
 
 function onActiveClick(player) {
@@ -1682,7 +2075,13 @@ async function performAttack(player, atk) {
 
   // Apply damage
   const dmgStr = atk.damage || '0';
-  const dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
+  let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
+  // PlusPower bonus
+  if (dmg > 0 && G.plusPowerActive) {
+    dmg += G.plusPowerActive;
+    addLog(`PlusPower adds ${G.plusPowerActive} damage!`);
+    G.plusPowerActive = 0;
+  }
   if (dmg > 0) {
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
@@ -1690,7 +2089,7 @@ async function performAttack(player, atk) {
     const koOccurred = checkKO(player, opp, oppActive, false);
     if (koOccurred) {
       renderAll();
-      if (G.started) endTurn(); // only end turn if game still ongoing
+      if (G.started) endTurn();
       return;
     }
   } else {
@@ -1807,9 +2206,18 @@ function endTurn() {
   G.turnNum++;
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
+  G.plusPowerActive = 0;
   G.pendingAction = null;
   clearHighlights();
   addLog(`Player ${prev} ended their turn.`, true);
+
+  // Extra draws for the new player due to opponent mulligans
+  const extras = G.pendingExtraDraws?.[G.turn] || 0;
+  if (extras > 0) {
+    G.pendingExtraDraws[G.turn] = 0;
+    for (let i = 0; i < extras; i++) drawCard(G.turn, true);
+    addLog(`P${G.turn} draws ${extras} extra card(s) from opponent mulligan(s).`);
+  }
 
   // Sleep check: flip coin at start of new player's turn
   const newActive = G.players[G.turn].active;
@@ -1829,6 +2237,7 @@ function endTurn() {
 
   drawCard(G.turn, true);
   renderAll();
+  showTurnFlash(G.turn);
 }
 
 function handleBenchClick(player, slotIdx) {
@@ -2213,6 +2622,48 @@ function energyColor(name) {
 
 function statusEmoji(s) {
   return { asleep:'😴', confused:'😵', paralyzed:'⚡', poisoned:'☠️', burned:'🔥' }[s] || '❓';
+}
+
+// ══════════════════════════════════════════════════
+// CARD DATA LOOKUP (loaded once from cards.json)
+// ══════════════════════════════════════════════════
+let CARD_DATA = {};
+(async () => {
+  try {
+    const resp = await fetch('cards.json');
+    const cards = await resp.json();
+    cards.forEach(c => { CARD_DATA[c.id] = c; });
+  } catch(e) { console.warn('cards.json not loaded:', e); }
+})();
+
+function enrichCard(card) {
+  const full = CARD_DATA[card.id];
+  if (!full) return card;
+  return {
+    ...card,
+    subtypes: card.subtypes?.length ? card.subtypes : (full.subtypes || []),
+    evolvesFrom: full.evolvesFrom || null,
+    rules: full.rules || [],
+    attacks: card.attacks?.length ? card.attacks : (full.attacks || []),
+    hp: card.hp || full.hp || '0',
+  };
+}
+
+// ══════════════════════════════════════════════════
+// TURN CHANGE FLASH
+// ══════════════════════════════════════════════════
+function showTurnFlash(player) {
+  const el = document.getElementById('turn-flash');
+  const inner = document.getElementById('turn-flash-inner');
+  inner.textContent = `PLAYER ${player}'S TURN`;
+  inner.className = `p${player}`;
+  el.classList.add('show');
+  // Reset animation
+  void inner.offsetWidth;
+  inner.style.animation = 'none';
+  void inner.offsetWidth;
+  inner.style.animation = '';
+  setTimeout(() => el.classList.remove('show'), 1300);
 }
 
 // ══════════════════════════════════════════════════
