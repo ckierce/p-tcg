@@ -1690,6 +1690,15 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
 
+    // Auto-promote if only one bench pokemon left
+    const benchPokemon = G.players[owner].bench.map((c, i) => ({ c, i })).filter(({ c }) => c !== null);
+    if (benchPokemon.length === 1) {
+      const { c, i } = benchPokemon[0];
+      G.players[owner].active = c;
+      G.players[owner].bench[i] = null;
+      addLog(`${c.name} was automatically moved to Active!`, true);
+    }
+
     // Award a prize card to the attacker
     const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
     if (prizeIdx !== -1) {
@@ -1829,17 +1838,27 @@ function renderField(player) {
     // Opponent active
     const activeEl = document.getElementById('active-p2');
     if (p.active) {
-      activeEl.innerHTML = `<img src="${p.active.images?.small || ''}" alt="${p.active.name}"><div class="slot-label">${p.active.name.substring(0,8)}</div>`;
+      const card = p.active;
+      const energyPips = (card.attachedEnergy || []).map(e =>
+        `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
+      ).join('');
+      const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+      const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+      activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
+        <div class="slot-label">${card.name.substring(0,8)}</div>
+        <div class="energy-overlay">${energyPips}</div>${dmg}${status}`;
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
     }
-    // Opponent bench — face-down tinted
+    // Opponent bench
     for (let i = 0; i < 5; i++) {
       const slotEl = document.getElementById(`bench-p2-${i}`);
       if (!slotEl) continue;
       const card = p.bench[i];
       if (card) {
-        slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">`;
+        const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+        const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+        slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}`;
         slotEl.classList.remove('empty');
       } else {
         slotEl.innerHTML = '';
