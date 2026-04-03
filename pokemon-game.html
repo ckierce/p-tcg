@@ -1753,7 +1753,9 @@ function endTurn() {
 
   drawCard(G.turn, true);
   renderAll();
-}(player, slotIdx) {
+}
+
+function handleBenchClick(player, slotIdx) {
   const slot = G.players[player].bench[slotIdx];
   if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
     playToBench(player, slotIdx); return;
