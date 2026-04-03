@@ -200,6 +200,7 @@ html, body {
   overflow: hidden;
   padding: 10px 14px;
   gap: 6px;
+  min-height: 0; /* critical: allows flex child to shrink below content size */
 }
 
 /* ── OPPONENT ZONE (compact) ──────────────────────────────── */
@@ -940,7 +941,7 @@ html, body {
 
         <!-- Aux: deck + discard + prizes -->
         <div id="player-aux">
-          <div class="player-deck-slot" onclick="drawCard(1)">
+          <div class="player-deck-slot" onclick="drawCard(G.turn)">
             <div id="deck-count-p1">0<span>cards</span></div>
           </div>
           <div class="player-discard-slot" id="discard-p1">
@@ -1195,6 +1196,11 @@ function endTurn() {
 
 function drawCard(player, auto = false) {
   if (!G.started && !auto) return;
+  // Block manual draws if not in DRAW phase or not the active player
+  if (!auto && (G.phase !== 'DRAW' || G.turn !== player)) {
+    showToast('You can only draw once per turn!', true);
+    return;
+  }
   const p = G.players[player];
   if (p.deck.length === 0) {
     showToast(`P${player} deck empty — they lose!`, true);
