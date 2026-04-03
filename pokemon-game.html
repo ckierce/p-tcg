@@ -398,7 +398,7 @@ html, body {
   justify-content: center;
   font-size: 7px;
   color: var(--muted);
-  overflow: hidden;
+  overflow: visible;
   position: relative;
   transition: border-color .1s;
   flex-shrink: 0;
@@ -412,14 +412,16 @@ html, body {
 
 /* Energy overlay */
 .energy-overlay {
-  position: absolute; bottom: 2px; left: 2px;
-  display: flex; flex-wrap: wrap; gap: 2px;
-  max-width: 90%;
+  position: absolute; bottom: -2px; left: 0; right: 0;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 2px;
+  padding: 2px;
+  background: rgba(0,0,0,0.55);
+  border-radius: 0 0 4px 4px;
 }
 .energy-pip {
-  width: 7px; height: 7px;
+  width: 8px; height: 8px;
   border-radius: 50%;
-  border: 1px solid rgba(0,0,0,.4);
+  border: 1px solid rgba(255,255,255,.3);
 }
 
 .damage-overlay {
@@ -865,9 +867,8 @@ html, body {
       <span class="top-bar-logo">P-TCG</span>
       <span id="turn-badge" class="p1">P1 TURN</span>
       <span id="phase-badge">DRAW</span>
-      <button class="top-bar-btn" onclick="drawCard(G.turn)">DRAW</button>
       <button class="top-bar-btn" onclick="openLoadModal(0)">← LOAD</button>
-      <button class="top-bar-btn primary" onclick="endTurn()">END TURN</button>
+      <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
     </div>
 
     <!-- Field body -->
@@ -1167,14 +1168,45 @@ function startGame() {
   }
   G.started = true;
   G.turn = 1;
-  G.phase = 'MAIN';
-  G.turnNum = 1;
+  G.phase = 'SETUP';
+  G.turnNum = 0;
   G.energyPlayedThisTurn = false;
   document.getElementById('setup-screen').style.display = 'none';
-  addLog(`Game started! Player 1 goes first.`, true);
+  document.getElementById('end-turn-btn').textContent = 'DONE SETUP';
+  addLog(`Game started! Both players place their starting Pokémon.`, true);
   addLog(`Each player drew 7 cards and set aside 6 prizes.`);
   renderAll();
-  showToast('Game started! P1 goes first.', false, 'ok');
+  setMidline('Both players: place your Active Pokémon (and optionally bench basics)');
+  showToast('Place your starting Pokémon!', false, 'ok');
+}
+
+function handleEndTurnBtn() {
+  if (G.phase === 'SETUP') {
+    doneSetup();
+  } else {
+    endTurn();
+  }
+}
+
+function doneSetup() {
+  // Both players must have an active pokemon
+  if (!G.players[1].active) {
+    showToast('Player 1 must place an Active Pokémon first!', true);
+    return;
+  }
+  if (!G.players[2].active) {
+    showToast('Player 2 must place an Active Pokémon first!', true);
+    return;
+  }
+  G.phase = 'DRAW';
+  G.turn = 1;
+  G.turnNum = 1;
+  G.energyPlayedThisTurn = false;
+  document.getElementById('end-turn-btn').textContent = 'END TURN';
+  drawCard(1, true);
+  addLog('Setup complete! Player 1 goes first.', true);
+  renderAll();
+  showToast('Game on! P1 goes first.', false, 'ok');
 }
 
 // ══════════════════════════════════════════════════
@@ -1220,7 +1252,10 @@ function drawCard(player, auto = false) {
 // PLAY CARDS
 // ══════════════════════════════════════════════════
 function selectHandCard(player, handIdx) {
-  if (G.turn !== player) { showToast(`It's Player ${G.turn}'s turn!`, true); return; }
+  // During setup both players can act freely; otherwise must be active player's turn
+  if (G.phase !== 'SETUP' && G.turn !== player) {
+    showToast(`It's Player ${G.turn}'s turn!`, true); return;
+  }
   const card = G.players[player].hand[handIdx];
   if (!card) return;
   const actions = getActionsForCard(player, card, handIdx);
@@ -1234,11 +1269,12 @@ function selectHandCard(player, handIdx) {
 function getActionsForCard(player, card, handIdx) {
   const p = G.players[player];
   const actions = [];
+  const isSetup = G.phase === 'SETUP';
   if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
     if (!p.active) actions.push({ label: 'Play as Active', fn: () => playAsActive(player, handIdx) });
     const benchFull = p.bench.every(s => s !== null);
     const basicsInHand = p.hand.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')).length;
-    const onlyBasic = basicsInHand === 1;
+    const onlyBasic = !p.active && basicsInHand === 1;
     if (!benchFull) actions.push({
       label: 'Play to Bench',
       fn: onlyBasic ? null : () => startBenchPlay(player, handIdx),
@@ -1246,12 +1282,12 @@ function getActionsForCard(player, card, handIdx) {
       tooltip: onlyBasic ? 'Only Basic — must play as Active' : null
     });
   }
-  if (card.supertype === 'Energy' && !G.energyPlayedThisTurn) {
+  if (!isSetup && card.supertype === 'Energy' && !G.energyPlayedThisTurn) {
     actions.push({ label: 'Attach to Active', fn: () => attachEnergy(player, handIdx, 'active') });
     const hasBench = p.bench.some(s => s !== null);
     if (hasBench) actions.push({ label: 'Attach to Bench...', fn: () => startEnergyAttach(player, handIdx) });
   }
-  if (card.supertype === 'Trainer') {
+  if (!isSetup && card.supertype === 'Trainer') {
     actions.push({ label: 'Play Trainer', fn: () => playTrainer(player, handIdx) });
   }
   return actions;
@@ -1332,7 +1368,8 @@ function onActiveClick(player) {
     G.pendingAction = null; clearHighlights(); return;
   }
   const p = G.players[player];
-  if (p.active && G.turn === player && G.phase === 'MAIN') {
+  const canAct = G.phase === 'SETUP' || (G.turn === player && G.phase === 'MAIN');
+  if (p.active && canAct) {
     showFieldActionMenu(player, 'active', null);
   }
 }
@@ -1375,7 +1412,9 @@ function handleBenchClick(player, slotIdx) {
     attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
     G.pendingAction = null; clearHighlights(); return;
   }
-  if (slot && G.turn === player) { showFieldActionMenu(player, 'bench', slotIdx); }
+  // During setup either player can interact with their own bench slots
+  const canAct = G.phase === 'SETUP' || G.turn === player;
+  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx); }
 }
 
 function cancelAction() {
@@ -1592,12 +1631,24 @@ function updatePhase() {
 
 function updateTurnBadge() {
   const badge = document.getElementById('turn-badge');
-  badge.textContent = `P${G.turn} TURN`;
-  badge.className = `turn-badge p${G.turn}`;
+  if (G.phase === 'SETUP') {
+    badge.textContent = 'SETUP';
+    badge.className = 'turn-badge';
+    badge.style.color = 'var(--accent)';
+    badge.style.borderColor = 'var(--accent)';
+  } else {
+    badge.style.color = '';
+    badge.style.borderColor = '';
+    badge.textContent = `P${G.turn} TURN`;
+    badge.className = `turn-badge p${G.turn}`;
+  }
 }
 
 function setMidline(text) {
-  document.getElementById('midline-info').textContent = text || 'Click a card in your hand to play it';
+  const defaultMsg = G.phase === 'SETUP'
+    ? 'Both players: place your Active (and optionally bench basics), then click DONE SETUP'
+    : 'Click a card in your hand to play it';
+  document.getElementById('midline-info').textContent = text || defaultMsg;
 }
 
 function clearHighlights() {
