@@ -2084,26 +2084,44 @@ function attemptRetreat(player) {
   const p = G.players[player];
   if (!p.active) return;
   if (p.active.canRetreat === false) { showToast(`${p.active.name} cannot retreat!`, true); return; }
-  if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to retreat to!', true); return; }
+
+  const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+  if (!benchSlots.length) { showToast('No bench Pokémon to retreat to!', true); return; }
 
   const retreatCost = p.active.convertedRetreatCost || 0;
   const attached = p.active.attachedEnergy || [];
-
   if (attached.length < retreatCost) {
     showToast(`Need ${retreatCost} energy to retreat — only ${attached.length} attached!`, true);
     return;
   }
 
-  // Discard exactly retreatCost energy cards (any type — retreat cost is always Colorless)
+  // If only one bench option, do it immediately
+  if (benchSlots.length === 1) {
+    executeRetreat(player, benchSlots[0].i);
+    return;
+  }
+
+  // Multiple bench options — highlight slots and wait for bench click
+  G.pendingAction = { type: 'retreat', player };
+  benchSlots.forEach(({ i }) => {
+    document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
+  });
+  setMidline(`Choose a bench Pokémon to switch in for ${p.active.name}`);
+}
+
+function executeRetreat(player, benchIdx) {
+  const p = G.players[player];
+  const retreatCost = p.active.convertedRetreatCost || 0;
+
   const discarded = p.active.attachedEnergy.splice(0, retreatCost);
   p.discard.push(...discarded);
   if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
 
-  // Swap active and first bench — energy stays on the card object automatically
-  const idx = p.bench.findIndex(s => s !== null);
   const old = p.active;
-  p.active = p.bench[idx];
-  p.bench[idx] = old;
+  p.active = p.bench[benchIdx];
+  p.bench[benchIdx] = old;
+  G.pendingAction = null;
+  clearHighlights();
   addLog(`Player ${player} retreated ${old.name} → sent out ${p.active.name}.`);
   renderAll();
 }
@@ -2119,6 +2137,10 @@ function handleBenchClick(player, slotIdx) {
       showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
     }
     return;
+  }
+
+  if (G.pendingAction?.type === 'retreat' && G.pendingAction.player === player && slot) {
+    executeRetreat(player, slotIdx); return;
   }
 
   if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
@@ -2632,11 +2654,13 @@ function renderField(player) {
 
 function renderSlotP1(el, card) {
   if (!el) return;
+  const wasHighlighted = el.classList.contains('highlight');
   // Clear status classes
   el.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
   if (!card) {
     el.classList.remove('occupied');
     el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
+    if (wasHighlighted) el.classList.add('highlight');
     return;
   }
   el.classList.add('occupied');
@@ -2658,6 +2682,7 @@ function renderSlotP1(el, card) {
     onmouseover="showCardDetail(event,'${largeSrc}')"
     onmouseout="hideCardDetail()">
     <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+  if (wasHighlighted) el.classList.add('highlight');
 }
 
 function renderHands() {
