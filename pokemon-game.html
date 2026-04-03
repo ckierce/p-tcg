@@ -1441,6 +1441,46 @@ function onActiveClick(player) {
   }
 }
 
+function canAffordAttack(attachedEnergy, cost) {
+  if (!cost || cost.length === 0) return true;
+
+  // Build a pool of energy tokens from attached cards
+  // Double Colorless Energy counts as 2 Colorless tokens
+  // All other energy cards count as 1 token of their type
+  const pool = [];
+  for (const e of (attachedEnergy || [])) {
+    const name = e.name || '';
+    if (/double colorless/i.test(name)) {
+      pool.push('Colorless', 'Colorless');
+    } else {
+      // Derive type from name e.g. "Water Energy" → "Water"
+      const type = name.replace(/\s*energy/i, '').trim() || 'Colorless';
+      pool.push(type);
+    }
+  }
+
+  // Sort cost: specific types first, Colorless last
+  // so we don't wastefully use typed energy on Colorless slots
+  const sortedCost = [...cost].sort((a, b) =>
+    (a === 'Colorless' ? 1 : 0) - (b === 'Colorless' ? 1 : 0)
+  );
+
+  const remaining = [...pool];
+  for (const req of sortedCost) {
+    if (req === 'Colorless') {
+      // Any single energy satisfies Colorless
+      if (remaining.length === 0) return false;
+      remaining.splice(0, 1); // consume any one
+    } else {
+      // Must match exact type
+      const idx = remaining.indexOf(req);
+      if (idx === -1) return false;
+      remaining.splice(idx, 1);
+    }
+  }
+  return true;
+}
+
 function showFieldActionMenu(player, zone, benchIdx) {
   const p = G.players[player];
   const opp = G.players[player === 1 ? 2 : 1];
@@ -1464,11 +1504,14 @@ function showFieldActionMenu(player, zone, benchIdx) {
       actions.push({ label: 'No attacks', disabled: true });
     } else {
       attacks.forEach(atk => {
-        const cost = atk.cost?.join(', ') || '—';
+        const costStr = atk.cost?.join(', ') || '—';
         const dmg = atk.damage || '0';
+        const canAfford = canAffordAttack(card.attachedEnergy, atk.cost);
         actions.push({
-          label: `⚔ ${atk.name} (${cost}) — ${dmg}`,
-          fn: () => { performAttack(player, atk); closeActionMenu(); }
+          label: `⚔ ${atk.name} (${costStr}) — ${dmg}`,
+          fn: canAfford ? () => { performAttack(player, atk); closeActionMenu(); } : null,
+          disabled: !canAfford,
+          tooltip: canAfford ? null : 'Not enough energy'
         });
       });
     }
