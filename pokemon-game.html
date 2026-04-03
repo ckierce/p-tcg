@@ -425,17 +425,22 @@ html, body {
 }
 
 .damage-overlay {
-  position: absolute; top: 2px; right: 2px;
-  background: rgba(220,50,50,.85);
+  position: absolute; bottom: 2px; right: 2px;
+  background: rgba(180,30,30,.95);
   color: #fff;
-  font-size: 7px;
-  padding: 1px 3px;
-  border-radius: 2px;
+  font-size: 8px;
+  font-family: var(--font);
+  padding: 2px 4px;
+  border-radius: 3px;
+  z-index: 2;
+  letter-spacing: 0.5px;
 }
 
 .status-overlay {
   position: absolute; top: 2px; left: 2px;
   font-size: 10px;
+  z-index: 2;
+}
 }
 
 /* Active Pokémon — larger, prominent, separated from bench */
@@ -1640,7 +1645,11 @@ async function performAttack(player, atk) {
     const oppHp = parseInt(oppActive.hp) || 0;
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
     const koOccurred = checkKO(player, opp, oppActive, false);
-    if (koOccurred) { renderAll(); endTurn(); return; }
+    if (koOccurred) {
+      renderAll();
+      if (G.started) endTurn(); // only end turn if game still ongoing
+      return;
+    }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
   }
@@ -1667,6 +1676,7 @@ async function performAttack(player, atk) {
     }
   }
 
+  // Attack always ends the turn
   renderAll();
   endTurn();
 }
@@ -1676,22 +1686,36 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
   if (hp > 0 && (card.damage || 0) >= hp) {
     addLog(`${card.name} is knocked out!`, true);
     const owner = isSelf ? attackingPlayer : defendingPlayer;
-    const prize = isSelf ? defendingPlayer : attackingPlayer;
+    const prizeWinner = isSelf ? defendingPlayer : attackingPlayer;
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
-    // Prize goes to the attacker (or opponent if self-KO)
-    const prizeIdx = G.players[prize].prizes.findIndex(p => p);
+
+    // Award a prize card to the attacker
+    const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
     if (prizeIdx !== -1) {
-      const prizeCard = G.players[prize].prizes[prizeIdx];
-      G.players[prize].hand.push(prizeCard.card);
-      G.players[prize].prizes[prizeIdx] = null;
-      const remaining = G.players[prize].prizes.filter(p => p).length;
-      addLog(`P${prize} took a prize! (${remaining} remaining)`, true);
+      const prizeCard = G.players[prizeWinner].prizes[prizeIdx];
+      G.players[prizeWinner].hand.push(prizeCard.card);
+      G.players[prizeWinner].prizes[prizeIdx] = null;
+      const remaining = G.players[prizeWinner].prizes.filter(p => p).length;
+      addLog(`P${prizeWinner} took a prize! (${remaining} remaining)`, true);
+      // Win by taking all prizes
       if (remaining === 0) {
-        addLog(`Player ${prize} has taken all prizes — they win!`, true);
-        showToast(`Player ${prize} wins!`, false, 'ok');
+        addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
+        showToast(`Player ${prizeWinner} wins!`, false, 'ok');
+        G.started = false;
+        return true;
       }
     }
+
+    // Win by knocking out opponent's last Pokémon (no active, no bench)
+    const hasNoBench = G.players[owner].bench.every(s => s === null);
+    if (!G.players[owner].active && hasNoBench) {
+      addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
+      showToast(`Player ${prizeWinner} wins!`, false, 'ok');
+      G.started = false;
+      return true;
+    }
+
     return true;
   }
   return false;
