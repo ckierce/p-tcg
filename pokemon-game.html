@@ -825,6 +825,68 @@ html, body {
 #toast.show { display: block; }
 #toast.err { border-color: var(--p2color); color: var(--p2color); }
 #toast.ok { border-color: var(--ok); color: var(--ok); }
+
+/* ── COIN FLIP OVERLAY ───────────────────────────── */
+#coin-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,.75);
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 20px;
+}
+#coin-overlay.show { display: flex; }
+#coin-wrap {
+  perspective: 600px;
+}
+#coin {
+  width: 90px; height: 90px;
+  border-radius: 50%;
+  transform-style: preserve-3d;
+  position: relative;
+  font-size: 36px;
+  animation: none;
+}
+#coin.flipping {
+  animation: coinSpin 1s ease-out forwards;
+}
+@keyframes coinSpin {
+  0%   { transform: rotateY(0deg); }
+  40%  { transform: rotateY(720deg); }
+  70%  { transform: rotateY(1260deg); }
+  100% { transform: rotateY(var(--coin-end-deg)); }
+}
+.coin-face {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 38px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+#coin-heads {
+  background: radial-gradient(circle at 35% 35%, #f5d06a, #c8960a);
+  border: 3px solid #e8c040;
+}
+#coin-tails {
+  background: radial-gradient(circle at 35% 35%, #b0b8c8, #707888);
+  border: 3px solid #9098a8;
+  transform: rotateY(180deg);
+}
+#coin-result {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  min-height: 20px;
+}
+#coin-label {
+  font-family: var(--font);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-align: center;
+  max-width: 240px;
+}
 </style>
 </head>
 <body>
@@ -1005,6 +1067,18 @@ html, body {
 
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- Coin flip overlay -->
+<div id="coin-overlay">
+  <div id="coin-label"></div>
+  <div id="coin-wrap">
+    <div id="coin">
+      <div class="coin-face" id="coin-heads">🌟</div>
+      <div class="coin-face" id="coin-tails">⭐</div>
+    </div>
+  </div>
+  <div id="coin-result"></div>
+</div>
 
 
 <!-- ══════════════════════════════════════════════ -->
@@ -1212,20 +1286,6 @@ function doneSetup() {
 // ══════════════════════════════════════════════════
 // TURN MANAGEMENT
 // ══════════════════════════════════════════════════
-function endTurn() {
-  if (!G.started) return;
-  const prev = G.turn;
-  G.turn = G.turn === 1 ? 2 : 1;
-  G.turnNum++;
-  G.phase = 'DRAW';
-  G.energyPlayedThisTurn = false;
-  G.pendingAction = null;
-  clearHighlights();
-  addLog(`Player ${prev} ended their turn.`, true);
-  drawCard(G.turn, true);
-  renderAll();
-}
-
 function drawCard(player, auto = false) {
   if (!G.started && !auto) return;
   // Block manual draws if not in DRAW phase or not the active player
@@ -1305,13 +1365,15 @@ function playAsActive(player, handIdx) {
 
 function startBenchPlay(player, handIdx) {
   closeActionMenu();
-  G.pendingAction = { type: 'bench', player, handIdx };
-  for (let i = 0; i < 5; i++) {
-    if (!G.players[player].bench[i]) {
-      document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
-    }
-  }
-  setMidline('Choose a bench slot');
+  const p = G.players[player];
+  const freeSlot = p.bench.findIndex(s => s === null);
+  if (freeSlot === -1) { showToast('Bench is full!', true); return; }
+  const card = p.hand.splice(handIdx, 1)[0];
+  card.damage = 0; card.attachedEnergy = []; card.status = null;
+  p.bench[freeSlot] = card;
+  G.pendingAction = null;
+  addLog(`Player ${player} played ${card.name} to the bench.`);
+  renderAll();
 }
 
 function playToBench(player, slotIdx) {
@@ -1376,9 +1438,12 @@ function onActiveClick(player) {
 
 function showFieldActionMenu(player, zone, benchIdx) {
   const p = G.players[player];
+  const opp = G.players[player === 1 ? 2 : 1];
   const card = zone === 'active' ? p.active : p.bench[benchIdx];
   if (!card) return;
   const actions = [];
+
+  // Move bench pokemon to active if active is empty
   if (zone !== 'active' && !p.active) {
     actions.push({ label: 'Move to Active', fn: () => {
       p.active = card; p.bench[benchIdx] = null;
@@ -1386,8 +1451,26 @@ function showFieldActionMenu(player, zone, benchIdx) {
       renderAll(); closeActionMenu();
     }});
   }
+
+  // Attacks — only from active slot, only on your turn during MAIN phase
+  if (zone === 'active' && G.turn === player && G.phase === 'MAIN') {
+    const attacks = card.attacks || [];
+    if (attacks.length === 0) {
+      actions.push({ label: 'No attacks', disabled: true });
+    } else {
+      attacks.forEach(atk => {
+        const cost = atk.cost?.join(', ') || '—';
+        const dmg = atk.damage || '0';
+        actions.push({
+          label: `⚔ ${atk.name} (${cost}) — ${dmg}`,
+          fn: () => { performAttack(player, atk); closeActionMenu(); }
+        });
+      });
+    }
+    actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
+  }
+
   actions.push({ label: 'View Card', fn: () => { closeActionMenu(); } });
-  actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
   showActionMenu(card.name, actions);
 }
 
@@ -1412,7 +1495,6 @@ function handleBenchClick(player, slotIdx) {
     attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
     G.pendingAction = null; clearHighlights(); return;
   }
-  // During setup either player can interact with their own bench slots
   const canAct = G.phase === 'SETUP' || G.turn === player;
   if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx); }
 }
@@ -1422,6 +1504,267 @@ function cancelAction() {
   clearHighlights();
   document.querySelectorAll('.hand-card').forEach(el => el.classList.remove('selected'));
   setMidline('');
+}
+
+// ══════════════════════════════════════════════════
+// COIN FLIP
+// ══════════════════════════════════════════════════
+function flipCoin(label) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('coin-overlay');
+    const coin = document.getElementById('coin');
+    const resultEl = document.getElementById('coin-result');
+    const labelEl = document.getElementById('coin-label');
+
+    const heads = Math.random() < 0.5;
+    // heads = 0deg final (front face showing), tails = 180deg
+    const endDeg = heads ? 1440 : 1620; // multiple full rotations + land on face
+    coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
+
+    labelEl.textContent = label || 'Flipping a coin...';
+    resultEl.textContent = '';
+    overlay.classList.add('show');
+
+    // Reset animation
+    coin.classList.remove('flipping');
+    void coin.offsetWidth; // reflow
+    coin.classList.add('flipping');
+
+    setTimeout(() => {
+      resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
+      resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
+      setTimeout(() => {
+        overlay.classList.remove('show');
+        coin.classList.remove('flipping');
+        resolve(heads);
+      }, 1200);
+    }, 1000);
+  });
+}
+
+// ══════════════════════════════════════════════════
+// STATUS PARSING
+// ══════════════════════════════════════════════════
+function parseStatusEffects(text) {
+  if (!text) return [];
+  const effects = [];
+  const t = text;
+
+  // Pattern: "If heads, ... is now X" → coinFlip required, apply on heads
+  // Pattern: "If tails, ... is now X" → coinFlip required, apply on tails
+  // Pattern: "... is now X" (no coin) → apply directly
+
+  const statuses = ['Paralyzed','Asleep','Poisoned','Confused','Burned'];
+  for (const status of statuses) {
+    const re = new RegExp(`(If (heads|tails), )?[^.]*(?:Defending|${text.match(/[A-Z][a-z]+(?= is now)/)?.[0]||''})[^.]*is now ${status}`, 'i');
+    const match = t.match(re);
+    if (match) {
+      const coinRequired = /if (heads|tails)/i.test(match[0]);
+      const onTails = /if tails/i.test(match[0]);
+      // Check if it's self-status (attacker's own pokemon)
+      const selfStatus = /(?:Vileplume|Gloom|Primeape|Tauros|[A-Z][a-z]+) is now/i.test(match[0]) &&
+                         !/Defending/i.test(match[0]);
+      effects.push({
+        status: status.toLowerCase(),
+        coinRequired,
+        onTails,   // if true, apply on tails instead of heads
+        self: selfStatus
+      });
+    }
+  }
+
+  // Special: "Poisoned; if tails, it is now Confused" (two effects, second conditional)
+  if (/poisoned.*if tails.*confused/i.test(t)) {
+    effects.push({ status: 'confused', coinRequired: true, onTails: true, self: false });
+  }
+  // Special: "Confused and Poisoned" together
+  if (/confused and poisoned/i.test(t)) {
+    effects.push({ status: 'confused', coinRequired: false, self: false });
+    effects.push({ status: 'poisoned', coinRequired: false, self: false });
+  }
+
+  // Deduplicate
+  const seen = new Set();
+  return effects.filter(e => {
+    const key = `${e.status}-${e.self}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+}
+
+function applyStatus(target, status) {
+  target.status = status;
+}
+
+// ══════════════════════════════════════════════════
+// ATTACK
+// ══════════════════════════════════════════════════
+async function performAttack(player, atk) {
+  const opp = player === 1 ? 2 : 1;
+  const myActive = G.players[player].active;
+  const oppActive = G.players[opp].active;
+  if (!oppActive) { showToast('No opponent Active Pokémon to attack!', true); return; }
+
+  // Check if attacker is paralyzed or asleep — can't attack
+  if (myActive?.status === 'paralyzed') {
+    addLog(`${myActive.name} is Paralyzed and cannot attack!`, true);
+    showToast(`${myActive.name} is Paralyzed!`, true);
+    return;
+  }
+  if (myActive?.status === 'asleep') {
+    addLog(`${myActive.name} is Asleep and cannot attack!`, true);
+    showToast(`${myActive.name} is Asleep!`, true);
+    return;
+  }
+
+  // Confusion check — flip coin, tails = attack self for 30 instead
+  if (myActive?.status === 'confused') {
+    addLog(`${myActive.name} is Confused — flipping coin...`);
+    const confusionHeads = await flipCoin(`${myActive.name} is Confused!\nHeads = attack normally, Tails = hurt itself`);
+    addLog(`Coin flip: ${confusionHeads ? 'HEADS — attacks normally!' : 'TAILS — hurt itself for 30!'}`);
+    if (!confusionHeads) {
+      myActive.damage = (myActive.damage || 0) + 30;
+      addLog(`${myActive.name} hurt itself for 30 damage in confusion! (${myActive.damage}/${myActive.hp} HP)`, true);
+      checkKO(player, opp, myActive, true);
+      renderAll();
+      endTurn();
+      return;
+    }
+  }
+
+  // Apply damage
+  const dmgStr = atk.damage || '0';
+  const dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
+  if (dmg > 0) {
+    oppActive.damage = (oppActive.damage || 0) + dmg;
+    const oppHp = parseInt(oppActive.hp) || 0;
+    addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
+    const koOccurred = checkKO(player, opp, oppActive, false);
+    if (koOccurred) { renderAll(); endTurn(); return; }
+  } else {
+    addLog(`P${player} used ${atk.name}!`, true);
+  }
+
+  // Parse and apply status effects
+  const effects = parseStatusEffects(atk.text || '');
+  for (const eff of effects) {
+    const target = eff.self ? myActive : oppActive;
+    if (!target) continue;
+    if (eff.coinRequired) {
+      const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
+      const flip = await flipCoin(`${atk.name}: flip for ${statusName}!\n${eff.onTails ? 'Tails' : 'Heads'} = ${statusName}`);
+      const shouldApply = eff.onTails ? !flip : flip;
+      if (shouldApply) {
+        applyStatus(target, eff.status);
+        addLog(`${target.name} is now ${statusName}!`, true);
+      } else {
+        addLog(`Coin flip: no ${statusName}.`);
+      }
+    } else {
+      const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
+      applyStatus(target, eff.status);
+      addLog(`${target.name} is now ${statusName}!`, true);
+    }
+  }
+
+  renderAll();
+  endTurn();
+}
+
+function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
+  const hp = parseInt(card.hp) || 0;
+  if (hp > 0 && (card.damage || 0) >= hp) {
+    addLog(`${card.name} is knocked out!`, true);
+    const owner = isSelf ? attackingPlayer : defendingPlayer;
+    const prize = isSelf ? defendingPlayer : attackingPlayer;
+    G.players[owner].discard.push(card);
+    G.players[owner].active = null;
+    // Prize goes to the attacker (or opponent if self-KO)
+    const prizeIdx = G.players[prize].prizes.findIndex(p => p);
+    if (prizeIdx !== -1) {
+      const prizeCard = G.players[prize].prizes[prizeIdx];
+      G.players[prize].hand.push(prizeCard.card);
+      G.players[prize].prizes[prizeIdx] = null;
+      const remaining = G.players[prize].prizes.filter(p => p).length;
+      addLog(`P${prize} took a prize! (${remaining} remaining)`, true);
+      if (remaining === 0) {
+        addLog(`Player ${prize} has taken all prizes — they win!`, true);
+        showToast(`Player ${prize} wins!`, false, 'ok');
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+// ══════════════════════════════════════════════════
+// TURN MANAGEMENT (with status effects between turns)
+// ══════════════════════════════════════════════════
+function endTurn() {
+  if (!G.started) return;
+  const prev = G.turn;
+  const prevActive = G.players[prev].active;
+
+  // Apply between-turn status effects to the player whose turn just ended
+  if (prevActive) {
+    // Poison: 10 damage (or 20 for toxic — stored as 'poisoned-toxic')
+    if (prevActive.status === 'poisoned' || prevActive.status === 'poisoned-toxic') {
+      const dmg = prevActive.status === 'poisoned-toxic' ? 20 : 10;
+      prevActive.damage = (prevActive.damage || 0) + dmg;
+      addLog(`${prevActive.name} took ${dmg} Poison damage! (${prevActive.damage}/${prevActive.hp} HP)`);
+      checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+    }
+    // Burn: 20 damage (Gen 2+, but let's handle if it appears)
+    if (prevActive.status === 'burned') {
+      prevActive.damage = (prevActive.damage || 0) + 20;
+      addLog(`${prevActive.name} took 20 Burn damage! (${prevActive.damage}/${prevActive.hp} HP)`);
+      checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+    }
+    // Paralysis wears off after one turn
+    if (prevActive.status === 'paralyzed') {
+      prevActive.status = null;
+      addLog(`${prevActive.name} is no longer Paralyzed.`);
+    }
+  }
+
+  G.turn = prev === 1 ? 2 : 1;
+  G.turnNum++;
+  G.phase = 'DRAW';
+  G.energyPlayedThisTurn = false;
+  G.pendingAction = null;
+  clearHighlights();
+  addLog(`Player ${prev} ended their turn.`, true);
+
+  // Sleep check: flip coin at start of new player's turn
+  const newActive = G.players[G.turn].active;
+  if (newActive?.status === 'asleep') {
+    // Schedule the coin flip after render so the board updates first
+    setTimeout(async () => {
+      const wakeUp = await flipCoin(`${newActive.name} is Asleep!\nHeads = wake up, Tails = stay asleep`);
+      if (wakeUp) {
+        newActive.status = null;
+        addLog(`${newActive.name} woke up!`, true);
+      } else {
+        addLog(`${newActive.name} is still Asleep.`);
+      }
+      renderAll();
+    }, 400);
+  }
+
+  drawCard(G.turn, true);
+  renderAll();
+}(player, slotIdx) {
+  const slot = G.players[player].bench[slotIdx];
+  if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
+    playToBench(player, slotIdx); return;
+  }
+  if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player && slot) {
+    attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
+    G.pendingAction = null; clearHighlights(); return;
+  }
+  // During setup either player can interact with their own bench slots
+  const canAct = G.phase === 'SETUP' || G.turn === player;
+  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx); }
 }
 
 // ══════════════════════════════════════════════════
