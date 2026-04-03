@@ -1237,7 +1237,14 @@ function getActionsForCard(player, card, handIdx) {
   if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
     if (!p.active) actions.push({ label: 'Play as Active', fn: () => playAsActive(player, handIdx) });
     const benchFull = p.bench.every(s => s !== null);
-    if (!benchFull) actions.push({ label: 'Play to Bench', fn: () => startBenchPlay(player, handIdx) });
+    const basicsInHand = p.hand.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')).length;
+    const onlyBasic = basicsInHand === 1;
+    if (!benchFull) actions.push({
+      label: 'Play to Bench',
+      fn: onlyBasic ? null : () => startBenchPlay(player, handIdx),
+      disabled: onlyBasic,
+      tooltip: onlyBasic ? 'Only Basic — must play as Active' : null
+    });
   }
   if (card.supertype === 'Energy' && !G.energyPlayedThisTurn) {
     actions.push({ label: 'Attach to Active', fn: () => attachEnergy(player, handIdx, 'active') });
@@ -1639,9 +1646,15 @@ function showActionMenu(title, actions) {
   menu.querySelectorAll('.action-btn').forEach(b => b.remove());
   actions.forEach(a => {
     const btn = document.createElement('button');
-    btn.className = 'action-btn' + (a.danger ? ' danger' : '');
-    btn.textContent = a.label;
-    btn.onclick = a.fn;
+    btn.className = 'action-btn' + (a.danger ? ' danger' : '') + (a.disabled ? ' disabled' : '');
+    btn.textContent = a.label + (a.tooltip ? ` — ${a.tooltip}` : '');
+    if (a.disabled) {
+      btn.style.opacity = '0.35';
+      btn.style.cursor = 'not-allowed';
+      btn.onclick = e => e.stopPropagation();
+    } else {
+      btn.onclick = a.fn;
+    }
     menu.appendChild(btn);
   });
   const cancel = document.createElement('button');
