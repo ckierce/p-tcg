@@ -273,6 +273,7 @@ html, body {
   overflow: visible;
   position: relative;
   flex-shrink: 0;
+  cursor: pointer;
 }
 .opp-active-slot img {
   width: 100%; height: 85%;
@@ -1065,7 +1066,7 @@ html, body {
         <span class="opp-label">PLAYER 2</span>
 
         <!-- Opp active -->
-        <div class="opp-active-slot" id="active-p2">
+        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2)">
           <span class="slot-label">ACTIVE</span>
         </div>
 
@@ -2474,15 +2475,17 @@ function endTurn() {
       const dmg = prevActive.status === 'poisoned-toxic' ? 20 : 10;
       prevActive.damage = (prevActive.damage || 0) + dmg;
       addLog(`${prevActive.name} took ${dmg} Poison damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      const poisonKo = checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      const opp = prev === 1 ? 2 : 1;
+      const poisonKo = checkKO(opp, prev, prevActive, true); // isSelf=true: owner=prev, prize to opp
       if (poisonKo === 'win') { renderAll(); return; }
-      if (poisonKo === 'promote') { renderAll(); return; } // deferred
+      if (poisonKo === 'promote') { renderAll(); return; }
     }
     // Burn: 20 damage
     if (prevActive.status === 'burned') {
       prevActive.damage = (prevActive.damage || 0) + 20;
       addLog(`${prevActive.name} took 20 Burn damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      const burnKo = checkKO(prev, prev === 1 ? 2 : 1, prevActive, false);
+      const opp = prev === 1 ? 2 : 1;
+      const burnKo = checkKO(opp, prev, prevActive, true); // isSelf=true
       if (burnKo === 'win') { renderAll(); return; }
       if (burnKo === 'promote') { renderAll(); return; }
     }
