@@ -1426,6 +1426,10 @@ function handleEndTurnBtn() {
   if (G.phase === 'SETUP') {
     doneSetup();
   } else {
+    if (!G.players[G.turn].active) {
+      showToast('You must have an Active Pokémon before ending your turn!', true);
+      return;
+    }
     endTurn();
   }
 }
@@ -1715,13 +1719,28 @@ function playTrainer(player, handIdx) {
   if (name === 'Switch') {
     if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
     consume();
-    // Auto-pick first bench slot
-    const idx = p.bench.findIndex(s => s !== null);
-    const old = p.active;
-    p.active = p.bench[idx];
-    p.bench[idx] = old;
-    addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
-    renderAll(); return;
+    const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    // If only one bench option, swap immediately
+    if (benchSlots.length === 1) {
+      const old = p.active;
+      p.active = benchSlots[0].s;
+      p.bench[benchSlots[0].i] = old;
+      addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
+      renderAll(); return;
+    }
+    // Multiple bench options — let player choose
+    closeActionMenu();
+    showActionMenu('Switch — choose a Pokémon', benchSlots.map(({ s, i }) => ({
+      label: `Bench ${i+1}: ${s.name}`,
+      fn: () => {
+        const old = p.active;
+        p.active = s;
+        p.bench[i] = old;
+        addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
+        closeActionMenu(); renderAll();
+      }
+    })));
+    return;
   }
 
   // ── Gust of Wind ─────────────────────────────────
@@ -1889,7 +1908,34 @@ function playTrainer(player, handIdx) {
     renderAll(); return;
   }
 
-  // ── Revive ────────────────────────────────────────
+  // ── Mysterious Fossil ─────────────────────────────
+  if (name === 'Mysterious Fossil') {
+    // Can be played as Active (if no active yet) or to Bench
+    const hasActive = !!p.active;
+    const benchFull = p.bench.every(s => s !== null);
+    if (hasActive && benchFull) { showToast('Bench is full!', true); return; }
+    const fossil = {
+      id: card.id, name: 'Mysterious Fossil',
+      supertype: 'Pokémon', subtypes: ['Basic'],
+      hp: '10', attacks: [], attachedEnergy: [],
+      damage: 0, status: null,
+      images: card.images,
+      isDoll: true,      // no prize on KO, same treatment as Clefairy Doll
+      isFossil: true,    // can be discarded from bench voluntarily
+      canRetreat: false,
+    };
+    consume();
+    if (!hasActive) {
+      // No active yet — play as Active
+      p.active = fossil;
+      addLog(`P${player} played Mysterious Fossil as their Active.`, true);
+    } else {
+      const freeSlot = p.bench.findIndex(s => s === null);
+      p.bench[freeSlot] = fossil;
+      addLog(`P${player} played Mysterious Fossil to the bench.`, true);
+    }
+    renderAll(); return;
+  }
   if (name === 'Revive') {
     const basicInDiscard = p.discard.find(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
     if (!basicInDiscard) { showToast('No Basic Pokémon in discard!', true); return; }
@@ -1959,18 +2005,26 @@ function playTrainer(player, handIdx) {
   if (name === 'Poké Ball') {
     consume();
     (async () => {
-      const heads = await flipCoin('Poké Ball: Heads = search deck for any Basic or Evolution');
+      const heads = await flipCoin('Poké Ball: Heads = search deck for any Pokémon');
       if (heads) {
         const pokemon = p.deck.filter(c => c.supertype === 'Pokémon');
-        if (pokemon.length) {
-          // Pull first pokemon found (in a real game player would choose)
-          const found = pokemon[0];
+        if (!pokemon.length) {
+          addLog(`P${player} used Poké Ball — HEADS but no Pokémon in deck.`); renderAll(); return;
+        }
+        const picked = await openCardPicker({
+          title: 'Poké Ball',
+          subtitle: 'Choose a Pokémon from your deck',
+          cards: pokemon,
+          maxSelect: 1
+        });
+        if (picked) {
+          const found = pokemon[picked[0]];
           const i = p.deck.findIndex(c => c === found);
-          p.hand.push(...p.deck.splice(i, 1));
+          if (i !== -1) p.hand.push(...p.deck.splice(i, 1));
           p.deck = shuffle(p.deck);
           addLog(`P${player} used Poké Ball — HEADS! Found ${found.name}.`, true);
         } else {
-          addLog(`P${player} used Poké Ball — HEADS but no Pokémon in deck.`);
+          addLog(`P${player} used Poké Ball — HEADS but no Pokémon chosen.`);
         }
       } else {
         addLog(`P${player} used Poké Ball — TAILS! No effect.`);
@@ -2141,6 +2195,21 @@ function showFieldActionMenu(player, zone, benchIdx) {
       });
     }
     actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
+  }
+
+  // Clefairy Doll / Mysterious Fossil: can be voluntarily discarded from bench on your turn
+  if (zone !== 'active' && (card.isDoll || card.isFossil) && G.turn === player && G.phase === 'MAIN') {
+    actions.push({
+      label: `Discard ${card.name}`,
+      danger: true,
+      fn: () => {
+        p.bench[benchIdx] = null;
+        p.discard.push(card);
+        addLog(`P${player} discarded ${card.name} from the bench.`, true);
+        closeActionMenu();
+        renderAll();
+      }
+    });
   }
 
   actions.push({ label: 'View Card', fn: () => { closeActionMenu(); } });
