@@ -2328,28 +2328,29 @@ async function playTrainer(player, handIdx) {
   // ── Switch ────────────────────────────────────────
   if (name === 'Switch') {
     if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
-    consume();
     const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
     // If only one bench option, swap immediately
     if (benchSlots.length === 1) {
+      consume();
       const old = p.active;
       p.active = benchSlots[0].s;
       p.bench[benchSlots[0].i] = old;
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
       renderAll(); return;
     }
-    // Multiple bench options — let player choose
+    // Multiple bench options — let player choose; consume only on confirm
     closeActionMenu();
     showActionMenu('Switch — choose a Pokémon', benchSlots.map(({ s, i }) => ({
       label: `Bench ${i+1}: ${s.name}`,
       fn: () => {
+        consume();
         const old = p.active;
         p.active = s;
         p.bench[i] = old;
         addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
         closeActionMenu(); renderAll();
       }
-    })));
+    })), null);
     return;
   }
 
@@ -2357,19 +2358,20 @@ async function playTrainer(player, handIdx) {
   if (name === 'Gust of Wind') {
     const oppBench = opp.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
     if (!oppBench.length) { showToast("Opponent has no bench Pokémon!", true); return; }
-    consume();
     if (oppBench.length === 1) {
+      consume();
       const { s, i } = oppBench[0];
       const old = opp.active;
       opp.active = s; opp.bench[i] = old;
       addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
       renderAll(); return;
     }
-    // Multiple bench options — let player choose
+    // Multiple bench options — let player choose; consume only on confirm
     closeActionMenu();
     showActionMenu("Gust of Wind — choose opponent's Pokémon", oppBench.map(({ s, i }) => ({
       label: `${s.name} (Bench ${i + 1})`,
       fn: () => {
+        consume();
         const old = opp.active;
         opp.active = s; opp.bench[i] = old;
         addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
@@ -4412,7 +4414,10 @@ function hideCardDetail() {
 
 document.addEventListener('click', e => {
   const menu = document.getElementById('action-menu');
-  if (menu.classList.contains('show') && !menu.contains(e.target)) closeActionMenu();
+  if (menu.classList.contains('show') && !menu.contains(e.target)) {
+    closeActionMenu();
+    cancelAction();
+  }
 });
 document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();
