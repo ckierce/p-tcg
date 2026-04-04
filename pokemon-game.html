@@ -3127,6 +3127,39 @@ async function performAttack(player, atk) {
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
 
+  // ── Bench splash damage: "Does N damage to each Pokémon on each player's Bench" ──
+  // e.g. Selfdestruct, Explosion — runs before active damage so KO/endTurn sequencing is clean
+  const benchSplashMatch = (atk.text || '').match(/does (\d+) damage to each pok[eé]mon on each player[''s]* bench/i);
+  if (benchSplashMatch) {
+    const splashDmg = parseInt(benchSplashMatch[1]);
+    for (const pNum of [1, 2]) {
+      const pObj = G.players[pNum];
+      for (let i = 0; i < pObj.bench.length; i++) {
+        const b = pObj.bench[i];
+        if (!b) continue;
+        b.damage = (b.damage || 0) + splashDmg;
+        addLog(`${b.name} (P${pNum} bench) took ${splashDmg} splash damage! (${b.damage}/${b.hp} HP)`);
+        // Bench KOs from splash: no prize, just discard — don't use checkKO (it's for actives)
+        const bHp = parseInt(b.hp) || 0;
+        if (bHp > 0 && b.damage >= bHp) {
+          addLog(`${b.name} was knocked out by splash damage!`, true);
+          pObj.discard.push(b);
+          pObj.bench[i] = null;
+        }
+      }
+    }
+  }
+
+  // ── Self-damage: "[Pokémon] does N damage to itself" (unconditional, not coin-gated) ──
+  // e.g. Selfdestruct, Explosion — excludes "If tails, X does N damage to itself" (Pattern 6)
+  const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
+  const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
+  if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
+    const selfDmg = parseInt(selfDmgTextMatch[1]);
+    myActive.damage = (myActive.damage || 0) + selfDmg;
+    addLog(`${myActive.name} took ${selfDmg} recoil damage! (${myActive.damage}/${myActive.hp} HP)`);
+  }
+
   if (dmg > 0) {
     // PlusPower bonus (card attached to attacker)
     if (myActive?.plusPower) {
@@ -3173,13 +3206,8 @@ async function performAttack(player, atk) {
     const oppHp = parseInt(oppActive.hp) || 0;
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
     const koResult = checkKO(player, opp, oppActive, false);
-    if (koResult) {
-      renderAll();
-      if (!G.started || koResult === 'win') return;
-      if (koResult === 'promote') return;
-      if (G.started) endTurn();
-      return;
-    }
+    if (koResult === 'win') { renderAll(); return; }
+    if (koResult === 'promote') { renderAll(); return; }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
   }
@@ -3201,42 +3229,6 @@ async function performAttack(player, atk) {
     const discarded = myActive.attachedEnergy.splice(0, n);
     G.players[player].discard.push(...discarded);
     addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
-  }
-
-  // ── Bench splash damage: "Does N damage to each Pokémon on each player's Bench" ──
-  // e.g. Selfdestruct, Explosion
-  const benchSplashMatch = (atk.text || '').match(/does (\d+) damage to each pok[eé]mon on each player[''s]* bench/i);
-  if (benchSplashMatch) {
-    const splashDmg = parseInt(benchSplashMatch[1]);
-    for (const pNum of [1, 2]) {
-      const pObj = G.players[pNum];
-      for (let i = 0; i < pObj.bench.length; i++) {
-        const b = pObj.bench[i];
-        if (!b) continue;
-        b.damage = (b.damage || 0) + splashDmg;
-        addLog(`${b.name} (P${pNum} bench) took ${splashDmg} splash damage! (${b.damage}/${b.hp} HP)`);
-        const benchKo = checkKO(player, pNum, b, false);
-        if (benchKo === 'win') { renderAll(); return; }
-        if (benchKo) {
-          // KO'd bench pokemon — move to discard, clear slot (no prize for bench KO from splash)
-          pObj.discard.push(b);
-          pObj.bench[i] = null;
-          addLog(`${b.name} was knocked out by splash damage!`, true);
-        }
-      }
-    }
-  }
-
-  // ── Self-damage: "[Pokémon] does N damage to itself" (unconditional, not coin-gated)
-  // e.g. Selfdestruct, Explosion — excludes "If tails, X does N damage to itself" (handled by Pattern 6)
-  const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
-  const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
-  if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
-    const selfDmg = parseInt(selfDmgTextMatch[1]);
-    myActive.damage = (myActive.damage || 0) + selfDmg;
-    addLog(`${myActive.name} took ${selfDmg} damage from recoil! (${myActive.damage}/${myActive.hp} HP)`);
-    const selfKo = checkKO(player, opp, myActive, true);
-    if (selfKo === 'win') { renderAll(); return; }
   }
 
 
@@ -3284,6 +3276,23 @@ async function performAttack(player, atk) {
       const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
       applyStatus(target, eff.status);
       addLog(`${target.name} is now ${statusName}!`, true);
+    }
+  }
+
+  // Check if attacker KO'd itself (e.g. Selfdestruct, Explosion recoil)
+  if (myActive) {
+    const myHp = parseInt(myActive.hp) || 0;
+    if (myHp > 0 && (myActive.damage || 0) >= myHp) {
+      addLog(`${myActive.name} was knocked out by its own attack!`, true);
+      G.players[player].discard.push(myActive);
+      G.players[player].active = null;
+      // Check if opponent wins because attacker has no Pokémon left
+      const myBenchLeft = G.players[player].bench.filter(s => s !== null);
+      if (myBenchLeft.length === 0) {
+        G.started = false;
+        showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
+        renderAll(); return;
+      }
     }
   }
 
