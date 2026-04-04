@@ -3219,6 +3219,8 @@ async function performAttack(player, atk) {
   }
 
 
+  // Parse and apply status effects
+  const effects = parseStatusEffects(atk.text || '');
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
