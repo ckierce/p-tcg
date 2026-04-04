@@ -521,25 +521,36 @@ html, body {
   pointer-events: none;
 }
 
-.energy-pip {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid rgba(255,255,255,.35);
-  box-shadow: 0 1px 4px rgba(0,0,0,.6);
+/* Energy icon SVGs inside overlays */
+.energy-overlay svg,
+.energy-overlay-bench svg {
   flex-shrink: 0;
+  drop-shadow: 0 1px 3px rgba(0,0,0,.7);
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
 }
 
-.damage-overlay {
-  position: absolute; bottom: 4px; left: 4px;
-  background: rgba(180,30,30,.95);
-  color: #fff;
-  font-size: clamp(8px, 0.9vh, 11px);
-  font-family: var(--font);
-  padding: 2px 5px;
-  border-radius: 3px;
-  z-index: 2;
-  letter-spacing: 0.5px;
+/* Damage counters — black dots across bottom of card, 1 per 10 dmg */
+.damage-counters {
+  position: absolute;
+  bottom: 3px;
+  left: 0; right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 0 3px;
+  z-index: 4;
+  pointer-events: none;
+}
+.dmg-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #111;
+  border: 1.5px solid rgba(255,255,255,.55);
+  box-shadow: 0 1px 3px rgba(0,0,0,.8);
+  flex-shrink: 0;
 }
 
 /* HP bar shown below active Pokémon slots */
@@ -3999,10 +4010,8 @@ function renderField(player) {
       } else {
         const card = p.active;
         if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-        const energyPips = (card.attachedEnergy || []).map(e =>
-          `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
-        ).join('');
-        const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+        const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 14)).join('');
+        const dmg = damageCounters(card.damage);
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
         const badges = [
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
@@ -4038,17 +4047,15 @@ function renderField(player) {
           slotEl.classList.remove('empty');
         } else {
           if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-          const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
           const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
           const badges = [
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
           ].join('');
-          const benchEnergyPips = (card.attachedEnergy || []).map(e =>
-            `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
-          ).join('');
+          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 13)).join('');
+          const benchDmg = damageCounters(card.damage);
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-            <div class="energy-overlay-bench">${benchEnergyPips}</div>${dmg}${status}${badges}`;
+            <div class="energy-overlay-bench">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
         }
       } else {
@@ -4084,11 +4091,8 @@ function renderSlotP1(el, card) {
 
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
-  const energyPips = (card.attachedEnergy || []).map(e => {
-    const col = energyColor(e.name);
-    return `<div class="energy-pip" style="background:${col}"></div>`;
-  }).join('');
-  const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 16)).join('');
+  const dmg = damageCounters(card.damage);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
   const badges = [
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
@@ -4460,6 +4464,84 @@ function energyColor(name) {
   if (n.includes('darkness') || n.includes('dark')) return '#7986cb';
   if (n.includes('metal') || n.includes('steel')) return '#b0bec5';
   return '#90a4ae';
+}
+
+// Returns an inline SVG for the TCG energy symbol for a given energy card name
+function energyIcon(energyName, size = 16) {
+  const n = (energyName || '').toLowerCase();
+  const s = size;
+
+  // Fire
+  if (n.includes('fire')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#e8400c" stroke="#b83000" stroke-width="1.5"/>
+    <path d="M16 4 C16 4 22 11 20 16 C24 13 23 8 23 8 C27 13 24 22 18 25 C20 22 19 19 17 18 C18 20 17 23 14 24 C10 21 9 15 12 11 C12 14 14 15 14 15 C12 11 16 4 16 4Z" fill="#fff6" stroke="none"/>
+    <path d="M16 6 C16 6 21 12 19 17 C23 14 22 9 22 9 C26 14 23 22 17 25 C19 22 18 19 16 18 C17 20 16 23 13 24 C9 21 8 15 11 11 C11 14 13 15 13 15 C11 11 16 6 16 6Z" fill="white" opacity="0.85"/>
+  </svg>`;
+
+  // Water
+  if (n.includes('water')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#2980ef" stroke="#1a60c0" stroke-width="1.5"/>
+    <path d="M16 6 C16 6 24 16 24 20 C24 24.4 20.4 28 16 28 C11.6 28 8 24.4 8 20 C8 16 16 6 16 6Z" fill="white" opacity="0.85"/>
+  </svg>`;
+
+  // Grass
+  if (n.includes('grass') || n.includes('leaf')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#3dbd45" stroke="#2a8c30" stroke-width="1.5"/>
+    <ellipse cx="16" cy="14" rx="8" ry="10" fill="white" opacity="0.85" transform="rotate(-20,16,14)"/>
+    <ellipse cx="16" cy="14" rx="8" ry="10" fill="white" opacity="0.6" transform="rotate(20,16,14)"/>
+    <line x1="16" y1="8" x2="16" y2="26" stroke="white" stroke-width="1.5" opacity="0.7"/>
+  </svg>`;
+
+  // Lightning
+  if (n.includes('lightning') || n.includes('electric')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#f5d500" stroke="#c8a800" stroke-width="1.5"/>
+    <polygon points="18,5 10,18 16,18 14,27 22,14 16,14" fill="white" opacity="0.9"/>
+  </svg>`;
+
+  // Psychic
+  if (n.includes('psychic')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#dc4ab0" stroke="#a0308a" stroke-width="1.5"/>
+    <circle cx="16" cy="16" r="7" fill="white" opacity="0.85"/>
+    <circle cx="16" cy="16" r="4" fill="#dc4ab0" opacity="0.7"/>
+    <circle cx="16" cy="16" r="2" fill="white" opacity="0.9"/>
+  </svg>`;
+
+  // Fighting
+  if (n.includes('fighting')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#c24b15" stroke="#8a3210" stroke-width="1.5"/>
+    <circle cx="13" cy="14" r="6" fill="white" opacity="0.85"/>
+    <circle cx="19" cy="14" r="6" fill="white" opacity="0.85"/>
+    <rect x="10" y="20" width="12" height="4" rx="2" fill="white" opacity="0.85"/>
+  </svg>`;
+
+  // Darkness
+  if (n.includes('darkness') || n.includes('dark')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#4a4a8a" stroke="#2a2a5a" stroke-width="1.5"/>
+    <path d="M20 8 C14 8 9 12 9 18 C9 24 14 27 20 26 C16 24 13 21 13 18 C13 14 16 10 20 8Z" fill="white" opacity="0.85"/>
+  </svg>`;
+
+  // Metal
+  if (n.includes('metal') || n.includes('steel')) return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#8a9aaa" stroke="#5a6a7a" stroke-width="1.5"/>
+    <circle cx="16" cy="16" r="9" fill="white" opacity="0.3"/>
+    <circle cx="16" cy="16" r="6" fill="white" opacity="0.6"/>
+    <circle cx="16" cy="16" r="3" fill="white" opacity="0.9"/>
+  </svg>`;
+
+  // Colorless / Double Colorless
+  return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="16" cy="16" r="15" fill="#b0b8c8" stroke="#808898" stroke-width="1.5"/>
+    <circle cx="16" cy="16" r="8" fill="white" opacity="0.7"/>
+    <text x="16" y="20" text-anchor="middle" font-size="10" fill="#606878" font-family="sans-serif" font-weight="bold">C</text>
+  </svg>`;
+}
+
+// Returns HTML for damage counter dots — one black dot per 10 damage
+function damageCounters(damage) {
+  if (!damage || damage <= 0) return '';
+  const dots = Math.floor(damage / 10);
+  if (dots === 0) return '';
+  return `<div class="damage-counters">${'<div class="dmg-dot"></div>'.repeat(dots)}</div>`;
 }
 
 function statusEmoji(s) {
