@@ -741,17 +741,7 @@ function filterCards() {
     const matchType = !typeF || c.supertype === typeF;
     return matchSet && matchQ && matchType;
   });
-  filteredCards.sort((a, b) => {
-    // Pokémon: sort by card number (national dex order within each set)
-    if (a.supertype === 'Pokémon' && b.supertype === 'Pokémon') {
-      const numA = parseInt(a.number, 10);
-      const numB = parseInt(b.number, 10);
-      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-      if (!isNaN(numA)) return -1;
-      if (!isNaN(numB)) return 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
+  filteredCards.sort((a, b) => a.name.localeCompare(b.name)); // trainers/energy stay alpha
   document.getElementById('results-info').textContent = `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''}`;
   renderGrid();
 }
@@ -830,6 +820,18 @@ function renderGrid() {
   const energies = filteredCards.filter(c => c.supertype === 'Energy');
   let html = '';
 
+  // Sort helper: set order then card number within set
+  const SET_ORDER = ['base1', 'base2', 'base3'];
+  function pokeSort(arr) {
+    return arr.slice().sort((a, b) => {
+      const si = SET_ORDER.indexOf(a.set && a.set.id) - SET_ORDER.indexOf(b.set && b.set.id);
+      if (si !== 0) return si;
+      const na = parseInt(a.number, 10), nb = parseInt(b.number, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
   if (pokemon.length) {
     html += sectionHeader('Pokémon', pokemon.length, 'sec-pokemon');
     if (!collapsedSections.has('sec-pokemon')) {
@@ -839,6 +841,8 @@ function renderGrid() {
         if (!byType[t]) byType[t] = [];
         byType[t].push(c);
       });
+      // Sort each type bucket by card number
+      Object.keys(byType).forEach(t => { byType[t] = pokeSort(byType[t]); });
       for (const t of TYPE_ORDER) {
         if (!byType[t]) continue;
         const tkey = 'type-' + t;
