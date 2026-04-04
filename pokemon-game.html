@@ -231,33 +231,28 @@ html, body {
   position: relative;
 }
 
-/* ── OPPONENT ZONE ────────────────────────────────────────── */
-/* Opponent rows stack: active (top) → bench (below) — centered */
+/* ── OPPONENT ZONE — compact horizontal strip ─────────────── */
 #opponent-zone {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
   flex-shrink: 0;
   width: 100%;
 }
 
-.opp-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
+.opp-row { display: flex; align-items: center; gap: 8px; }
 
-/* opp meta strip: label, deck count, discard, hand count — horizontal */
 #opp-meta {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 8px;
   color: var(--muted);
-  width: 100%;
-  justify-content: center;
+  margin-left: auto;
 }
 
 .opp-label {
@@ -282,8 +277,8 @@ html, body {
 }
 
 .opp-bench-slot {
-  width: var(--card-w-sm);
-  height: var(--card-h-sm);
+  width: 52px;
+  height: 72px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface2);
@@ -303,12 +298,12 @@ html, body {
 }
 .opp-bench-slot.empty { opacity: .3; }
 
-/* Opponent active — matches player active size */
+/* Opponent active — compact, fixed small size */
 .opp-active-slot {
-  width: var(--active-w);
-  height: var(--active-h);
+  width: 72px;
+  height: 100px;
   border: 1px solid var(--p2color);
-  border-radius: 8px;
+  border-radius: 5px;
   background: var(--surface2);
   display: flex;
   flex-direction: column;
@@ -324,7 +319,7 @@ html, body {
 .opp-active-slot img {
   width: 100%; height: 100%;
   object-fit: cover;
-  border-radius: 7px;
+  border-radius: 4px;
   filter: brightness(0.7);
 }
 .opp-active-slot .slot-label {
@@ -984,17 +979,25 @@ html, body {
 }
 .picker-card.selected .sel-badge { display: block; }
 
-/* ── CARD DETAIL HOVER ────────────────────────────────────── */
+/* ── CARD VIEW MODAL (click to view) ─────────────────────── */
 #card-detail {
   display: none;
   position: fixed;
-  z-index: 900;
-  pointer-events: none;
-  width: 200px;
-  filter: drop-shadow(0 8px 24px rgba(0,0,0,.8));
+  inset: 0;
+  z-index: 950;
+  background: rgba(0,0,0,.80);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
-#card-detail.show { display: block; }
-#card-detail-img { width: 100%; border-radius: 8px; display: block; }
+#card-detail.show { display: flex; }
+#card-detail-img {
+  width: min(320px, 80vw);
+  border-radius: 12px;
+  display: block;
+  box-shadow: 0 12px 60px rgba(0,0,0,.9);
+  pointer-events: none;
+}
 
 /* ── TOAST ────────────────────────────────────────────────── */
 #toast {
@@ -1383,18 +1386,16 @@ html, body {
     <!-- Field body -->
     <div id="field-body">
 
-      <!-- OPPONENT ZONE — stacked, centered -->
+      <!-- OPPONENT ZONE — compact horizontal strip -->
       <div id="opponent-zone">
-        <!-- Meta strip: name, deck, hand count -->
-        <div id="opp-meta">
-          <span class="opp-label" id="opp-label">PLAYER 2</span>
-          <span class="opp-deck-count">📦 <span id="deck-count-p2-val">0</span></span>
-          <span class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></span>
-          <div class="opp-prizes" id="prizes-p2"></div>
-          <div class="opp-discard" id="discard-p2"><span style="font-size:6px">DISC</span></div>
+        <span class="opp-label" id="opp-label">PLAYER 2</span>
+
+        <!-- Opp active -->
+        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2,event)">
+          <span class="slot-label">ACTIVE</span>
         </div>
 
-        <!-- Opp bench row -->
+        <!-- Opp bench -->
         <div class="opp-bench">
           <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
           <div class="opp-bench-slot empty" id="bench-p2-1" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
@@ -1403,9 +1404,16 @@ html, body {
           <div class="opp-bench-slot empty" id="bench-p2-4" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
         </div>
 
-        <!-- Opp active — hero card, closest to midline -->
-        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2,event)">
-          <span class="slot-label">ACTIVE</span>
+        <!-- Opp prizes -->
+        <div class="opp-prizes" id="prizes-p2"></div>
+
+        <!-- Opp meta: deck, discard, hand -->
+        <div id="opp-meta">
+          <div id="deck-count-p2" style="font-size:8px;color:var(--muted);text-align:center;min-width:32px">
+            0<br><span style="font-size:6px">deck</span>
+          </div>
+          <div class="opp-discard" id="discard-p2"><span style="font-size:6px">DISC</span></div>
+          <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
         </div>
       </div>
 
@@ -1510,8 +1518,8 @@ html, body {
   <div id="action-menu-title"></div>
 </div>
 
-<!-- Card detail hover -->
-<div id="card-detail">
+<!-- Card view modal -->
+<div id="card-detail" onclick="hideCardDetail()">
   <img id="card-detail-img" src="" alt="">
 </div>
 
@@ -1898,6 +1906,11 @@ function getActionsForCard(player, card, handIdx) {
   }
   if (!isSetup && card.supertype === 'Trainer') {
     actions.push({ label: 'Play Trainer', fn: async () => { closeActionMenu(); await playTrainer(player, handIdx); } });
+  }
+  // Always allow viewing the card image
+  const _viewSrc = card.images?.large || card.images?.small || '';
+  if (_viewSrc) {
+    actions.push({ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(_viewSrc); } });
   }
   return actions;
 }
@@ -2817,6 +2830,9 @@ function onActiveClick(player, evt) {
   const canAct = G.phase === 'SETUP' || (G.turn === player && G.phase === 'MAIN');
   if (p.active && canAct) {
     showFieldActionMenu(player, 'active', null, evt);
+  } else if (p.active && player !== myRole) {
+    const src = p.active.images?.large || p.active.images?.small || '';
+    if (src) showActionMenu(p.active.name, [{ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } }], evt);
   }
 }
 
@@ -2912,7 +2928,8 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
     });
   }
 
-  actions.push({ label: 'View Card', fn: () => { closeActionMenu(); } });
+  const _src = card.images?.large || card.images?.small || '';
+  if (_src) actions.push({ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(_src); } });
   showActionMenu(card.name, actions, evt);
 }
 
@@ -2989,7 +3006,13 @@ function handleBenchClick(player, slotIdx, evt) {
     G.pendingAction = null; clearHighlights(); return;
   }
   const canAct = G.phase === 'SETUP' || G.turn === player;
-  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx, evt); }
+  if (slot && canAct) {
+    showFieldActionMenu(player, 'bench', slotIdx, evt);
+  } else if (slot && player !== myRole) {
+    // Opponent bench — show View Card only
+    const src = slot.images?.large || slot.images?.small || '';
+    if (src) showActionMenu(slot.name, [{ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } }], evt);
+  }
 }
 
 function cancelAction() {
@@ -3758,9 +3781,7 @@ function renderField(player) {
           hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
         }
         const largeSrc = card.images?.large || card.images?.small || '';
-        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}"
-          onmouseover="showCardDetail(event,'${largeSrc}')"
-          onmouseout="hideCardDetail()">
+        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
           <div class="slot-label">${card.name.substring(0,9)}</div>
           <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
       }
@@ -3843,15 +3864,11 @@ function renderSlotP1(el, card) {
     const hpClass = pct > 50 ? 'hp-high' : pct > 25 ? 'hp-mid' : 'hp-low';
     hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
     const statLabel = `<div class="active-stat-label">${card.name.substring(0,10)} · ${curHp}/${maxHp}</div>`;
-    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
-      onmouseover="showCardDetail(event,'${largeSrc}')"
-      onmouseout="hideCardDetail()">
+    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
       ${statLabel}
       <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
   } else {
-    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
-      onmouseover="showCardDetail(event,'${largeSrc}')"
-      onmouseout="hideCardDetail()">
+    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
       <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
   }
   if (wasHighlighted) el.classList.add('highlight');
@@ -3888,9 +3905,7 @@ function renderHands() {
         ? `${pipHtml}${(card.subtypes || []).join(' ')} · ${card.hp || '?'}HP`
         : `${pipHtml}${card.supertype || ''}`;
       return `<div class="hand-card" id="hand-card-${localPlayer}-${i}"
-        onclick="event.stopPropagation();selectHandCard(${localPlayer},${i},event)"
-        onmouseover="showCardDetail(event,'${largeSrc}')"
-        onmouseout="hideCardDetail()">
+        onclick="event.stopPropagation();selectHandCard(${localPlayer},${i},event)">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
           <div class="hand-card-name">${card.name}</div>
@@ -3939,9 +3954,7 @@ function renderSidebarP2Hand() {
       const imgSrc = card.images?.small || '';
       const largeSrc = card.images?.large || imgSrc;
       return `<div class="hand-card" id="hand-card-${sidePlayer}-${i}"
-        onclick="event.stopPropagation();selectHandCard(${sidePlayer},${i})"
-        onmouseover="showCardDetail(event,'${largeSrc}')"
-        onmouseout="hideCardDetail()">
+        onclick="event.stopPropagation();selectHandCard(${sidePlayer},${i})">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
           <div class="hand-card-name">${card.name}</div>
@@ -4009,8 +4022,8 @@ function updateDeckCounts() {
   const topPlayer    = isP2Persp ? 1 : 2;
   const el1 = document.getElementById('deck-count-p1');
   if (el1) el1.innerHTML = `${G.players[bottomPlayer].deck.length}<span>cards</span>`;
-  const el2 = document.getElementById('deck-count-p2-val');
-  if (el2) el2.textContent = G.players[topPlayer].deck.length;
+  const el2 = document.getElementById('deck-count-p2');
+  if (el2) el2.innerHTML = `${G.players[topPlayer].deck.length}<br><span style="font-size:6px">deck</span>`;
 }
 
 function updatePhase() {
@@ -4149,20 +4162,10 @@ function closeActionMenu() {
   document.querySelectorAll('.hand-card').forEach(el => el.classList.remove('selected'));
 }
 
-function showCardDetail(event, imgSrc) {
+function showCardDetail(imgSrc) {
   if (!imgSrc) return;
-  const detail = document.getElementById('card-detail');
   document.getElementById('card-detail-img').src = imgSrc;
-  const pw = 200, ph = 280; // approx card preview size
-  const vw = window.innerWidth, vh = window.innerHeight;
-  let x = event.clientX + 20;
-  let y = event.clientY - 30;
-  if (x + pw > vw - 10) x = event.clientX - pw - 10;
-  if (y + ph > vh - 10) y = vh - ph - 10;
-  if (y < 10) y = 10;
-  detail.style.left = x + 'px';
-  detail.style.top = y + 'px';
-  detail.classList.add('show');
+  document.getElementById('card-detail').classList.add('show');
 }
 function hideCardDetail() {
   document.getElementById('card-detail').classList.remove('show');
@@ -4400,9 +4403,7 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     const grid = document.getElementById('card-picker-grid');
     grid.innerHTML = cards.map((card, i) => `
       <div class="picker-card" id="picker-card-${i}"
-        onclick="event.stopPropagation();togglePickerCard(${i})"
-        onmouseover="showCardDetail(event,'${card.images?.large || card.images?.small || ''}')"
-        onmouseout="hideCardDetail()">
+        onclick="event.stopPropagation();togglePickerCard(${i})">
         <img src="${card.images?.small || ''}" alt="${card.name}">
         <div class="picker-card-name">${card.name}</div>
         <div class="sel-badge">✓</div>
