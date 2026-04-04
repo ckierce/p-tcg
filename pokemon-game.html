@@ -1830,46 +1830,53 @@ html, body {
   }
   #deck-count-p1 { font-size: 9px; }
 
-  /* ── Opponent zone: two-row layout on mobile ── */
+  /* ── Opponent zone: active at bottom near midline, compact above ── */
   #opponent-zone {
-    flex-direction: column;
-    align-items: center;
-    padding: 6px 6px 4px;
-    gap: 5px;
+    flex-direction: row;
+    align-items: flex-end;  /* everything anchors to the bottom edge */
+    justify-content: center;
+    padding: 4px 6px 6px;
+    gap: 6px;
+    position: relative;
   }
-  /* Top row: active centered */
+  /* Active — bottom, near midline, slightly larger than bench */
   .opp-active-slot {
-    width: 80px;
-    height: 112px;
-    order: -1; /* float to top */
+    width: 72px;
+    height: 100px;
+    flex-shrink: 0;
+    order: 2;
   }
-  /* Bottom row: bench + info packed together */
+  /* Bench — left of active, smaller, bottom-aligned */
   #opp-left {
     flex: none;
-    width: 100%;
-    justify-content: center;
+    flex-direction: column;
+    align-items: flex-end;
     gap: 3px;
     order: 1;
   }
   .opp-label { display: none; }
+  .opp-bench {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .opp-bench-slot { width: 36px; height: 50px; }
+  /* Prizes + deck/discard — right of active, stacked vertically */
   #opp-right {
     flex: none;
-    width: 100%;
-    justify-content: center;
-    gap: 5px;
-    order: 2;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    order: 3;
   }
-  .opp-bench { gap: 3px; }
-  .opp-bench-slot { width: 40px; height: 56px; }
-  .opp-deck-slot { width: 32px; height: 44px; }
-  .opp-discard { width: 32px; height: 44px; }
   .opp-prizes {
-    grid-template-columns: repeat(6, 10px);
-    grid-template-rows: repeat(1, 14px);
+    grid-template-columns: repeat(3, 10px);
+    grid-template-rows: repeat(2, 14px);
     gap: 2px;
   }
   .opp-prize-pip { width: 10px; height: 14px; }
-  .opp-aux-row { gap: 3px; }
+  .opp-aux-row { flex-direction: column; gap: 3px; }
+  .opp-deck-slot { width: 32px; height: 44px; }
+  .opp-discard { width: 32px; height: 44px; }
   .opp-hand-count { font-size: 6px; }
 
   /* ── Midline ── */
