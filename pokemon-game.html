@@ -1552,9 +1552,13 @@ function selectHandCard(player, handIdx) {
   if (G.phase === 'PROMOTE') {
     showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true); return;
   }
-  // During setup both players can act freely; otherwise must be active player's turn
   if (G.phase !== 'SETUP' && G.turn !== player) {
     showToast(`It's Player ${G.turn}'s turn!`, true); return;
+  }
+  // Clear any stale pending action (e.g. abandoned energy attach) before building new actions
+  if (G.pendingAction) {
+    G.pendingAction = null;
+    clearHighlights();
   }
   const card = G.players[player].hand[handIdx];
   if (!card) return;
@@ -1574,14 +1578,17 @@ function getActionsForCard(player, card, handIdx) {
   if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
     if (!p.active) actions.push({ label: 'Play as Active', fn: () => playAsActive(player, handIdx) });
     const benchFull = p.bench.every(s => s !== null);
-    const basicsInHand = p.hand.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')).length;
-    const onlyBasic = !p.active && basicsInHand === 1;
-    if (!benchFull) actions.push({
-      label: 'Play to Bench',
-      fn: onlyBasic ? null : () => startBenchPlay(player, handIdx),
-      disabled: onlyBasic,
-      tooltip: onlyBasic ? 'Only Basic — must play as Active' : null
-    });
+    if (!benchFull) {
+      // During SETUP: if this is the only Basic and you have no Active yet, force it to Active
+      const basicsInHand = p.hand.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')).length;
+      const onlyBasicInSetup = isSetup && !p.active && basicsInHand === 1;
+      actions.push({
+        label: 'Play to Bench',
+        fn: onlyBasicInSetup ? null : () => startBenchPlay(player, handIdx),
+        disabled: onlyBasicInSetup,
+        tooltip: onlyBasicInSetup ? 'Only Basic — must play as Active' : null
+      });
+    }
   }
 
   // Evolution — Stage 1 or Stage 2 can evolve a matching pokemon on the board
@@ -1683,6 +1690,8 @@ function attachEnergy(player, handIdx, target, benchIdx = null) {
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
   targetCard.attachedEnergy.push(energy);
   G.energyPlayedThisTurn = true;
+  G.pendingAction = null;
+  clearHighlights();
   addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}.`);
   renderAll();
 }
@@ -3482,10 +3491,12 @@ async function joinRoom() {
       if (data.setup_p1 && G.phase === 'SETUP') mergeSetupSlot(1, data.setup_p1);
       if (data.state?.started) receiveGameState(data.state);
     } else {
-      // Post-start SETUP: merge P1's placements, and watch for phase to advance
+      // Post-start SETUP: P1 pushes to 'state', so read P1's placement from there
+      if (G.phase === 'SETUP' && data.state?.players?.[1]) {
+        mergeSetupSlot(1, data.state.players[1]);
+      }
       if (data.setup_p1) mergeSetupSlot(1, data.setup_p1);
-      // Receive full state only once we're past SETUP (doneSetup fired on P1)
-      // or during normal gameplay
+      // Receive full state only once P1 advances past SETUP, or during normal gameplay
       if (data.state && (G.phase !== 'SETUP' || data.state.phase !== 'SETUP')) {
         receiveGameState(data.state);
       }
@@ -3530,6 +3541,7 @@ function mergeSetupSlot(playerNum, slotData) {
   // Re-render just the field without pushing (we're receiving)
   renderField(1);
   renderField(2);
+  updatePerspectiveLabels();
 }
 
 // ── Push state to Firebase ────────────────────────
@@ -3583,6 +3595,7 @@ function receiveGameState(state) {
     discard: enrichCards(p.discard),
   });
 
+  const prevTurn = G.turn;
   const wasStarted = G.started;
 
   // Preserve our own hand/deck/prizes if this is the initial game-start receive.
@@ -3612,8 +3625,13 @@ function receiveGameState(state) {
   updateDeckCounts();
   updatePhase();
   updateTurnBadge();
+  updatePerspectiveLabels();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   applyRoleVisibility();
+  // Show turn flash if turn just switched to this player
+  if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
+    showTurnFlash(myRole);
+  }
 }
 
 // ── Action guard: only act on your turn / role ────
