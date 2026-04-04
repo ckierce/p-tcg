@@ -2391,6 +2391,9 @@ function evolve(player, handIdx, zone, benchIdx) {
   evoCard.attachedEnergy = target.attachedEnergy || [];
   evoCard.status = null; // evolving cures status conditions
 
+  // Send the pre-evolution card to discard (this includes Mysterious Fossil)
+  p.discard.push(target);
+
   if (zone === 'active') {
     p.active = evoCard;
   } else {
@@ -3410,11 +3413,13 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const costStr = atk.cost?.join(', ') || '—';
         const dmg = atk.damage || '0';
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
+        const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
+        const blocked = !canAfford || isDisabled;
         actions.push({
           label: `⚔ ${atk.name}`,
-          sub: canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
-          fn: canAfford ? async () => { closeActionMenu(); await performAttack(player, atk); } : null,
-          disabled: !canAfford,
+          sub: isDisabled ? `${costStr} · DISABLED` : canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
+          fn: blocked ? null : async () => { closeActionMenu(); await performAttack(player, atk); },
+          disabled: blocked,
         });
       });
     }
@@ -4009,6 +4014,125 @@ async function performAttack(player, atk) {
   }
 
 
+  // ── Minimize / "damage reduced by 20 during opponent's next turn" ──
+  // e.g. Grimer Minimize: "All damage done to Grimer during your opponent's next turn is reduced by 20"
+  // Same mechanical outcome as Defender card: sets defender flag on self
+  const minimizeMatch = (atk.text || '').match(/damage done to .+ during your opponent.s next turn is reduced by 20/i)
+    || (atk.text || '').match(/all damage.+reduced by 20.+opponent.s next turn/i);
+  if (minimizeMatch && myActive) {
+    myActive.defender = true;
+    addLog(`${atk.name}: ${myActive.name} will take 20 less damage next turn!`, true);
+  }
+
+  // ── "Damage reduced by 10" variant (Sharpen, etc.) ──
+  const reducedBy10Match = (atk.text || '').match(/damage.+reduced by 10.+opponent.s next turn/i)
+    || (atk.text || '').match(/opponent.s next turn.+reduced by 10/i);
+  if (reducedBy10Match && myActive && !minimizeMatch) {
+    myActive.defenderThreshold = myActive.defenderThreshold
+      ? myActive.defenderThreshold : 0;
+    // Use a custom flat reduction stored as negative threshold
+    myActive.defender = true;
+    myActive.defenderReduction = 10;
+    addLog(`${atk.name}: ${myActive.name} will take 10 less damage next turn!`, true);
+  }
+
+  // ── Agility-style: "Flip a coin. If heads, prevent all effects of attacks done to [Pokémon]" ──
+  const agilityMatch = (atk.text || '').match(/flip a coin\. if heads[^.]*prevent all effects of attacks[^.]*done to/i);
+  if (agilityMatch && myActive) {
+    const heads = await flipCoin(`${atk.name}: Heads = immune to all attack effects next turn, Tails = no effect`);
+    if (heads) {
+      myActive.defender = true;
+      myActive.defenderFull = true;
+      addLog(`${atk.name}: HEADS — ${myActive.name} is fully protected from all attack effects next turn!`, true);
+    } else {
+      addLog(`${atk.name}: TAILS — no protection.`);
+    }
+  }
+
+  // ── Smokescreen / Sand Attack: "If Defending Pokémon tries to attack next turn, flip coin; tails = does nothing" ──
+  const smokescreenMatch = (atk.text || '').match(/if the defending pok[eé]mon tries to attack next turn[^.]*flip a coin[^.]*tails[^.]*does nothing/i)
+    || (atk.text || '').match(/defending pok[eé]mon.+attack next turn.+tails.+does nothing/i);
+  if (smokescreenMatch && oppActive) {
+    oppActive.smokescreened = true;
+    addLog(`${atk.name}: ${oppActive.name} must flip before attacking next turn — tails = no attack!`, true);
+  }
+
+  // ── Leer / "The Defending Pokémon can't retreat during your opponent's next turn" ──
+  const leerMatch = (atk.text || '').match(/defending pok[eé]mon can.t retreat/i);
+  if (leerMatch && oppActive) {
+    oppActive.cantRetreat = true;
+    addLog(`${atk.name}: ${oppActive.name} cannot retreat next turn!`, true);
+  }
+
+  // ── Tail Whip / Growl / "Defending Pokémon's attacks do N less damage" ──
+  const growlMatch = (atk.text || '').match(/defending pok[eé]mon.s attacks do (\d+) less damage/i);
+  if (growlMatch && oppActive) {
+    const reduction = parseInt(growlMatch[1]);
+    oppActive.attackReduction = (oppActive.attackReduction || 0) + reduction;
+    addLog(`${atk.name}: ${oppActive.name}'s attacks do ${reduction} less damage next turn!`, true);
+  }
+
+  // ── Disable: "Choose 1 of the Defending Pokémon's attacks. That Pokémon can't use that attack next turn" ──
+  const disableMatch = (atk.text || '').match(/defending pok[eé]mon.s attacks[^.]*can.t use that attack/i)
+    || (atk.text || '').match(/choose 1 of the defending.+can.t use/i);
+  if (disableMatch && oppActive?.attacks?.length) {
+    if (oppActive.attacks.length === 1) {
+      oppActive.disabledAttack = oppActive.attacks[0].name;
+      addLog(`${atk.name}: ${oppActive.name}'s ${oppActive.disabledAttack} is disabled next turn!`, true);
+    } else {
+      const choice = await openCardPicker({
+        title: `${atk.name} — Disable`,
+        subtitle: `Choose an attack to disable on ${oppActive.name}`,
+        cards: oppActive.attacks.map(a => ({ name: a.name, images: oppActive.images })),
+        maxSelect: 1
+      });
+      if (choice && choice.length) {
+        oppActive.disabledAttack = oppActive.attacks[choice[0]].name;
+        addLog(`${atk.name}: ${oppActive.name}'s ${oppActive.disabledAttack} is disabled next turn!`, true);
+      }
+    }
+  }
+
+  // ── "Remove N damage counters from [Pokémon]" (partial heal) ──
+  const removeNMatch = (atk.text || '').match(/remove (\d+) damage counters? from/i);
+  if (removeNMatch && myActive) {
+    const counters = parseInt(removeNMatch[1]);
+    const healed = Math.min(myActive.damage || 0, counters * 10);
+    myActive.damage = Math.max(0, (myActive.damage || 0) - healed);
+    addLog(`${atk.name}: removed ${counters} damage counter(s) from ${myActive.name}.`, true);
+  }
+
+  // ── "Search your deck for a [Type] card and put it into your hand" ──
+  const searchDeckMatch = (atk.text || '').match(/search your deck for (?:a |an |up to \d+ )?(\w+) card[s]?[^.]*put (?:it|them) into your hand/i);
+  if (searchDeckMatch) {
+    const typeFilter = searchDeckMatch[1].toLowerCase();
+    let candidates = G.players[player].deck.filter(c => {
+      if (/trainer/i.test(typeFilter)) return c.supertype === 'Trainer';
+      if (/pok[eé]mon/i.test(typeFilter)) return c.supertype === 'Pokémon';
+      if (/energy/i.test(typeFilter)) return c.supertype === 'Energy';
+      return true; // "any" card
+    });
+    if (candidates.length) {
+      const picked = await openCardPicker({
+        title: `${atk.name} — Search Deck`,
+        subtitle: `Choose a card to take into your hand`,
+        cards: candidates,
+        maxSelect: 1
+      });
+      if (picked && picked.length) {
+        const found = candidates[picked[0]];
+        const di = G.players[player].deck.findIndex(c => c === found);
+        if (di !== -1) {
+          G.players[player].hand.push(...G.players[player].deck.splice(di, 1));
+          G.players[player].deck = shuffle(G.players[player].deck);
+          addLog(`${atk.name}: ${myActive?.name} searched deck and found ${found.name}.`, true);
+        }
+      }
+    } else {
+      addLog(`${atk.name}: no matching cards in deck.`);
+    }
+  }
+
   // Parse and apply status effects
   const effects = parseStatusEffects(atk.text || '');
   for (const eff of effects) {
@@ -4243,6 +4367,17 @@ function endTurn() {
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
   G.evolvedThisTurn = [];
+
+  // Clear per-turn attack debuff flags from all active Pokémon
+  for (const pNum of [1, 2]) {
+    const active = G.players[pNum].active;
+    if (!active) continue;
+    active.smokescreened = false;
+    active.cantRetreat = false;
+    active.attackReduction = 0;
+    active.disabledAttack = null;
+    active.defenderReduction = 0;
+  }
   G.plusPowerActive = 0;
   G.pendingAction = null;
   clearHighlights();
@@ -5582,10 +5717,12 @@ function onHandDragStart(e, player, handIdx) {
   const p = G.players[player];
   const isSetup = G.phase === 'SETUP';
 
-  if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
+  // Treat Mysterious Fossil and Clefairy Doll as Basic Pokémon for drag purposes
+  const isFossilOrDoll = /mysterious fossil|clefairy doll/i.test(card.name) && card.supertype === 'Trainer';
+  if ((card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) || isFossilOrDoll) {
     // Can play to active (if empty)
     if (!p.active) highlightSlot('active-p1', 'valid');
-    // Can play to any empty bench slot
+    // Can play to any empty bench slot (Fossil/Doll needs a free bench if active is occupied)
     for (let i = 0; i < 5; i++) {
       if (!p.bench[i]) highlightSlot(`bench-p1-${i}`, 'valid');
     }
@@ -5672,8 +5809,16 @@ function wireDropTarget(el, zone, benchIdx) {
     onHandDragEnd(); // clear state before action (action may re-render)
 
     if (dtype === 'valid') {
-      if (zone === 'active') playAsActive(player, handIdx);
-      else startBenchPlay(player, handIdx);
+      const droppedCard = G.players[player].hand[handIdx];
+      const isFossilOrDollDrop = droppedCard && /mysterious fossil|clefairy doll/i.test(droppedCard.name) && droppedCard.supertype === 'Trainer';
+      if (isFossilOrDollDrop) {
+        // Route through playTrainer which handles Fossil/Doll placement
+        playTrainer(player, handIdx);
+      } else if (zone === 'active') {
+        playAsActive(player, handIdx);
+      } else {
+        startBenchPlay(player, handIdx);
+      }
     } else if (dtype === 'evolve') {
       evolve(player, handIdx, zone, benchIdx);
     } else if (dtype === 'energy') {
