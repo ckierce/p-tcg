@@ -121,6 +121,205 @@ select:focus { border-color: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ── MOBILE LIST LAYOUT ────────────────────────────────────────────────────── */
+.card-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 10px;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.card-list-item.in-deck { border-color: var(--accent); }
+.card-list-item.maxed { opacity: 0.45; }
+.card-list-item.maxed .cli-add { pointer-events: none; }
+.cli-thumb {
+  width: 34px;
+  height: 48px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  overflow: hidden;
+}
+.cli-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cli-info { flex: 1; min-width: 0; }
+.cli-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cli-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.cli-badge {
+  font-family: "Press Start 2P", monospace;
+  font-size: 6px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--surface2);
+  color: var(--muted);
+}
+.cli-deck-qty {
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  color: var(--accent);
+  background: rgba(245,197,66,0.12);
+  border: 1px solid rgba(245,197,66,0.3);
+  border-radius: 4px;
+  padding: 3px 6px;
+  flex-shrink: 0;
+}
+.cli-add {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: rgba(245,197,66,0.1);
+  color: var(--accent);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cli-add:active { background: rgba(245,197,66,0.3); transform: scale(0.92); }
+.cli-more {
+  width: 28px;
+  height: 34px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-list-section { margin-bottom: 4px; }
+.card-list-inner { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+
+/* ── ACTION MENU (bottom sheet style) ─────────────────────────────────────── */
+.action-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 300;
+  display: none;
+  align-items: flex-end;
+}
+.action-sheet-overlay.show { display: flex; }
+.action-sheet {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 14px 14px 0 0;
+  border-top: 1px solid var(--border);
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+  animation: slideUp 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+.action-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.action-sheet-thumb {
+  width: 44px;
+  height: 62px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--surface2);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+.action-sheet-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.action-sheet-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.action-sheet-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.action-sheet-items { padding: 8px 0; }
+.action-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  font-size: 15px;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.1s;
+}
+.action-sheet-item:active { background: var(--surface2); }
+.action-sheet-item .asi-icon { font-size: 20px; width: 24px; text-align: center; flex-shrink: 0; }
+.action-sheet-item.danger { color: var(--accent2); }
+.action-sheet-cancel {
+  width: 100%;
+  padding: 14px;
+  background: var(--surface2);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-family: "Press Start 2P", monospace;
+  font-size: 8px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── CARD IMAGE MODAL ─────────────────────────────────────────────────────── */
+.card-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.card-zoom-overlay.show { display: flex; }
+.card-zoom-img {
+  max-width: min(340px, 90vw);
+  max-height: 85vh;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+  animation: zoomIn 0.18s ease;
+}
+@keyframes zoomIn {
+  from { opacity: 0; transform: scale(0.88); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
 /* ── MOBILE NAV BAR ─────────────────────────────────────────────────────── */
 .mobile-tabs {
   display: none;
@@ -372,6 +571,26 @@ select:focus { border-color: var(--accent); }
 <!-- Toast -->
 <div class="toast" id="toast"></div>
 
+<!-- Action Sheet -->
+<div class="action-sheet-overlay" id="action-sheet-overlay" onclick="if(event.target===this)closeActionSheet()">
+  <div class="action-sheet">
+    <div class="action-sheet-header">
+      <div class="action-sheet-thumb" id="as-thumb"></div>
+      <div>
+        <div class="action-sheet-title" id="as-title"></div>
+        <div class="action-sheet-sub" id="as-sub"></div>
+      </div>
+    </div>
+    <div class="action-sheet-items" id="as-items"></div>
+    <button class="action-sheet-cancel" onclick="closeActionSheet()">CANCEL</button>
+  </div>
+</div>
+
+<!-- Card Zoom -->
+<div class="card-zoom-overlay" id="card-zoom-overlay" onclick="closeCardZoom()">
+  <img class="card-zoom-img" id="card-zoom-img" src="" alt="Card">
+</div>
+
 <!-- Mobile bottom nav -->
 <nav class="mobile-tabs" id="mobile-tabs" aria-label="Mobile navigation">
   <div class="mobile-tabs-inner">
@@ -407,6 +626,20 @@ const db = firebase.database();
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
 const MAX_COPIES = 4;
 const MAX_DECK = 60;
+// Special energy cards that have a 4-copy limit (like any non-basic card)
+const SPECIAL_ENERGY_NAMES = ['double colorless energy', 'full heal energy', 'potion energy', 'rainbow energy'];
+function isSpecialEnergy(card) {
+  if (card.supertype !== 'Energy') return false;
+  // Subtypes: Basic Energy has subtype 'Basic', special energies don't
+  if (card.subtypes && card.subtypes.includes('Basic')) return false;
+  const name = card.name.toLowerCase();
+  // Any non-basic energy or explicitly named special energy gets the 4-copy cap
+  return true; // catches Double Colorless Energy and any other non-basic
+}
+function getMaxCopies(card) {
+  if (card.supertype !== 'Energy') return MAX_COPIES;
+  return isSpecialEnergy(card) ? MAX_COPIES : Infinity; // basic energy = unlimited
+}
 let allCards = [];
 let filteredCards = [];
 let deck = {};
@@ -470,8 +703,8 @@ function typeEmoji(supertype) {
 function cardHTML(c) {
   const inDeck = deck[c.id];
   const qty = inDeck ? inDeck.qty : 0;
-  const isEnergy = c.supertype === 'Energy';
-  const atMax = qty >= MAX_COPIES && !isEnergy;
+  const cardMax = getMaxCopies(c);
+  const atMax = qty >= cardMax;
   const deckFull = deckTotal() >= MAX_DECK;
   const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
   const imgSrc = c.images?.small || '';
@@ -500,6 +733,12 @@ function renderGrid() {
     grid.innerHTML = `<div class="error-msg" style="grid-column:1/-1;padding:40px">No cards match your search.</div>`;
     return;
   }
+  const mobile = isMobileLayout();
+  const cardFn = mobile ? cardListItemHTML : cardHTML;
+  const wrapFn = mobile
+    ? (cards) => `<div class="card-list-inner">` + cards.map(cardFn).join('') + `</div>`
+    : (cards) => `<div class="card-grid-inner">` + cards.map(cardFn).join('') + `</div>`;
+
   const pokemon = filteredCards.filter(c => c.supertype === 'Pokémon');
   const trainers = filteredCards.filter(c => c.supertype === 'Trainer');
   const energies = filteredCards.filter(c => c.supertype === 'Energy');
@@ -516,20 +755,20 @@ function renderGrid() {
     for (const t of TYPE_ORDER) {
       if (!byType[t]) continue;
       html += typeGroupHeader(t, typeColor([t]), byType[t].length);
-      html += `<div class="card-grid-inner">` + byType[t].map(cardHTML).join('') + `</div>`;
+      html += wrapFn(byType[t]);
     }
     Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)).forEach(t => {
       html += typeGroupHeader(t, typeColor([t]), byType[t].length);
-      html += `<div class="card-grid-inner">` + byType[t].map(cardHTML).join('') + `</div>`;
+      html += wrapFn(byType[t]);
     });
   }
   if (trainers.length) {
     html += sectionHeader('Trainers', trainers.length);
-    html += `<div class="card-grid-inner">` + trainers.map(cardHTML).join('') + `</div>`;
+    html += wrapFn(trainers);
   }
   if (energies.length) {
     html += sectionHeader('Energy', energies.length);
-    html += `<div class="card-grid-inner">` + energies.map(cardHTML).join('') + `</div>`;
+    html += wrapFn(energies);
   }
   grid.innerHTML = html;
 }
@@ -545,6 +784,139 @@ function typeGroupHeader(type, color, count) {
   </div>`;
 }
 
+// ─── MOBILE LIST RENDERING ──────────────────────────────────────────────────
+function isMobileLayout() {
+  return window.innerWidth <= 800;
+}
+
+function cardLevel(c) {
+  if (c.supertype !== 'Pokémon') return null;
+  // Try to pull level from the card data
+  if (c.level) return `Lv. ${c.level}`;
+  return null;
+}
+
+function cardListItemHTML(c) {
+  const inDeck = deck[c.id];
+  const qty = inDeck ? inDeck.qty : 0;
+  const cardMax = getMaxCopies(c);
+  const atMax = qty >= cardMax;
+  const deckFull = deckTotal() >= MAX_DECK;
+  const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
+  const imgSrc = c.images?.small || '';
+  const level = cardLevel(c);
+  const typeLabel = c.supertype === 'Energy' ? 'Energy'
+    : c.supertype === 'Trainer' ? 'Trainer'
+    : cardEnergyType(c);
+
+  return `<div class="card-list-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-id="${c.id}">
+    <div class="cli-thumb">
+      ${imgSrc ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">` : typeEmoji(c.supertype)}
+    </div>
+    <div class="cli-info">
+      <div class="cli-name">${c.name}</div>
+      <div class="cli-sub">
+        <span class="type-dot" style="background:${typeColor(c.types)};width:7px;height:7px;border-radius:50%;flex-shrink:0"></span>
+        ${level ? `${level} · ` : ''}${typeLabel}
+        <span class="cli-badge">${SET_NAMES[c.set.id] || c.set.id}</span>
+      </div>
+    </div>
+    ${qty > 0 ? `<span class="cli-deck-qty">×${qty}</span>` : ''}
+    <button class="cli-more" onclick="openActionSheet('${c.id}')" aria-label="More options">⋯</button>
+    <button class="cli-add" onclick="addCard('${c.id}')" aria-label="Add to deck">+</button>
+  </div>`;
+}
+
+function renderListSection(cards) {
+  return `<div class="card-list-inner">` + cards.map(cardListItemHTML).join('') + `</div>`;
+}
+
+// ─── ACTION SHEET ────────────────────────────────────────────────────────────
+let actionSheetCardId = null;
+
+function openActionSheet(cardId) {
+  const card = allCards.find(c => c.id === cardId);
+  if (!card) return;
+  actionSheetCardId = cardId;
+  const inDeck = deck[cardId];
+  const qty = inDeck ? inDeck.qty : 0;
+  const imgSrc = card.images?.small || '';
+  const level = cardLevel(card);
+  const typeLabel = card.supertype === 'Energy' ? 'Energy'
+    : card.supertype === 'Trainer' ? 'Trainer'
+    : cardEnergyType(card);
+  const cardMax = getMaxCopies(card);
+  const atMax = qty >= cardMax;
+
+  document.getElementById('as-thumb').innerHTML = imgSrc
+    ? `<img src="${imgSrc}" alt="${card.name}">`
+    : typeEmoji(card.supertype);
+  document.getElementById('as-title').textContent = card.name;
+  document.getElementById('as-sub').textContent = [level, typeLabel, SET_NAMES[card.set.id] || card.set.id].filter(Boolean).join(' · ');
+
+  // Build action items
+  const itemsEl = document.getElementById('as-items');
+  let html = '';
+  if (!atMax && deckTotal() < MAX_DECK) {
+    html += `<div class="action-sheet-item" onclick="asAddCard()">
+      <span class="asi-icon">➕</span> Add to Deck${qty > 0 ? ` (×${qty} in deck)` : ''}
+    </div>`;
+  } else if (atMax) {
+    html += `<div class="action-sheet-item" style="opacity:0.4;cursor:default">
+      <span class="asi-icon">🚫</span> Max copies in deck (${qty}/${cardMax})
+    </div>`;
+  } else {
+    html += `<div class="action-sheet-item" style="opacity:0.4;cursor:default">
+      <span class="asi-icon">🚫</span> Deck is full (60/60)
+    </div>`;
+  }
+  if (qty > 0) {
+    html += `<div class="action-sheet-item danger" onclick="asRemoveCard()">
+      <span class="asi-icon">➖</span> Remove one (×${qty} in deck)
+    </div>`;
+  }
+  html += `<div class="action-sheet-item" onclick="asViewCard()">
+    <span class="asi-icon">🔍</span> View full card
+  </div>`;
+  itemsEl.innerHTML = html;
+
+  document.getElementById('action-sheet-overlay').classList.add('show');
+}
+
+function closeActionSheet() {
+  document.getElementById('action-sheet-overlay').classList.remove('show');
+  actionSheetCardId = null;
+}
+
+function asAddCard() {
+  if (actionSheetCardId) {
+    addCard(actionSheetCardId);
+    closeActionSheet();
+  }
+}
+
+function asRemoveCard() {
+  if (actionSheetCardId) {
+    changeQty(actionSheetCardId, -1);
+    closeActionSheet();
+  }
+}
+
+function asViewCard() {
+  if (!actionSheetCardId) return;
+  const card = allCards.find(c => c.id === actionSheetCardId);
+  if (!card) return;
+  const imgSrc = card.images?.large || card.images?.small || '';
+  if (!imgSrc) { showToast('No image available', true); closeActionSheet(); return; }
+  document.getElementById('card-zoom-img').src = imgSrc;
+  document.getElementById('card-zoom-overlay').classList.add('show');
+  closeActionSheet();
+}
+
+function closeCardZoom() {
+  document.getElementById('card-zoom-overlay').classList.remove('show');
+}
+
 // ─── DECK OPS ───────────────────────────────────────────────────────────────
 function deckTotal() {
   return Object.values(deck).reduce((s, v) => s + v.qty, 0);
@@ -553,10 +925,10 @@ function deckTotal() {
 function addCard(id) {
   const card = allCards.find(c => c.id === id);
   if (!card) return;
-  const isEnergy = card.supertype === 'Energy';
   const existing = deck[id];
   const qty = existing ? existing.qty : 0;
-  if (!isEnergy && qty >= MAX_COPIES) { showToast('Max 4 copies allowed!', true); return; }
+  const cardMax = getMaxCopies(card);
+  if (qty >= cardMax) { showToast(`Max ${cardMax} copies allowed!`, true); return; }
   if (deckTotal() >= MAX_DECK) { showToast('Deck is full! (60 cards)', true); return; }
   deck[id] = { card, qty: qty + 1 };
   renderDeck(); renderGrid(); validateDeck(false);
@@ -565,10 +937,10 @@ function addCard(id) {
 function changeQty(id, delta) {
   if (!deck[id]) return;
   const card = deck[id].card;
-  const isEnergy = card.supertype === 'Energy';
   const newQty = deck[id].qty + delta;
+  const cardMax = getMaxCopies(card);
   if (delta > 0) {
-    if (!isEnergy && newQty > MAX_COPIES) { showToast('Max 4 copies!', true); return; }
+    if (newQty > cardMax) { showToast(`Max ${cardMax} copies!`, true); return; }
     if (deckTotal() >= MAX_DECK) { showToast('Deck full!', true); return; }
   }
   if (newQty <= 0) { delete deck[id]; }
@@ -849,6 +1221,11 @@ window.addCard = function(id) {
 };
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderGrid, 150);
+});
 fetchAllCards();
 </script>
 </body>
