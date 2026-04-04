@@ -3941,6 +3941,53 @@ async function performAttack(player, atk) {
     }
   }
 
+  // ── Bench-targeting attacks: "Does N damage to 1 of your opponent's Benched Pokémon" ──
+  // e.g. Hitmonlee Stretch Kick (20 damage). No weakness/resistance applies to benched Pokémon.
+  // These attacks deal 0 to the active and all damage goes to a chosen bench slot.
+  const benchTargetMatch = (atk.text || '').match(
+    /does (\d+) damage to (?:1 of )?(?:your )?opponent[''s]* benched pok[eé]mon/i
+  );
+  if (benchTargetMatch) {
+    const benchDmg = parseInt(benchTargetMatch[1]);
+    const oppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    if (!oppBench.length) {
+      addLog(`${atk.name}: opponent has no Benched Pokémon to target!`);
+    } else if (oppBench.length === 1) {
+      const target = oppBench[0].s;
+      target.damage = (target.damage || 0) + benchDmg;
+      addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
+      // Bench KO — no prize, just discard (same as splash damage)
+      const tHp = parseInt(target.hp) || 0;
+      if (tHp > 0 && target.damage >= tHp) {
+        addLog(`${target.name} was knocked out!`, true);
+        G.players[opp].discard.push(target);
+        G.players[opp].bench[oppBench[0].i] = null;
+      }
+    } else {
+      // Let player pick which bench slot to hit
+      const picked = await openCardPicker({
+        title: atk.name,
+        subtitle: "Choose an opponent's Benched Pokémon to deal damage to",
+        cards: oppBench.map(x => x.s),
+        maxSelect: 1
+      });
+      if (picked && picked.length) {
+        const { s: target, i: slotIdx } = oppBench[picked[0]];
+        target.damage = (target.damage || 0) + benchDmg;
+        addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
+        const tHp = parseInt(target.hp) || 0;
+        if (tHp > 0 && target.damage >= tHp) {
+          addLog(`${target.name} was knocked out!`, true);
+          G.players[opp].discard.push(target);
+          G.players[opp].bench[slotIdx] = null;
+        }
+      }
+    }
+    // Bench-targeting attacks don't also hit the active — skip the normal dmg block
+    // by zeroing dmg (it was already 0 for pure bench attacks, but be explicit)
+    dmg = 0;
+  }
+
   if (dmg > 0) {
     // PlusPower bonus (card attached to attacker)
     if (myActive?.plusPower) {
@@ -6172,15 +6219,15 @@ function aiChooseEnergyTarget(p2) {
   return null;
 }
 
-async function aiConsiderRetreat(p2) {
+async function aiConsiderRetreat(p2, force = false) {
   if (!p2.active || !p2.bench.some(s => s)) return false;
   const active = p2.active;
   const hp = parseInt(active.hp) || 0;
   const dmg = active.damage || 0;
   const pctDmg = hp > 0 ? dmg / hp : 0;
 
-  // Retreat if active is over 60% damaged, has retreat cost covered, and bench is healthier
-  if (pctDmg < 0.6) return false;
+  // Retreat if forced (e.g. to escape status), or if active is over 60% damaged
+  if (!force && pctDmg < 0.6) return false;
   const retreatCost = active.convertedRetreatCost || 0;
   const energy = active.attachedEnergy?.length || 0;
   if (energy < retreatCost) return false;
@@ -6211,6 +6258,84 @@ async function aiPlayTrainers() {
   const p2 = G.players[2];
   const hand = p2.hand;
   const opp = G.players[1];
+  const activeStatus = p2.active?.status;
+  const isStatusBad = activeStatus === 'paralyzed' || activeStatus === 'asleep' || activeStatus === 'confused';
+
+  // ── Priority: cure bad status conditions ────────────
+  if (isStatusBad) {
+    for (let i = hand.length - 1; i >= 0; i--) {
+      const card = hand[i];
+      if (card.supertype !== 'Trainer') continue;
+      const name = card.name;
+
+      // Full Heal — cures any status
+      if (name === 'Full Heal' || name === 'Full Restore') {
+        hand.splice(i, 1);
+        p2.discard.push(card);
+        const cured = p2.active.status;
+        p2.active.status = null;
+        if (name === 'Full Restore') p2.active.damage = 0;
+        addLog(`🤖 Computer played ${name} — cured ${p2.active.name} of ${cured}!`, true);
+        renderAll();
+        return;
+      }
+
+      // Switch — swap active with best bench Pokémon (clears all status)
+      if (name === 'Switch') {
+        const benchSlots = p2.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+        if (benchSlots.length) {
+          // Pick healthiest bench pokemon
+          let bestIdx = benchSlots[0].i;
+          let bestScore = -1;
+          for (const { s, i: bi } of benchSlots) {
+            const score = (parseInt(s.hp) || 0) - (s.damage || 0);
+            if (score > bestScore) { bestScore = score; bestIdx = bi; }
+          }
+          hand.splice(i, 1);
+          p2.discard.push(card);
+          const old = p2.active;
+          p2.active = p2.bench[bestIdx];
+          p2.bench[bestIdx] = old;
+          // Switch clears status on the new active
+          addLog(`🤖 Computer played Switch — swapped ${old.name} (${activeStatus}) for ${p2.active.name}!`, true);
+          renderAll();
+          return;
+        }
+      }
+
+      // Scoop Up — remove active from play (only if paralyzed and no other option)
+      if (name === 'Scoop Up' && activeStatus === 'paralyzed') {
+        const benchSlots = p2.bench.filter(s => s !== null);
+        if (benchSlots.length) {
+          hand.splice(i, 1);
+          p2.discard.push(card);
+          // Return active to hand (Scoop Up rules), clear damage/energy/status
+          const scooped = p2.active;
+          scooped.damage = 0; scooped.attachedEnergy = []; scooped.status = null;
+          p2.hand.push(scooped);
+          p2.active = null;
+          // Auto-promote best bench pokemon
+          let bestBench = 0, bestScore = -1;
+          for (let b = 0; b < 5; b++) {
+            if (!p2.bench[b]) continue;
+            const score = (parseInt(p2.bench[b].hp) || 0) - (p2.bench[b].damage || 0);
+            if (score > bestScore) { bestScore = score; bestBench = b; }
+          }
+          p2.active = p2.bench[bestBench];
+          p2.bench[bestBench] = null;
+          addLog(`🤖 Computer played Scoop Up — returned ${scooped.name} to hand, sent out ${p2.active.name}!`, true);
+          renderAll();
+          return;
+        }
+      }
+    }
+
+    // No cure trainer — try retreating to escape the status (paralysis doesn't block retreat)
+    if (activeStatus === 'paralyzed' || activeStatus === 'asleep') {
+      const retreated = await aiConsiderRetreat(p2, true); // force=true ignores damage threshold
+      if (retreated) return;
+    }
+  }
 
   // Play draw trainers (Bill, Professor Oak) if hand is small
   for (let i = hand.length - 1; i >= 0; i--) {
@@ -6283,6 +6408,10 @@ async function aiChooseAndAttack() {
   if (!p2.active || !p1.active) return false;
 
   const card = p2.active;
+
+  // Can't attack while paralyzed or asleep — return false so endTurn fires
+  if (card.status === 'paralyzed' || card.status === 'asleep') return false;
+
   const attacks = (card && isPowerActive(card, 'Transform') && dittoAttacks(2)) || card?.attacks || [];
   if (!attacks.length) return false;
 
