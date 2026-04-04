@@ -796,6 +796,7 @@ html, body {
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  max-height: 40vh;
   width: 100%;
 }
 
@@ -809,10 +810,12 @@ html, body {
 
 #hand-p1 {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: flex-end;
   justify-content: center;
-  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 220px;
   width: 100%;
   padding-bottom: 2px;
 }
@@ -1728,10 +1731,10 @@ html, body {
         <div class="setup-player-label">YOUR DECK (P1)</div>
         <div class="setup-player-status" id="p1-vs-cpu-status">No deck loaded</div>
       </div>
-      <div class="setup-player p2" style="cursor:default;opacity:.7">
+      <div class="setup-player p2" onclick="openLoadModal(2)" style="cursor:pointer;">
         <div class="setup-player-icon">🤖</div>
-        <div class="setup-player-label">COMPUTER (P2)</div>
-        <div class="setup-player-status" id="p2-cpu-status">Will auto-load</div>
+        <div class="setup-player-label">AI DECK (P2)</div>
+        <div class="setup-player-status" id="p2-cpu-status">Click to choose deck</div>
       </div>
     </div>
     <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size:11px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
@@ -5067,6 +5070,7 @@ function enrichCard(card) {
   if (!full) {
     return {
       ...card,
+      types: Array.isArray(card.types) ? card.types : [],
       subtypes: safeSubtypes,
       attacks: mergedAttacks,
       abilities: Array.isArray(card.abilities) ? card.abilities : [],
@@ -5085,6 +5089,7 @@ function enrichCard(card) {
   }
   return {
     ...card,
+    types: (Array.isArray(card.types) && card.types.length) ? card.types : (full.types || card.types || []),
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
@@ -5920,41 +5925,51 @@ function startVsComputer() {
   // We'll check readiness via the status element change
 }
 
-// Called when P1 loads a deck in VS Computer mode — enable start button
+// Called when either player loads a deck in VS Computer mode
 function checkVsCpuReady() {
-  if (!vsComputer && document.getElementById('vs-computer-panel')?.style.display === 'none') return;
+  if (document.getElementById('vs-computer-panel')?.style.display === 'none') return;
   const p1loaded = G.players[1].deckData !== null;
-  const btn = document.getElementById('start-cpu-btn');
-  if (btn) btn.disabled = !p1loaded;
-  const st = document.getElementById('p1-vs-cpu-status');
-  if (st && p1loaded) {
-    st.textContent = `✓ ${G.players[1].deckData.name}`;
-    st.style.color = 'var(--p1color)';
-    document.querySelector('.setup-player.p1')?.classList.add('loaded');
+  const p2loaded = G.players[2].deckData !== null;
+
+  // Update P1 status
+  const st1 = document.getElementById('p1-vs-cpu-status');
+  if (st1) {
+    st1.textContent = p1loaded ? `✓ ${G.players[1].deckData.name}` : 'No deck loaded';
+    st1.style.color = p1loaded ? 'var(--p1color)' : '';
+    document.querySelector('.setup-player.p1')?.classList.toggle('loaded', p1loaded);
   }
+
+  // Update P2 status
+  const st2 = document.getElementById('p2-cpu-status');
+  if (st2) {
+    st2.textContent = p2loaded ? `✓ ${G.players[2].deckData.name}` : 'Click to choose deck';
+    st2.style.color = p2loaded ? 'var(--p2color)' : '';
+    document.querySelector('.setup-player.p2')?.classList.toggle('loaded', p2loaded);
+  }
+
+  // Enable start only when both are loaded
+  const btn = document.getElementById('start-cpu-btn');
+  if (btn) btn.disabled = !(p1loaded && p2loaded);
 }
 
 async function startVsCpuGame() {
   vsComputer = true;
   myRole = 1; // human is always P1
 
-  // AI gets a copy of P1's deck (shuffled differently) — simple, fair
-  const p1deck = G.players[1].deck;
-  if (!p1deck.length) { showToast('Load your deck first!', true); return; }
+  if (!G.players[1].deck.length) { showToast('Load your deck first!', true); return; }
+  if (!G.players[2].deck.length) { showToast("Choose the AI's deck first!", true); return; }
 
-  // Clone P1's deck structure for P2 (same card pool, different shuffle)
-  const aiDeck = shuffle(p1deck.map(c => ({
+  // Give AI deck cards fresh UIDs and reset combat state
+  G.players[2].deck = shuffle(G.players[2].deck.map(c => ({
     ...c,
     uid: `ai-${c.id}-${Math.random().toString(36).slice(2,7)}`,
     damage: 0, attachedEnergy: [], status: null,
     defender: false, plusPower: 0
   })));
-  G.players[2].deck = aiDeck;
-  G.players[2].deckData = { name: 'Computer' };
   G.players[2].name = '🤖 Computer';
 
   const cpuSt = document.getElementById('p2-cpu-status');
-  if (cpuSt) { cpuSt.textContent = `✓ ${G.players[1].deckData.name} (copy)`; cpuSt.style.color = 'var(--p2color)'; }
+  if (cpuSt) { cpuSt.textContent = `✓ ${G.players[2].deckData.name}`; cpuSt.style.color = 'var(--p2color)'; }
 
   // No Firebase for VS Computer
   gameRef = null;
