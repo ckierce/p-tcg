@@ -5133,8 +5133,12 @@ function playAgain() {
   document.getElementById('win-screen').classList.remove('show');
   // Clean up confetti
   document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
-  // Detach Firebase listener and reset to setup screen
-  if (gameRef) { gameRef.off(); gameRef = null; }
+  // Delete the room from Firebase, detach listener, reset
+  if (gameRef) {
+    gameRef.remove().catch(() => {}); // delete room node — no await, best-effort
+    gameRef.off();
+    gameRef = null;
+  }
   roomCode = null; myRole = null;
   // Reset G
   G = {
@@ -6181,6 +6185,11 @@ function applyRoleVisibility() {
 // INIT
 // ══════════════════════════════════════════════════
 setMidline('Load decks and press Start Game');
+
+// Clean up room when tab/window closes
+window.addEventListener('beforeunload', () => {
+  if (gameRef) { gameRef.remove().catch(() => {}); }
+});
 </script>
 </body>
 </html>
