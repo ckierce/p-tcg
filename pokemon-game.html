@@ -593,6 +593,11 @@ html, body {
   opacity: .4;
   transform: scale(.95);
 }
+.drag-valid-heal {
+  border-color: #48bb78 !important;
+  box-shadow: 0 0 10px rgba(72,187,120,.6) !important;
+  opacity: 1 !important;
+}
 
 /* Status emoji — floats to the left of the card, top-aligned, never overlaps card content */
 .status-overlay {
@@ -2329,6 +2334,14 @@ function getActionsForCard(player, card, handIdx) {
           });
         }
       });
+    }
+  }
+
+  // Healing/status trainers that target active Pokémon
+  if (!isSetup && card.supertype === 'Trainer') {
+    const healNames = /^(potion|super potion|full heal|full restore|max potion|pokémon center|revive)$/i;
+    if (healNames.test(card.name) && p.active) {
+      highlightSlot('active-p1', 'heal');
     }
   }
 
@@ -5775,16 +5788,17 @@ function onHandDragEnd() {
 function highlightSlot(id, type) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy');
+  el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal');
   if (type === 'valid')  el.classList.add('drag-valid');
   if (type === 'evolve') el.classList.add('drag-valid-evolve');
   if (type === 'energy') el.classList.add('drag-valid-energy');
+  if (type === 'heal')   el.classList.add('drag-valid-heal');
   el.dataset.dragType = type;
 }
 
 function clearDragHighlights() {
-  document.querySelectorAll('.drag-valid, .drag-valid-evolve, .drag-valid-energy').forEach(el => {
-    el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy');
+  document.querySelectorAll('.drag-valid, .drag-valid-evolve, .drag-valid-energy, .drag-valid-heal').forEach(el => {
+    el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal');
     delete el.dataset.dragType;
   });
 }
@@ -5827,6 +5841,9 @@ function wireDropTarget(el, zone, benchIdx) {
       const rainDance = rainDanceActive(player) && isWaterEnergy;
       if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
       else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
+    } else if (dtype === 'heal') {
+      // Route heal trainers directly through playTrainer
+      playTrainer(player, handIdx);
     }
   });
 }
