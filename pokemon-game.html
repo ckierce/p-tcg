@@ -231,28 +231,26 @@ html, body {
   position: relative;
 }
 
-/* ── OPPONENT ZONE — compact horizontal strip ─────────────── */
+/* ── OPPONENT ZONE ─────────────────────────────────────────── */
+/* Mirrors player layout: prizes left, active+bench centered, deck/disc right */
 #opponent-zone {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  gap: 6px;
   flex-shrink: 0;
   width: 100%;
+  position: relative;   /* anchor for abs-positioned side panels */
+  padding: 6px 0 4px;
 }
 
-.opp-row { display: flex; align-items: center; gap: 8px; }
-
+/* Top meta strip: player name + hand count */
 #opp-meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 8px;
-  color: var(--muted);
-  margin-left: auto;
+  width: 100%;
+  justify-content: center;
 }
 
 .opp-label {
@@ -268,7 +266,16 @@ html, body {
   white-space: nowrap;
 }
 
-/* Opponent bench row — centered */
+/* Opp hand indicator */
+.opp-hand-count {
+  font-size: 8px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Opponent bench row — centered, closest to midline */
 .opp-bench {
   display: flex;
   gap: 6px;
@@ -298,13 +305,14 @@ html, body {
 }
 .opp-bench-slot.empty { opacity: .3; }
 
-/* Opponent active — compact, fixed small size */
+/* Opponent active — same size as player active, centered above midline */
 .opp-active-slot {
-  width: 72px;
-  height: 100px;
-  border: 1px solid var(--p2color);
-  border-radius: 5px;
+  width: var(--active-w);
+  height: var(--active-h);
+  border: 2px solid var(--p2color);
+  border-radius: 8px;
   background: var(--surface2);
+  box-shadow: 0 4px 20px rgba(245,101,101,.15);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -319,8 +327,8 @@ html, body {
 .opp-active-slot img {
   width: 100%; height: 100%;
   object-fit: cover;
-  border-radius: 4px;
-  filter: brightness(0.7);
+  border-radius: 7px;
+  filter: brightness(0.75);
 }
 .opp-active-slot .slot-label {
   font-size: 6px;
@@ -328,14 +336,31 @@ html, body {
   padding: 2px 0;
 }
 
-/* Opponent prizes — horizontal strip */
-.opp-prizes {
+/* Opponent prizes — 2×3 grid, absolute left of opp zone */
+#opp-prizes-panel {
+  position: absolute;
+  left: 10px;
+  top: 0; bottom: 0;
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  justify-content: center;
   align-items: center;
+  gap: 3px;
+}
+#opp-prizes-panel .panel-label {
+  font-size: 6px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+.opp-prizes {
+  display: grid;
+  grid-template-columns: repeat(3, 18px);
+  grid-template-rows: repeat(2, 26px);
+  gap: 3px;
 }
 .opp-prize-pip {
-  width: 14px; height: 20px;
+  width: 18px; height: 26px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 2px;
@@ -343,12 +368,46 @@ html, body {
 }
 .opp-prize-pip.gone { opacity: .15; }
 
-/* Discard area */
+/* Opponent deck + discard — side by side, absolute right of opp zone */
+#opp-aux {
+  position: absolute;
+  right: 10px;
+  top: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+}
+.opp-aux-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+/* Opp deck outline */
+.opp-deck-slot {
+  width: 46px;
+  height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* Opp discard */
 .opp-discard {
-  width: var(--card-w-sm);
-  height: var(--card-h-sm);
+  width: 46px;
+  height: 64px;
   border: 1px dashed var(--border);
   border-radius: 4px;
+  background: var(--surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -365,16 +424,6 @@ html, body {
   background: rgba(0,0,0,.7);
   padding: 1px 2px;
   border-radius: 2px;
-}
-
-/* Opp hand indicator */
-.opp-hand-count {
-  font-size: 8px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
 }
 
 /* ── MIDLINE DIVIDER ──────────────────────────────────────── */
@@ -1410,16 +1459,21 @@ html, body {
     <!-- Field body -->
     <div id="field-body">
 
-      <!-- OPPONENT ZONE — compact horizontal strip -->
+      <!-- OPPONENT ZONE — mirrors player: active top, bench below, prizes left, deck/disc right -->
       <div id="opponent-zone">
-        <span class="opp-label" id="opp-label">PLAYER 2</span>
 
-        <!-- Opp active -->
+        <!-- Meta strip: name + hand count -->
+        <div id="opp-meta">
+          <span class="opp-label" id="opp-label">PLAYER 2</span>
+          <span class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></span>
+        </div>
+
+        <!-- Opp active — farthest from midline, centered -->
         <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2,event)">
           <span class="slot-label">ACTIVE</span>
         </div>
 
-        <!-- Opp bench -->
+        <!-- Opp bench — closest to midline -->
         <div class="opp-bench">
           <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
           <div class="opp-bench-slot empty" id="bench-p2-1" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
@@ -1428,17 +1482,22 @@ html, body {
           <div class="opp-bench-slot empty" id="bench-p2-4" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
         </div>
 
-        <!-- Opp prizes -->
-        <div class="opp-prizes" id="prizes-p2"></div>
-
-        <!-- Opp meta: deck, discard, hand -->
-        <div id="opp-meta">
-          <div id="deck-count-p2" style="font-size:8px;color:var(--muted);text-align:center;min-width:32px">
-            0<br><span style="font-size:6px">deck</span>
-          </div>
-          <div class="opp-discard" id="discard-p2"><span style="font-size:6px">DISC</span></div>
-          <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
+        <!-- Prizes panel — absolute left -->
+        <div id="opp-prizes-panel">
+          <div class="panel-label">PRIZES</div>
+          <div class="opp-prizes" id="prizes-p2"></div>
         </div>
+
+        <!-- Deck + discard — absolute right, side by side -->
+        <div id="opp-aux">
+          <div class="opp-aux-row">
+            <div class="opp-deck-slot">
+              <div id="deck-count-p2" style="font-size:9px;color:var(--muted);text-align:center;line-height:1.4">0<br><span style="font-size:6px">deck</span></div>
+            </div>
+            <div class="opp-discard" id="discard-p2"><span style="font-size:6px">DISC</span></div>
+          </div>
+        </div>
+
       </div>
 
       <!-- MIDLINE -->
