@@ -552,43 +552,18 @@ html, body {
   box-shadow: 0 1px 3px rgba(0,0,0,.8);
   flex-shrink: 0;
 }
+/* Larger dots on active Pokémon cards */
+.damage-counters.active-dmg .dmg-dot {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  box-shadow: 0 2px 5px rgba(0,0,0,.9);
+}
 
-/* HP bar shown below active Pokémon slots */
-.hp-bar-wrap {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: clamp(4px, 0.5vh, 7px);
-  background: rgba(0,0,0,.5);
-  border-radius: 0 0 6px 6px;
-  overflow: hidden;
-  z-index: 3;
-}
-.hp-bar-fill {
-  height: 100%;
-  transition: width .3s ease;
-}
-.hp-bar-fill.hp-high  { background: var(--ok); }
-.hp-bar-fill.hp-mid   { background: var(--warn); }
-.hp-bar-fill.hp-low   { background: var(--p2color); }
-
-/* Active slot stat label (name + HP text) */
-.active-stat-label {
-  position: absolute;
-  top: 3px; left: 3px;
-  font-size: clamp(5px, 0.55vh, 7px);
-  font-family: var(--font);
-  color: rgba(255,255,255,.9);
-  background: rgba(0,0,0,.6);
-  padding: 2px 4px;
-  border-radius: 3px;
-  z-index: 3;
-  pointer-events: none;
-  line-height: 1.6;
-  max-width: calc(100% - 8px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* HP bar and stat label removed — damage shown via dot counters only */
+.hp-bar-wrap  { display: none; }
+.hp-bar-fill  { display: none; }
+.active-stat-label { display: none; }
 
 .status-overlay {
   position: absolute; top: 2px; left: 2px;
@@ -4011,25 +3986,14 @@ function renderField(player) {
         const card = p.active;
         if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
         const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 14)).join('');
-        const dmg = damageCounters(card.damage);
+        const dmg = damageCounters(card.damage, true);
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
         const badges = [
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
         ].join('');
-        // HP bar for opponent active
-        let hpBarHtml = '';
-        if (card.hp) {
-          const maxHp = parseInt(card.hp) || 100;
-          const curHp = Math.max(0, maxHp - (card.damage || 0));
-          const pct = Math.round((curHp / maxHp) * 100);
-          const hpClass = pct > 50 ? 'hp-high' : pct > 25 ? 'hp-mid' : 'hp-low';
-          hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
-        }
-        const largeSrc = card.images?.large || card.images?.small || '';
         activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-          <div class="slot-label">${card.name.substring(0,9)}</div>
-          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
+          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
       }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
@@ -4092,7 +4056,7 @@ function renderSlotP1(el, card) {
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
   const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 16)).join('');
-  const dmg = damageCounters(card.damage);
+  const dmg = damageCounters(card.damage, isActive);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
   const badges = [
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
@@ -4100,22 +4064,8 @@ function renderSlotP1(el, card) {
   ].join('');
   const imgSrc = card.images?.small || '';
 
-  // HP bar for active slot
-  let hpBarHtml = '';
-  if (isActive && card.hp) {
-    const maxHp = parseInt(card.hp) || 100;
-    const curHp = Math.max(0, maxHp - (card.damage || 0));
-    const pct = Math.round((curHp / maxHp) * 100);
-    const hpClass = pct > 50 ? 'hp-high' : pct > 25 ? 'hp-mid' : 'hp-low';
-    hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
-    const statLabel = `<div class="active-stat-label">${card.name.substring(0,10)} · ${curHp}/${maxHp}</div>`;
-    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
-      ${statLabel}
-      <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
-  } else {
-    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
-      <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}`;
-  }
+  el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
+    <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}`;
   if (wasHighlighted) el.classList.add('highlight');
 }
 
@@ -4537,11 +4487,12 @@ function energyIcon(energyName, size = 16) {
 }
 
 // Returns HTML for damage counter dots — one black dot per 10 damage
-function damageCounters(damage) {
+function damageCounters(damage, isActive = false) {
   if (!damage || damage <= 0) return '';
   const dots = Math.floor(damage / 10);
   if (dots === 0) return '';
-  return `<div class="damage-counters">${'<div class="dmg-dot"></div>'.repeat(dots)}</div>`;
+  const cls = isActive ? 'damage-counters active-dmg' : 'damage-counters';
+  return `<div class="${cls}">${'<div class="dmg-dot"></div>'.repeat(dots)}</div>`;
 }
 
 function statusEmoji(s) {
