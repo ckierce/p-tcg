@@ -125,6 +125,22 @@ html, body {
 }
 .setup-back:hover { color: var(--text); }
 
+.lobby-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 14px 20px;
+  cursor: pointer;
+  border-radius: 6px;
+  text-align: center;
+  line-height: 1.8;
+  transition: border-color .15s;
+}
+.lobby-btn span { font-size: 7px; color: var(--muted); display: block; }
+.lobby-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ── GAME LAYOUT ──────────────────────────────────────────── */
 #game-board {
   display: grid;
@@ -1019,24 +1035,66 @@ html, body {
 <!-- ══════════════════════════════════════════════ -->
 <div id="setup-screen">
   <h1>POKéMON TCG<br>GAME BOARD</h1>
-  <p style="font-size:8px;color:var(--muted);text-align:center">Load a deck for each player to begin.</p>
 
-  <div class="setup-players">
-    <div class="setup-player p1" onclick="openLoadModal(1)">
-      <div class="setup-player-icon">🔵</div>
-      <div class="setup-player-label">PLAYER 1</div>
-      <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
+  <!-- LOBBY -->
+  <div id="lobby-panel">
+    <p style="font-size:8px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
+    <div style="display:flex;gap:12px;justify-content:center">
+      <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
+      <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
     </div>
-    <div class="setup-player p2" onclick="openLoadModal(2)">
-      <div class="setup-player-icon">🔴</div>
-      <div class="setup-player-label">PLAYER 2</div>
-      <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
+    <div style="margin-top:14px;font-size:7px;color:var(--muted);text-align:center">or</div>
+    <div style="display:flex;justify-content:center;margin-top:10px">
+      <button class="lobby-btn" style="font-size:8px;" onclick="startHotseat()">🖥 HOTSEAT (same screen)</button>
+    </div>
+    <div style="display:flex;justify-content:center;margin-top:18px">
+      <a class="setup-back" href="index.html">← Back to Deck Builder</a>
     </div>
   </div>
 
-  <button id="start-btn" onclick="startGame()" disabled>START GAME</button>
-  <div id="setup-hint" style="font-size:8px;color:var(--muted)">Both players must load a deck first</div>
-  <a class="setup-back" href="index.html">← Back to Deck Builder</a>
+  <!-- P1 WAITING ROOM -->
+  <div id="waiting-panel" style="display:none;text-align:center;">
+    <p style="font-size:8px;color:var(--p1color);margin-bottom:16px">ROOM CREATED — YOU ARE P1</p>
+    <div style="font-size:8px;color:var(--muted);margin-bottom:8px">Share this link with Player 2:</div>
+    <div id="room-url-box" style="font-size:7px;color:var(--accent);background:var(--surface2);border:1px solid var(--border2);padding:10px 14px;border-radius:4px;word-break:break-all;max-width:320px;margin:0 auto 10px;cursor:pointer;" onclick="copyRoomUrl()">...</div>
+    <div style="font-size:7px;color:var(--muted);margin-bottom:16px">Room code: <span id="room-code-display" style="color:var(--accent);letter-spacing:3px"></span> &nbsp;(click link to copy)</div>
+    <div style="font-size:8px;color:var(--muted);margin-bottom:16px" id="waiting-status">⏳ Waiting for Player 2 to join...</div>
+    <div class="setup-players" style="justify-content:center">
+      <div class="setup-player p1" onclick="openLoadModal(1)">
+        <div class="setup-player-icon">🔵</div>
+        <div class="setup-player-label">YOUR DECK (P1)</div>
+        <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
+      </div>
+    </div>
+    <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
+    <div id="setup-hint" style="font-size:7px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
+  </div>
+
+  <!-- P2 JOIN PANEL -->
+  <div id="join-panel" style="display:none;text-align:center;">
+    <p style="font-size:8px;color:var(--p2color);margin-bottom:16px">JOIN A ROOM — YOU ARE P2</p>
+    <input id="join-code-input" type="text" maxlength="6" placeholder="ROOM CODE"
+      style="font-family:var(--font);font-size:12px;letter-spacing:4px;text-align:center;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border2);color:var(--accent);padding:10px 16px;border-radius:4px;width:200px;outline:none;display:block;margin:0 auto 12px;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+      <button class="lobby-btn" onclick="joinRoom()">JOIN →</button>
+      <button class="lobby-btn" style="font-size:7px;color:var(--muted)" onclick="showLobby()">← BACK</button>
+    </div>
+  </div>
+
+  <!-- P2 JOINED — waiting for P1 to start -->
+  <div id="joined-panel" style="display:none;text-align:center;">
+    <p style="font-size:8px;color:var(--p2color);margin-bottom:16px">JOINED — YOU ARE P2</p>
+    <div style="font-size:8px;color:var(--muted);margin-bottom:16px" id="joined-status">Waiting for Player 1 to start...</div>
+    <div class="setup-players" style="justify-content:center">
+      <div class="setup-player p2" onclick="openLoadModal(2)">
+        <div class="setup-player-icon">🔴</div>
+        <div class="setup-player-label">YOUR DECK (P2)</div>
+        <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
+      </div>
+    </div>
+    <div style="font-size:7px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
+  </div>
+
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
@@ -1153,7 +1211,7 @@ html, body {
   <div id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" id="tab-log" onclick="showTab('log')">LOG</button>
-      <button class="sidebar-tab" id="tab-hand2" onclick="showTab('hand2')">P2 HAND</button>
+      <button class="sidebar-tab" id="tab-hand2" onclick="showTab('hand2')">OPP HAND</button>
       <button class="sidebar-tab" id="tab-prizes" onclick="showTab('prizes')">PRIZES</button>
     </div>
     <div id="sidebar-content">
@@ -1364,11 +1422,16 @@ async function loadDeck(deckName) {
     if (statusEl) {
       statusEl.textContent = `✓ ${deckName} (${flat.length} cards)`;
       statusEl.style.color = p === 1 ? 'var(--p1color)' : 'var(--p2color)';
-      document.querySelector(`.setup-player.p${p}`).classList.add('loaded');
+      document.querySelector(`.setup-player.p${p}`)?.classList.add('loaded');
     }
-    const both = G.players[1].deckData && G.players[2].deckData;
-    const startBtn = document.getElementById('start-btn');
-    if (startBtn) startBtn.disabled = !both;
+    // In networked mode, only P1 can enable start (once both ready via Firebase listener)
+    if (myRole === 'hotseat') {
+      const both = G.players[1].deckData && G.players[2].deckData;
+      const startBtn = document.getElementById('start-btn');
+      if (startBtn) startBtn.disabled = !both;
+    }
+    // Broadcast deck readiness to opponent
+    broadcastDeckReady(p, deckName);
     showToast(`${deckName} loaded for Player ${p}!`, false, 'ok');
     updateDeckCounts();
   } catch(e) {
@@ -1384,20 +1447,30 @@ function hasBasic(hand) {
   return hand.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
 }
 
-function startGame() {
-  let mulligans = { 1: 0, 2: 0 };
+async function startGame() {
+  // In networked mode, P1 needs to load P2's deck from Firebase first
+  if (myRole === 1 && gameRef) {
+    const snap = await gameRef.once('value');
+    const data = snap.val();
+    if (!data?.p2DeckName) { showToast("Player 2 hasn't loaded a deck yet!", true); return; }
+    if (!G.players[2].deckData) {
+      // Load P2's deck silently
+      showToast('Loading P2 deck...', false);
+      const saved = loadingForPlayer;
+      loadingForPlayer = 2;
+      await loadDeck(data.p2DeckName);
+      loadingForPlayer = saved;
+    }
+  }
 
+  let mulligans = { 1: 0, 2: 0 };
   for (const p of [1,2]) {
-    // Deal initial hand
     G.players[p].hand = G.players[p].deck.splice(0, 7);
-    // Mulligan: reshuffle and redraw up to 4 times if no basics
     let attempts = 0;
     while (!hasBasic(G.players[p].hand) && attempts < 4) {
-      // Reshuffle hand back into deck
       G.players[p].deck = shuffle([...G.players[p].deck, ...G.players[p].hand]);
       G.players[p].hand = G.players[p].deck.splice(0, 7);
-      attempts++;
-      mulligans[p]++;
+      attempts++; mulligans[p]++;
     }
     G.players[p].prizes = G.players[p].deck.splice(0, 6).map(c => ({ card: c, revealed: false }));
   }
@@ -1413,7 +1486,6 @@ function startGame() {
   addLog('Game started! Both players place their starting Pokémon.', true);
   if (mulligans[1] > 0) addLog(`P1 mulliganed ${mulligans[1]} time(s) — opponent draws ${mulligans[1]} extra card(s) next turn.`);
   if (mulligans[2] > 0) addLog(`P2 mulliganed ${mulligans[2]} time(s) — opponent draws ${mulligans[2]} extra card(s) next turn.`);
-  // Store mulligans so opponent draws extras on first turn
   G.pendingExtraDraws = mulligans;
 
   addLog('Each player drew 7 cards and set aside 6 prizes.');
@@ -2716,6 +2788,11 @@ function renderAll() {
   updatePhase();
   updateTurnBadge();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
+  // Networked: push state and apply role-based visibility
+  if (myRole !== 'hotseat' && myRole !== null && G.started) {
+    pushGameState();
+    applyRoleVisibility();
+  }
 }
 
 function renderField(player) {
@@ -2825,20 +2902,26 @@ function renderSlotP1(el, card) {
 }
 
 function renderHands() {
-  // P1 hand — bottom bar
   const p1 = G.players[1];
-  const isActiveP1 = G.turn === 1;
+  const p2 = G.players[2];
+
+  // Bottom bar always shows the local player's hand
+  // In hotseat: always P1. In networked: P1 if myRole=1, P2 if myRole=2
+  const localPlayer = (myRole === 2) ? 2 : 1;
+  const localHand = G.players[localPlayer].hand;
   const container1 = document.getElementById('hand-p1');
   const label1 = document.getElementById('hand-label-p1');
-  label1.textContent = `P1 HAND (${p1.hand.length})`;
-  if (!p1.hand.length) {
+  label1.textContent = `P${localPlayer} HAND (${localHand.length})`;
+  label1.style.color = localPlayer === 2 ? 'var(--p2color)' : 'var(--p1color)';
+
+  if (!localHand.length) {
     container1.innerHTML = `<div style="font-size:8px;color:var(--muted);padding:8px">No cards</div>`;
   } else {
-    container1.innerHTML = p1.hand.map((card, i) => {
+    container1.innerHTML = localHand.map((card, i) => {
       const imgSrc = card.images?.small || '';
       const largeSrc = card.images?.large || imgSrc;
-      return `<div class="hand-card" id="hand-card-1-${i}"
-        onclick="event.stopPropagation();selectHandCard(1,${i})"
+      return `<div class="hand-card" id="hand-card-${localPlayer}-${i}"
+        onclick="event.stopPropagation();selectHandCard(${localPlayer},${i})"
         onmouseover="showCardDetail(event,'${largeSrc}')"
         onmouseout="hideCardDetail()">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
@@ -2850,33 +2933,46 @@ function renderHands() {
     }).join('');
   }
 
-  // P2 hand — shown in sidebar (face-down during P1 turn, face-up during P2 turn)
-  const p2 = G.players[2];
-  const isActiveP2 = G.turn === 2;
+  // Opponent hand count badge (top zone)
   const label2 = document.getElementById('hand-label-p2');
-  if (label2) label2.textContent = p2.hand.length;
+  if (label2) label2.textContent = (localPlayer === 1 ? p2 : p1).hand.length;
 
-  // Only render P2 hand if sidebar tab is showing it
+  // Sidebar P2 HAND tab — in networked mode P1 sees opponent's hand count only (face down)
   if (document.getElementById('tab-hand2')?.classList.contains('active')) {
     renderSidebarP2Hand();
   }
 }
 
 function renderSidebarP2Hand() {
-  const p2 = G.players[2];
   const content = document.getElementById('sidebar-content');
-  if (!p2.hand.length) {
-    content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">P2 has no cards</div>`;
+  // In networked mode: if I'm P2, sidebar shows P1's hand (face-down for P2 to see)
+  // If I'm P1 or hotseat, sidebar shows P2's hand as normal
+  const sidePlayer = (myRole === 2) ? 1 : 2;
+  const sideHand = G.players[sidePlayer].hand;
+  const sideColor = sidePlayer === 1 ? 'var(--p1color)' : 'var(--p2color)';
+  const label = myRole === 2 ? 'P1 HAND' : 'P2 HAND';
+
+  if (!sideHand.length) {
+    content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">${label}: no cards</div>`;
     return;
   }
-  content.innerHTML = `<div style="font-size:8px;color:var(--p2color);margin-bottom:8px">P2 HAND (${p2.hand.length})</div>
+
+  // In networked mode, show opponent's hand face-down (card backs only)
+  const showFaceUp = (myRole === 'hotseat');
+  content.innerHTML = `<div style="font-size:8px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
     <div id="hand-p2">` +
-    p2.hand.map((card, i) => {
+    sideHand.map((card, i) => {
+      if (!showFaceUp) {
+        // Face-down card back
+        return `<div class="hand-card face-down" style="background:var(--surface2);border-color:var(--border);">
+          <div style="aspect-ratio:5/7;display:flex;align-items:center;justify-content:center;font-size:18px;">🂠</div>
+          <div class="hand-card-info"><div class="hand-card-name">???</div></div>
+        </div>`;
+      }
       const imgSrc = card.images?.small || '';
       const largeSrc = card.images?.large || imgSrc;
-      return `<div class="hand-card"
-        id="hand-card-2-${i}"
-        onclick="event.stopPropagation();selectHandCard(2,${i})"
+      return `<div class="hand-card" id="hand-card-${sidePlayer}-${i}"
+        onclick="event.stopPropagation();selectHandCard(${sidePlayer},${i})"
         onmouseover="showCardDetail(event,'${largeSrc}')"
         onmouseout="hideCardDetail()">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
@@ -2953,8 +3049,14 @@ function updateTurnBadge() {
   } else {
     badge.style.color = '';
     badge.style.borderColor = '';
-    badge.textContent = `P${G.turn} TURN`;
-    badge.className = `turn-badge p${G.turn}`;
+    if (myRole === 'hotseat' || myRole === null) {
+      badge.textContent = `P${G.turn} TURN`;
+      badge.className = `turn-badge p${G.turn}`;
+    } else {
+      const isMyTurnNow = G.turn === myRole;
+      badge.textContent = isMyTurnNow ? 'YOUR TURN' : 'OPP TURN';
+      badge.className = `turn-badge p${G.turn}`;
+    }
   }
 }
 
@@ -3221,6 +3323,283 @@ function cancelCardPick() {
   hideCardDetail();
   if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
 }
+
+// ══════════════════════════════════════════════════
+// MULTIPLAYER / ROOM SYSTEM
+// ══════════════════════════════════════════════════
+let myRole = null;       // 1, 2, or 'hotseat'
+let roomCode = null;
+let gameRef = null;
+let isWriting = false;   // prevent echo loops
+
+// ── Panel helpers ─────────────────────────────────
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+
+function generateCode() {
+  return Math.random().toString(36).substring(2,8).toUpperCase();
+}
+
+function copyRoomUrl() {
+  const url = document.getElementById('room-url-box').textContent;
+  navigator.clipboard?.writeText(url).then(() => showToast('Link copied!', false, 'ok')).catch(() => showToast('Copy the link manually', false));
+}
+
+// ── Hotseat (original behaviour) ─────────────────
+function startHotseat() {
+  myRole = 'hotseat';
+  // Show the old-style both-decks setup
+  document.getElementById('setup-screen').innerHTML = `
+    <h1>POKéMON TCG<br>GAME BOARD</h1>
+    <p style="font-size:8px;color:var(--muted);text-align:center">Load a deck for each player to begin.</p>
+    <div class="setup-players">
+      <div class="setup-player p1" onclick="openLoadModal(1)">
+        <div class="setup-player-icon">🔵</div>
+        <div class="setup-player-label">PLAYER 1</div>
+        <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
+      </div>
+      <div class="setup-player p2" onclick="openLoadModal(2)">
+        <div class="setup-player-icon">🔴</div>
+        <div class="setup-player-label">PLAYER 2</div>
+        <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
+      </div>
+    </div>
+    <button id="start-btn" onclick="startGame()" disabled>START GAME</button>
+    <div id="setup-hint" style="font-size:8px;color:var(--muted)">Both players must load a deck first</div>
+    <a class="setup-back" href="index.html">← Back to Deck Builder</a>
+  `;
+}
+
+// ── Create room (P1) ──────────────────────────────
+async function createRoom() {
+  myRole = 1;
+  roomCode = generateCode();
+  gameRef = db.ref(`games/${roomCode}`);
+
+  // Write initial room record
+  await gameRef.set({
+    created: Date.now(),
+    p1Ready: false,
+    p2Ready: false,
+    p1DeckName: null,
+    p2DeckName: null,
+    state: null
+  });
+
+  showPanel('waiting-panel');
+  const url = `${location.origin}${location.pathname}?room=${roomCode}`;
+  document.getElementById('room-url-box').textContent = url;
+  document.getElementById('room-code-display').textContent = roomCode;
+
+  // Watch for P2 joining and all game state changes
+  gameRef.on('value', snap => {
+    if (isWriting) return;
+    const data = snap.val();
+    if (!data) return;
+    // Update lobby UI while in setup
+    if (!G.started) {
+      if (data.p2Ready) {
+        const ws = document.getElementById('waiting-status');
+        if (ws) ws.textContent = '✅ Player 2 has joined and loaded a deck!';
+      }
+      checkBothReady(data);
+      // Game just started — receive initial state
+      if (data.state?.started) receiveGameState(data.state);
+    } else {
+      // Game running — receive opponent's moves (when it's P2's turn)
+      if (data.state && data.state.turn !== myRole) {
+        receiveGameState(data.state);
+      }
+      // Also receive PROMOTE state if P2 is the one promoting
+      if (data.state?.phase === 'PROMOTE' && data.state.pendingPromotion !== myRole) {
+        receiveGameState(data.state);
+      }
+    }
+  });
+}
+
+// ── Join room (P2) ────────────────────────────────
+function showJoinPanel() {
+  myRole = 2;
+  showPanel('join-panel');
+  // Pre-fill if URL has ?room=
+  const urlCode = new URLSearchParams(location.search).get('room');
+  if (urlCode) document.getElementById('join-code-input').value = urlCode.toUpperCase();
+}
+
+async function joinRoom() {
+  const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+  if (code.length !== 6) { showToast('Enter a 6-character room code', true); return; }
+  roomCode = code;
+  gameRef = db.ref(`games/${roomCode}`);
+  const snap = await gameRef.once('value');
+  if (!snap.val()) { showToast('Room not found!', true); return; }
+
+  myRole = 2;
+  showPanel('joined-panel');
+
+  // Watch for game start and all P1 moves
+  gameRef.on('value', snap => {
+    if (isWriting) return;
+    const data = snap.val();
+    if (!data) return;
+    if (!G.started) {
+      // Lobby updates
+      if (data.p1Ready) {
+        const el = document.getElementById('p1-ready-status');
+        if (el) el.textContent = '✅ Player 1 has loaded a deck';
+      }
+      if (data.state?.started) receiveGameState(data.state);
+    } else {
+      // Game running — receive P1's moves
+      if (data.state && data.state.turn !== myRole) {
+        receiveGameState(data.state);
+      }
+      if (data.state?.phase === 'PROMOTE' && data.state.pendingPromotion !== myRole) {
+        receiveGameState(data.state);
+      }
+    }
+  });
+}
+
+// Called after P1 or P2 loads their deck — broadcast readiness
+async function broadcastDeckReady(playerNum, deckName) {
+  if (!gameRef) return;
+  const update = {};
+  update[`p${playerNum}Ready`] = true;
+  update[`p${playerNum}DeckName`] = deckName;
+  await gameRef.update(update);
+}
+
+function checkBothReady(data) {
+  const startBtn = document.getElementById('start-btn');
+  if (!startBtn) return;
+  if (data.p1Ready && data.p2Ready) {
+    startBtn.disabled = false;
+    document.getElementById('setup-hint').textContent = 'Both decks loaded — P1 can start!';
+  }
+}
+
+// ── Serialize G for Firebase ──────────────────────
+// Firebase can't store undefined, class instances, or circular refs.
+// We strip everything to plain data.
+function serializeG(g) {
+  return JSON.parse(JSON.stringify(g, (key, val) => {
+    if (val === undefined) return null;
+    return val;
+  }));
+}
+
+// ── Push state to Firebase ────────────────────────
+async function pushGameState() {
+  if (!gameRef || myRole === 'hotseat') return;
+  // Only push if it's our turn to act (prevents echo when receiving opponent state)
+  const shouldPush = G.phase === 'SETUP' ||
+    G.turn === myRole ||
+    (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
+  if (!shouldPush) return;
+  isWriting = true;
+  try {
+    await gameRef.update({ state: serializeG(G) });
+  } finally {
+    isWriting = false;
+  }
+}
+
+// ── Receive state from Firebase ───────────────────
+function receiveGameState(state) {
+  if (!state) return;
+  // Don't apply state that we ourselves just wrote (echo guard)
+  // If the state says it's our turn and we already have a running game, skip
+  if (G.started && state.turn === myRole && state.phase !== 'SETUP') return;
+
+  const enrichCards = (arr) => (arr || []).map(c => c ? enrichCard(c) : null);
+  const enrichPlayer = (p) => ({
+    ...p,
+    deck: enrichCards(p.deck),
+    hand: enrichCards(p.hand),
+    active: p.active ? enrichCard(p.active) : null,
+    bench: (p.bench || []).map(c => c ? enrichCard(c) : null),
+    prizes: (p.prizes || []).map(pr => pr ? { ...pr, card: enrichCard(pr.card) } : null),
+    discard: enrichCards(p.discard),
+  });
+
+  G = {
+    ...state,
+    players: {
+      1: enrichPlayer(state.players[1]),
+      2: enrichPlayer(state.players[2]),
+    }
+  };
+
+  // Hide setup screen and show board
+  document.getElementById('setup-screen').style.display = 'none';
+  // Render without pushing (we're receiving, not acting)
+  renderHands();
+  renderField(1);
+  renderField(2);
+  renderPrizes(1);
+  renderPrizes(2);
+  updateDeckCounts();
+  updatePhase();
+  updateTurnBadge();
+  if (document.getElementById('tab-log').classList.contains('active')) renderLog();
+  applyRoleVisibility();
+}
+
+// ── Action guard: only act on your turn / role ────
+function isMyTurn() {
+  if (myRole === 'hotseat') return true;
+  if (G.phase === 'SETUP') return true; // both players set up simultaneously
+  if (G.phase === 'PROMOTE' && G.pendingPromotion === myRole) return true;
+  return G.turn === myRole;
+}
+
+function applyRoleVisibility() {
+  if (myRole === 'hotseat' || myRole === null) return;
+  // P1's hand cards — disable if not P1
+  document.querySelectorAll('#hand-p1 .hand-card').forEach(el => {
+    el.style.opacity = myRole === 1 ? '' : '0.35';
+    el.style.pointerEvents = myRole === 1 ? '' : 'none';
+  });
+  // P2 sidebar hand cards — disable if not P2
+  document.querySelectorAll('#hand-p2 .hand-card').forEach(el => {
+    el.style.opacity = myRole === 2 ? '' : '0.35';
+    el.style.pointerEvents = myRole === 2 ? '' : 'none';
+  });
+  // END TURN button — only active player
+  const endBtn = document.getElementById('end-turn-btn');
+  if (endBtn) {
+    const canAct = G.phase === 'SETUP' || G.turn === myRole ||
+                   (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
+    endBtn.style.opacity = canAct ? '' : '0.4';
+    endBtn.style.pointerEvents = canAct ? '' : 'none';
+  }
+  // Bench slot clicks — block opponent's bench from being acted on
+  for (let i = 0; i < 5; i++) {
+    const oppSlot = document.getElementById(`bench-p${myRole === 1 ? 2 : 1}-${i}`);
+    // Only block during PROMOTE if it's not your promotion to resolve
+    if (oppSlot && G.phase === 'PROMOTE' && G.pendingPromotion !== myRole) {
+      oppSlot.style.pointerEvents = 'none';
+    } else if (oppSlot) {
+      oppSlot.style.pointerEvents = '';
+    }
+  }
+}
+
+// ── Check URL on load for auto-join ──────────────
+(function checkUrlRoom() {
+  const urlCode = new URLSearchParams(location.search).get('room');
+  if (urlCode) {
+    // Auto-open join panel with pre-filled code
+    myRole = 2;
+    showPanel('join-panel');
+    setTimeout(() => {
+      const input = document.getElementById('join-code-input');
+      if (input) { input.value = urlCode.toUpperCase(); joinRoom(); }
+    }, 300);
+  }
+})();
 
 // ══════════════════════════════════════════════════
 // INIT
