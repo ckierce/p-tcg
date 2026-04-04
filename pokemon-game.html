@@ -1690,9 +1690,10 @@ html, body {
   <!-- LOBBY -->
   <div id="lobby-panel">
     <p style="font-size:8px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
-    <div style="display:flex;gap:12px;justify-content:center">
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
+      <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="index.html">← Back to Deck Builder</a>
@@ -1715,6 +1716,32 @@ html, body {
     </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
     <div id="setup-hint" style="font-size:7px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
+  </div>
+
+  <!-- VS COMPUTER PANEL -->
+  <div id="vs-computer-panel" style="display:none;text-align:center;">
+    <p style="font-size:8px;color:var(--ok);margin-bottom:16px">VS COMPUTER — YOU ARE P1</p>
+    <div style="font-size:8px;color:var(--muted);margin-bottom:16px">Load your deck, then start the game</div>
+    <div class="setup-players" style="justify-content:center;gap:20px">
+      <div class="setup-player p1" onclick="openLoadModal(1)">
+        <div class="setup-player-icon">🔵</div>
+        <div class="setup-player-label">YOUR DECK (P1)</div>
+        <div class="setup-player-status" id="p1-vs-cpu-status">No deck loaded</div>
+      </div>
+      <div class="setup-player p2" style="cursor:default;opacity:.7">
+        <div class="setup-player-icon">🤖</div>
+        <div class="setup-player-label">COMPUTER (P2)</div>
+        <div class="setup-player-status" id="p2-cpu-status">Will auto-load</div>
+      </div>
+    </div>
+    <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size:11px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
+    <div id="cpu-difficulty-row" style="margin-top:12px;display:flex;gap:10px;justify-content:center;align-items:center">
+      <span style="font-size:7px;color:var(--muted)">AI DIFFICULTY:</span>
+      <button class="lobby-btn" id="diff-easy" onclick="setAiDiff('easy')" style="padding:6px 14px;font-size:7px;border-color:var(--ok);color:var(--ok)">EASY</button>
+      <button class="lobby-btn" id="diff-normal" onclick="setAiDiff('normal')" style="padding:6px 14px;font-size:7px">NORMAL</button>
+      <button class="lobby-btn" id="diff-hard" onclick="setAiDiff('hard')" style="padding:6px 14px;font-size:7px">HARD</button>
+    </div>
+    <div style="margin-top:12px"><button class="lobby-btn" style="font-size:7px;color:var(--muted)" onclick="showLobby()">← BACK</button></div>
   </div>
 
   <!-- P2 JOIN PANEL -->
@@ -4442,8 +4469,10 @@ function renderAll() {
   // Wire drag-and-drop onto freshly rendered hand cards
   initDragDrop();
   // Networked: push state and apply role-based visibility
-  if (myRole !== null && G.started) {
+  if (myRole !== null && G.started && !vsComputer) {
     pushGameState();
+    applyRoleVisibility();
+  } else if (vsComputer) {
     applyRoleVisibility();
   }
 }
@@ -5120,7 +5149,12 @@ function showTurnFlash(player) {
 function showWinScreen(winnerNum, reason) {
   const p = G.players[winnerNum];
   const deckName = p.deckData?.name || null;
-  const displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
+  let displayName;
+  if (vsComputer) {
+    displayName = winnerNum === 1 ? '🏆 YOU WIN!' : '🤖 COMPUTER WINS';
+  } else {
+    displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
+  }
 
   const nameEl   = document.getElementById('win-player-name');
   const reasonEl = document.getElementById('win-reason');
@@ -5143,7 +5177,7 @@ function playAgain() {
     gameRef.off();
     gameRef = null;
   }
-  roomCode = null; myRole = null;
+  roomCode = null; myRole = null; vsComputer = false; aiThinking = false;
   // Reset G
   G = {
     started: false, turn: 1, phase: 'SETUP', turnNum: 0,
@@ -5198,6 +5232,11 @@ let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
 function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
+  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
+  if (vsComputer && G.turn === 2) {
+    if (!cards || !cards.length) return Promise.resolve(null);
+    return Promise.resolve([0]); // AI always picks first option
+  }
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
     _cardPickerSelected = [];
@@ -5857,6 +5896,488 @@ function wireDropTarget(el, zone, benchIdx) {
 }
 
 // ══════════════════════════════════════════════════
+// VS COMPUTER MODE
+// ══════════════════════════════════════════════════
+let vsComputer = false;   // true when playing against AI
+let aiDifficulty = 'normal'; // 'easy' | 'normal' | 'hard'
+let aiThinking = false;   // guard against re-entrant AI turns
+
+function setAiDiff(d) {
+  aiDifficulty = d;
+  ['easy','normal','hard'].forEach(x => {
+    const btn = document.getElementById(`diff-${x}`);
+    if (!btn) return;
+    btn.style.borderColor = x === d ? 'var(--ok)' : '';
+    btn.style.color       = x === d ? 'var(--ok)' : '';
+  });
+}
+setAiDiff('normal'); // default highlight
+
+function startVsComputer() {
+  showPanel('vs-computer-panel');
+  // Wire P1 deck load to enable start button
+  const origLoad = loadDeck;
+  // We'll check readiness via the status element change
+}
+
+// Called when P1 loads a deck in VS Computer mode — enable start button
+function checkVsCpuReady() {
+  if (!vsComputer && document.getElementById('vs-computer-panel')?.style.display === 'none') return;
+  const p1loaded = G.players[1].deckData !== null;
+  const btn = document.getElementById('start-cpu-btn');
+  if (btn) btn.disabled = !p1loaded;
+  const st = document.getElementById('p1-vs-cpu-status');
+  if (st && p1loaded) {
+    st.textContent = `✓ ${G.players[1].deckData.name}`;
+    st.style.color = 'var(--p1color)';
+    document.querySelector('.setup-player.p1')?.classList.add('loaded');
+  }
+}
+
+async function startVsCpuGame() {
+  vsComputer = true;
+  myRole = 1; // human is always P1
+
+  // AI gets a copy of P1's deck (shuffled differently) — simple, fair
+  const p1deck = G.players[1].deck;
+  if (!p1deck.length) { showToast('Load your deck first!', true); return; }
+
+  // Clone P1's deck structure for P2 (same card pool, different shuffle)
+  const aiDeck = shuffle(p1deck.map(c => ({
+    ...c,
+    uid: `ai-${c.id}-${Math.random().toString(36).slice(2,7)}`,
+    damage: 0, attachedEnergy: [], status: null,
+    defender: false, plusPower: 0
+  })));
+  G.players[2].deck = aiDeck;
+  G.players[2].deckData = { name: 'Computer' };
+  G.players[2].name = '🤖 Computer';
+
+  const cpuSt = document.getElementById('p2-cpu-status');
+  if (cpuSt) { cpuSt.textContent = `✓ ${G.players[1].deckData.name} (copy)`; cpuSt.style.color = 'var(--p2color)'; }
+
+  // No Firebase for VS Computer
+  gameRef = null;
+
+  await startGame();
+
+  // AI does setup immediately after a short delay
+  setTimeout(() => aiDoSetup(), 800);
+}
+
+// ── AI: SETUP phase — place active + bench ──────────
+function aiDoSetup() {
+  if (!vsComputer || G.phase !== 'SETUP') return;
+  const p2 = G.players[2];
+  const hand = p2.hand;
+
+  // Pick a Basic for Active — prefer lower-retreat-cost basics
+  const basics = hand.reduce((acc, c, i) => {
+    if (c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) acc.push({ c, i });
+    return acc;
+  }, []);
+  if (!basics.length) return; // no basics — shouldn't happen after mulligan
+
+  // Sort: prefer Pokémon with attacks over those without
+  basics.sort((a, b) => (b.c.attacks?.length || 0) - (a.c.attacks?.length || 0));
+
+  const activeChoice = basics[0];
+  p2.active = activeChoice.c;
+  hand.splice(activeChoice.i, 1);
+  if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+  G.evolvedThisTurn.push(activeChoice.c.uid);
+  addLog(`🤖 Computer placed ${activeChoice.c.name} as Active.`, true);
+
+  // Place remaining basics on bench (up to 3 on easy, 5 on normal/hard)
+  const maxBench = aiDifficulty === 'easy' ? 2 : 4;
+  let placed = 0;
+  for (let attempt = hand.length - 1; attempt >= 0 && placed < maxBench; attempt--) {
+    const card = hand[attempt];
+    if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
+      const slot = p2.bench.findIndex(s => s === null);
+      if (slot === -1) break;
+      p2.bench[slot] = card;
+      G.evolvedThisTurn.push(card.uid);
+      hand.splice(attempt, 1);
+      addLog(`🤖 Computer placed ${card.name} on bench.`);
+      placed++;
+    }
+  }
+
+  renderAll();
+}
+
+// ── AI: Full turn logic ─────────────────────────────
+async function aiTakeTurn() {
+  if (!vsComputer || G.turn !== 2 || aiThinking || !G.started) return;
+  if (G.phase === 'PROMOTE') return; // handled by resolvePromotion
+  aiThinking = true;
+
+  // Visual indicator
+  const badge = document.getElementById('turn-badge');
+  if (badge) { badge.textContent = '🤖 THINKING...'; badge.className = 'turn-badge p2'; }
+
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  const AI_DELAY = aiDifficulty === 'easy' ? 1400 : aiDifficulty === 'hard' ? 600 : 1000;
+
+  try {
+    // ── DRAW phase ───────────────────────────────────
+    if (G.phase === 'DRAW') {
+      drawCard(2, true);
+      G.phase = 'MAIN';
+      updatePhase();
+      await delay(AI_DELAY * 0.5);
+    }
+
+    if (G.phase !== 'MAIN') { aiThinking = false; return; }
+
+    // ── MAIN phase actions ───────────────────────────
+    const p2 = G.players[2];
+    const p1 = G.players[1];
+
+    // 1. Ensure we have an active
+    if (!p2.active) {
+      const benchPoke = p2.bench.find(s => s !== null);
+      if (benchPoke) {
+        const idx = p2.bench.findIndex(s => s === benchPoke);
+        p2.active = benchPoke;
+        p2.bench[idx] = null;
+        addLog(`🤖 Computer moved ${benchPoke.name} to Active.`);
+        renderAll();
+        await delay(AI_DELAY);
+      } else {
+        // No pokemon at all — concede / end turn
+        aiThinking = false;
+        endTurn();
+        return;
+      }
+    }
+
+    // 2. Play basics from hand to bench
+    if (aiDifficulty !== 'easy' || Math.random() > 0.3) {
+      const hand = p2.hand;
+      for (let i = hand.length - 1; i >= 0; i--) {
+        const card = hand[i];
+        const benchFull = p2.bench.every(s => s !== null);
+        if (benchFull) break;
+        if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
+          const slot = p2.bench.findIndex(s => s === null);
+          if (slot === -1) break;
+          p2.bench[slot] = card;
+          if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+          G.evolvedThisTurn.push(card.uid);
+          hand.splice(i, 1);
+          addLog(`🤖 Computer played ${card.name} to bench.`, true);
+          renderAll();
+          await delay(AI_DELAY * 0.6);
+        }
+      }
+    }
+
+    // 3. Evolve — on normal/hard try to evolve matching bench/active
+    if (aiDifficulty !== 'easy' && !prehistoricPowerActive()) {
+      const hand = p2.hand;
+      const evolvedUids = G.evolvedThisTurn || [];
+      for (let i = hand.length - 1; i >= 0; i--) {
+        const card = hand[i];
+        if (card.supertype !== 'Pokémon') continue;
+        if (!card.subtypes?.includes('Stage 1') && !card.subtypes?.includes('Stage 2')) continue;
+        if (!card.evolvesFrom) continue;
+
+        // Try active first
+        if (p2.active?.name === card.evolvesFrom && !evolvedUids.includes(p2.active.uid)) {
+          evolve(2, i, 'active', null);
+          await delay(AI_DELAY * 0.7);
+          break;
+        }
+        // Try bench
+        for (let b = 0; b < 5; b++) {
+          if (p2.bench[b]?.name === card.evolvesFrom && !evolvedUids.includes(p2.bench[b].uid)) {
+            evolve(2, i, 'bench', b);
+            await delay(AI_DELAY * 0.7);
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. Play trainer cards (simple ones only)
+    await aiPlayTrainers();
+    await delay(AI_DELAY * 0.5);
+
+    // 5. Attach energy (one per turn unless Rain Dance)
+    if (!G.energyPlayedThisTurn) {
+      const hand = p2.hand;
+      const energyIdx = hand.findIndex(c => c.supertype === 'Energy');
+      if (energyIdx !== -1) {
+        // Attach to active if it can attack, else bench
+        const target = aiChooseEnergyTarget(p2);
+        if (target !== null) {
+          const isRainDance = /water/i.test(hand[energyIdx].name) && rainDanceActive(2);
+          attachEnergy(2, energyIdx, target.zone, target.idx, isRainDance);
+          addLog(`🤖 Computer attached energy to ${target.zone === 'active' ? p2.active?.name : p2.bench[target.idx]?.name}.`);
+          renderAll();
+          await delay(AI_DELAY * 0.7);
+        }
+      }
+    }
+
+    // 6. Consider retreating if active is badly damaged and bench is healthier
+    if (aiDifficulty !== 'easy') {
+      const retreated = await aiConsiderRetreat(p2);
+      if (retreated) await delay(AI_DELAY);
+    }
+
+    // 7. Attack if possible
+    const attacked = await aiChooseAndAttack();
+
+    if (!attacked) {
+      // No attack — just end turn
+      await delay(AI_DELAY * 0.5);
+      aiThinking = false;
+      if (G.started && G.turn === 2) endTurn();
+    }
+    // If attacked, endTurn() is called inside performAttack → endTurn flow
+    // aiThinking will be reset in the next turn's entry
+
+  } catch (e) {
+    console.error('AI error:', e);
+    aiThinking = false;
+    if (G.started && G.turn === 2) endTurn();
+  }
+}
+
+function aiChooseEnergyTarget(p2) {
+  // Prefer attaching to active so it can attack sooner
+  if (p2.active) return { zone: 'active', idx: null };
+  // Else bench pokemon with fewest energy
+  for (let i = 0; i < 5; i++) {
+    if (p2.bench[i]) return { zone: 'bench', idx: i };
+  }
+  return null;
+}
+
+async function aiConsiderRetreat(p2) {
+  if (!p2.active || !p2.bench.some(s => s)) return false;
+  const active = p2.active;
+  const hp = parseInt(active.hp) || 0;
+  const dmg = active.damage || 0;
+  const pctDmg = hp > 0 ? dmg / hp : 0;
+
+  // Retreat if active is over 60% damaged, has retreat cost covered, and bench is healthier
+  if (pctDmg < 0.6) return false;
+  const retreatCost = active.convertedRetreatCost || 0;
+  const energy = active.attachedEnergy?.length || 0;
+  if (energy < retreatCost) return false;
+
+  // Find best bench option (most HP remaining)
+  let bestBench = -1, bestScore = -1;
+  for (let i = 0; i < 5; i++) {
+    const b = p2.bench[i];
+    if (!b) continue;
+    const bHp = parseInt(b.hp) || 0;
+    const bDmg = b.damage || 0;
+    const score = bHp - bDmg;
+    if (score > bestScore) { bestScore = score; bestBench = i; }
+  }
+
+  if (bestBench === -1) return false;
+
+  executeRetreat(2, bestBench);
+  addLog(`🤖 Computer retreated ${active.name}.`, true);
+  renderAll();
+  return true;
+}
+
+async function aiPlayTrainers() {
+  // On easy difficulty, rarely play trainers
+  if (aiDifficulty === 'easy' && Math.random() > 0.4) return;
+
+  const p2 = G.players[2];
+  const hand = p2.hand;
+  const opp = G.players[1];
+
+  // Play draw trainers (Bill, Professor Oak) if hand is small
+  for (let i = hand.length - 1; i >= 0; i--) {
+    const card = hand[i];
+    if (card.supertype !== 'Trainer') continue;
+    const name = card.name;
+
+    // Bill — simple draw, always good
+    if (name === 'Bill') {
+      hand.splice(i, 1);
+      p2.discard.push(card);
+      for (let d = 0; d < 2 && p2.deck.length; d++) drawCard(2, true);
+      addLog(`🤖 Computer played Bill — drew 2 cards.`, true);
+      renderAll();
+      return; // one trainer per loop iteration
+    }
+
+    // Professor Oak — only if hand is small (< 4)
+    if (name === 'Professor Oak' && hand.length < 5) {
+      p2.discard.push(...hand.splice(0));
+      hand.length = 0;
+      for (let d = 0; d < 7 && p2.deck.length; d++) drawCard(2, true);
+      addLog(`🤖 Computer played Professor Oak — drew 7 cards.`, true);
+      renderAll();
+      return;
+    }
+
+    // Potion — heal active if hurt
+    if (name === 'Potion' && p2.active && (p2.active.damage || 0) >= 30) {
+      hand.splice(i, 1);
+      p2.discard.push(card);
+      p2.active.damage = Math.max(0, (p2.active.damage || 0) - 20);
+      addLog(`🤖 Computer played Potion — healed ${p2.active.name} for 20.`, true);
+      renderAll();
+      return;
+    }
+
+    // Super Potion — heal if hurt
+    if (name === 'Super Potion' && p2.active && (p2.active.damage || 0) >= 50 && (p2.active.attachedEnergy?.length || 0) > 0) {
+      const removed = p2.active.attachedEnergy.splice(0, 1);
+      p2.discard.push(...removed);
+      hand.splice(i, 1);
+      p2.discard.push(card);
+      p2.active.damage = Math.max(0, (p2.active.damage || 0) - 40);
+      addLog(`🤖 Computer played Super Potion — healed ${p2.active.name} for 40.`, true);
+      renderAll();
+      return;
+    }
+
+    // PlusPower — play if we're about to attack
+    if (name === 'PlusPower' && p2.active && aiCanAttack(p2.active)) {
+      hand.splice(i, 1);
+      p2.discard.push(card);
+      p2.active.plusPower = (p2.active.plusPower || 0) + 10;
+      addLog(`🤖 Computer played PlusPower on ${p2.active.name}.`, true);
+      renderAll();
+      return;
+    }
+  }
+}
+
+function aiCanAttack(card) {
+  if (!card?.attacks?.length) return false;
+  return card.attacks.some(atk => canAffordAttack(card.attachedEnergy, atk.cost, card));
+}
+
+async function aiChooseAndAttack() {
+  const p2 = G.players[2];
+  const p1 = G.players[1];
+  if (!p2.active || !p1.active) return false;
+
+  const card = p2.active;
+  const attacks = (card && isPowerActive(card, 'Transform') && dittoAttacks(2)) || card?.attacks || [];
+  if (!attacks.length) return false;
+
+  // Filter to attacks the AI can afford
+  const affordable = attacks.filter(atk =>
+    canAffordAttack(card.attachedEnergy, atk.cost, card) &&
+    !(card.disabledAttack && card.disabledAttack === atk.name)
+  );
+  if (!affordable.length) return false;
+
+  // On easy: sometimes skip attack
+  if (aiDifficulty === 'easy' && Math.random() < 0.25) return false;
+
+  // Choose best attack — highest damage, or on hard consider KO potential
+  let chosen;
+  if (aiDifficulty === 'hard') {
+    // Hard: prefer the attack most likely to KO or deal most damage
+    const oppHp = parseInt(p1.active.hp) || 0;
+    const oppDmg = p1.active.damage || 0;
+    const remaining = oppHp - oppDmg;
+    chosen = affordable.reduce((best, atk) => {
+      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      return dmg >= remaining ? atk : (dmg > bestDmg ? atk : best);
+    });
+  } else {
+    // Normal/easy: just pick highest damage attack
+    chosen = affordable.reduce((best, atk) => {
+      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      return dmg > bestDmg ? atk : best;
+    });
+  }
+
+  addLog(`🤖 Computer uses ${chosen.name}!`, true);
+  aiThinking = false; // release before async attack (which calls endTurn)
+  await performAttack(2, chosen);
+  return true;
+}
+
+// ── Hook into endTurn to trigger AI ─────────────────
+const _originalEndTurn = endTurn;
+function endTurn() {
+  _originalEndTurn();
+  // After turn flips to P2, trigger AI
+  if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+    aiThinking = false;
+    setTimeout(() => aiTakeTurn(), 900);
+  }
+}
+
+// ── Hook into resolvePromotion to handle AI promotion ─
+const _originalResolvePromotion = resolvePromotion;
+function resolvePromotion(player, benchIdx) {
+  _originalResolvePromotion(player, benchIdx);
+  // If AI just KO'd P1's active and it's now P2's turn, trigger AI
+  if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+    aiThinking = false;
+    setTimeout(() => aiTakeTurn(), 900);
+  }
+}
+
+// ── AI auto-handles its own promotion ───────────────
+// Intercept checkKO to detect when AI needs to pick a new active
+const _originalCheckKO = checkKO;
+function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
+  const result = _originalCheckKO(attackingPlayer, defendingPlayer, card, isSelf);
+  if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
+    setTimeout(() => aiDoPromotion(), 700);
+  }
+  return result;
+}
+
+function aiDoPromotion() {
+  if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
+  const p2 = G.players[2];
+  // Pick bench slot with most HP remaining
+  let bestIdx = -1, bestScore = -1;
+  for (let i = 0; i < 5; i++) {
+    if (!p2.bench[i]) continue;
+    const hp = parseInt(p2.bench[i].hp) || 0;
+    const dmg = p2.bench[i].damage || 0;
+    const score = hp - dmg;
+    if (score > bestScore) { bestScore = score; bestIdx = i; }
+  }
+  if (bestIdx === -1) return; // no bench available
+  resolvePromotion(2, bestIdx);
+}
+
+// ── Hook into doneSetup to trigger AI setup completion ─
+const _originalDoneSetup = doneSetup;
+function doneSetup() {
+  // When human clicks DONE SETUP, AI must also have an active
+  if (vsComputer && !G.players[2].active) {
+    aiDoSetup();
+  }
+  _originalDoneSetup();
+}
+
+// ── Watch loadDeck to detect P1 deck load in VS CPU mode ─
+const _originalLoadDeck = loadDeck;
+async function loadDeck(deckName) {
+  await _originalLoadDeck(deckName);
+  // If in vs-computer-panel, update status
+  if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
+    checkVsCpuReady();
+  }
+}
+
+// ══════════════════════════════════════════════════
 // MULTIPLAYER / ROOM SYSTEM
 // ══════════════════════════════════════════════════
 let myRole = null;       // 1 or 2
@@ -5865,8 +6386,8 @@ let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
 // ── Panel helpers ─────────────────────────────────
-function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
 
 function generateCode() {
   return Math.random().toString(36).substring(2,8).toUpperCase();
@@ -6134,8 +6655,9 @@ function applyRoleVisibility() {
   // We check the id prefix rather than the container so we don't accidentally grey our own cards.
   document.querySelectorAll('#hand-p1 .hand-card').forEach(el => {
     const isMyCard = el.id.startsWith(`hand-card-${myRole}-`);
-    el.style.opacity = isMyCard ? '' : '0.35';
-    el.style.pointerEvents = isMyCard ? '' : 'none';
+    const isAiTurn = vsComputer && G.turn === 2;
+    el.style.opacity = (isMyCard && !isAiTurn) ? '' : '0.35';
+    el.style.pointerEvents = (isMyCard && !isAiTurn) ? '' : 'none';
   });
 
   // Opponent hand in sidebar — always non-interactive (face down)
@@ -6159,11 +6681,14 @@ function applyRoleVisibility() {
         endBtn.style.pointerEvents = 'none';
       }
     } else {
-      const canAct = G.turn === myRole ||
-                     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
+      const isAiTurn = vsComputer && G.turn === 2;
+      const canAct = !isAiTurn && (G.turn === myRole ||
+                     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole));
       endBtn.style.opacity = canAct ? '' : '0.4';
       endBtn.style.pointerEvents = canAct ? '' : 'none';
-      if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...') {
+      if (isAiTurn) {
+        endBtn.textContent = 'AI THINKING...';
+      } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
         endBtn.textContent = 'END TURN';
       }
     }
