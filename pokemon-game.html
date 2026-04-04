@@ -3197,6 +3197,9 @@ async function performAttack(player, atk) {
     if (oppActive.defenderFull) {
       addLog(`${oppActive.name} is fully protected — all damage prevented!`);
       dmg = 0;
+    } else if (oppActive.defenderThreshold && dmg <= oppActive.defenderThreshold) {
+      addLog(`${oppActive.name} is protected — ${dmg} damage is blocked (≤${oppActive.defenderThreshold} threshold)!`);
+      dmg = 0;
     } else if (oppActive.defender) {
       dmg = Math.max(0, dmg - 20);
       addLog(`Defender reduces damage to ${dmg}.`);
@@ -3232,6 +3235,7 @@ async function performAttack(player, atk) {
   }
 
 
+  // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
   const selfProtectMatch = (atk.text || '').match(
     /flip a coin[^.]*\.\s*if heads[^.]*prevent all damage done to/i
   );
@@ -3239,11 +3243,20 @@ async function performAttack(player, atk) {
     const heads = await flipCoin(`${atk.name}: Heads = prevent all damage next turn, Tails = no effect`);
     if (heads) {
       myActive.defender = true;
-      myActive.defenderFull = true; // full block, not just -20
+      myActive.defenderFull = true;
       addLog(`${atk.name}: HEADS — ${myActive.name} is protected from all damage until end of opponent's next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
     }
+  }
+
+  // ── Threshold self-protection (Harden-style): "whenever N or less damage is done... prevent that damage" ──
+  const hardenMatch = (atk.text || '').match(/whenever (\d+) or less damage is done[^,]*,?\s*prevent that damage/i);
+  if (hardenMatch && myActive) {
+    const threshold = parseInt(hardenMatch[1]);
+    myActive.defender = true;
+    myActive.defenderThreshold = threshold;
+    addLog(`${atk.name}: ${myActive.name} will block any attack doing ${threshold} or less damage next turn!`, true);
   }
 
 
@@ -3446,6 +3459,7 @@ function endTurn() {
   if (newActive?.defender) {
     newActive.defender = false;
     newActive.defenderFull = false;
+    newActive.defenderThreshold = 0;
     addLog(`Defender on ${newActive.name} has expired.`);
   }
   // Also clear PlusPower from active (it was already applied or expires)
