@@ -25,10 +25,17 @@
   --ok:        #48bb78;
   --warn:      #ed8936;
   --font:      'Press Start 2P', monospace;
-  --card-w:    80px;
-  --card-h:    112px;
-  --card-w-sm: 56px;
-  --card-h-sm: 78px;
+
+  /* Fluid card sizing — scales with viewport height, capped for huge screens */
+  /* Active: the hero cards, big and prominent */
+  --active-w:    clamp(100px, 11vh, 160px);
+  --active-h:    clamp(140px, 15.4vh, 224px);
+  /* Bench / aux: smaller supporting cards */
+  --card-w-sm:   clamp(60px,  6.5vh, 96px);
+  --card-h-sm:   clamp(84px,  9.1vh, 134px);
+  /* Legacy aliases kept so nothing breaks */
+  --card-w:      var(--active-w);
+  --card-h:      var(--active-h);
 }
 
 html, body {
@@ -233,6 +240,7 @@ html, body {
   border: 1px solid var(--border);
   border-radius: 6px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .opp-label {
@@ -277,12 +285,12 @@ html, body {
 }
 .opp-bench-slot.empty { opacity: .3; }
 
-/* Opponent active — slightly larger */
+/* Opponent active — matches player active size */
 .opp-active-slot {
-  width: 72px;
-  height: 100px;
+  width: var(--active-w);
+  height: var(--active-h);
   border: 1px solid var(--p2color);
-  border-radius: 5px;
+  border-radius: 8px;
   background: var(--surface2);
   display: flex;
   flex-direction: column;
@@ -296,9 +304,10 @@ html, body {
   cursor: pointer;
 }
 .opp-active-slot img {
-  width: 100%; height: 85%;
+  width: 100%; height: 100%;
   object-fit: cover;
-  filter: brightness(0.55);
+  border-radius: 7px;
+  filter: brightness(0.7);
 }
 .opp-active-slot .slot-label {
   font-size: 6px;
@@ -375,7 +384,7 @@ html, body {
 #player-zone {
   flex: 1;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 10px;
   overflow: hidden;
   min-height: 0;
@@ -386,8 +395,10 @@ html, body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  justify-content: flex-end;
   gap: 8px;
   overflow: hidden;
+  min-height: 0;
 }
 
 /* Bench row */
@@ -395,6 +406,7 @@ html, body {
   display: flex;
   gap: 7px;
   align-items: flex-end;
+  flex-shrink: 0;
 }
 
 .bench-label {
@@ -442,18 +454,19 @@ html, body {
   border-radius: 0 0 4px 4px;
 }
 .energy-pip {
-  width: 8px; height: 8px;
+  width: clamp(8px, 0.9vh, 12px);
+  height: clamp(8px, 0.9vh, 12px);
   border-radius: 50%;
   border: 1px solid rgba(255,255,255,.3);
 }
 
 .damage-overlay {
-  position: absolute; bottom: 2px; right: 2px;
+  position: absolute; bottom: 4px; right: 4px;
   background: rgba(180,30,30,.95);
   color: #fff;
-  font-size: 8px;
+  font-size: clamp(8px, 0.9vh, 11px);
   font-family: var(--font);
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 3px;
   z-index: 2;
   letter-spacing: 0.5px;
@@ -463,9 +476,9 @@ html, body {
 .hp-bar-wrap {
   position: absolute;
   bottom: 0; left: 0; right: 0;
-  height: 4px;
+  height: clamp(4px, 0.5vh, 7px);
   background: rgba(0,0,0,.5);
-  border-radius: 0 0 4px 4px;
+  border-radius: 0 0 6px 6px;
   overflow: hidden;
   z-index: 3;
 }
@@ -480,17 +493,17 @@ html, body {
 /* Active slot stat label (name + HP text) */
 .active-stat-label {
   position: absolute;
-  top: 2px; left: 3px;
-  font-size: 5px;
+  top: 3px; left: 3px;
+  font-size: clamp(5px, 0.55vh, 7px);
   font-family: var(--font);
-  color: rgba(255,255,255,.85);
-  background: rgba(0,0,0,.55);
-  padding: 1px 3px;
-  border-radius: 2px;
+  color: rgba(255,255,255,.9);
+  background: rgba(0,0,0,.6);
+  padding: 2px 4px;
+  border-radius: 3px;
   z-index: 3;
   pointer-events: none;
-  line-height: 1.5;
-  max-width: calc(100% - 6px);
+  line-height: 1.6;
+  max-width: calc(100% - 8px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -532,11 +545,12 @@ html, body {
 .card-badge.defender  { background: rgba(91,156,246,.9); color: #fff; }
 .card-badge.pluspower { background: rgba(232,200,74,.9); color: #000; }
 
-/* Active Pokémon — larger, prominent, separated from bench */
+/* Active Pokémon — larger, prominent, pushed forward */
 #active-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .active-label {
@@ -549,13 +563,14 @@ html, body {
 }
 
 #active-p1 {
-  width: var(--card-w);
-  height: var(--card-h);
+  width: var(--active-w);
+  height: var(--active-h);
   border: 2px solid var(--p1color);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(91,156,246,.15);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(91,156,246,.2);
+  flex-shrink: 0;
 }
-#active-p1.highlight { box-shadow: 0 0 12px rgba(232,200,74,.5); }
+#active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
 /* Player aux: deck, discard, prizes */
 #player-aux {
@@ -569,6 +584,7 @@ html, body {
 .player-deck-slot {
   width: var(--card-w-sm);
   height: var(--card-h-sm);
+  min-width: 60px;
   border: 1px solid var(--p1color);
   border-radius: 5px;
   background: var(--surface2);
@@ -608,7 +624,7 @@ html, body {
 .prize-grid {
   display: grid;
   grid-template-columns: repeat(2, var(--card-w-sm));
-  grid-template-rows: repeat(3, calc(var(--card-h-sm) * 0.65));
+  grid-template-rows: repeat(3, calc(var(--card-h-sm) * 0.62));
   gap: 4px;
 }
 
