@@ -1176,6 +1176,62 @@ html, body {
   color: var(--p2color);
 }
 
+/* ── MOVE FLASH OVERLAY ──────────────────────────── */
+#move-flash {
+  display: none;
+  position: fixed; inset: 0; z-index: 960;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+#move-flash.show { display: flex; }
+#move-flash-inner {
+  font-family: var(--font);
+  text-align: center;
+  padding: 28px 48px;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: moveFlashAnim 2s ease-out forwards;
+  max-width: 460px;
+}
+@keyframes moveFlashAnim {
+  0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
+  15%  { opacity: 1; transform: scale(1.04) translateY(0); }
+  60%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.97) translateY(6px); }
+}
+#move-flash.p1 #move-flash-inner {
+  background: rgba(91,156,246,0.12);
+  border: 2px solid var(--p1color);
+}
+#move-flash.p2 #move-flash-inner {
+  background: rgba(245,101,101,0.12);
+  border: 2px solid var(--p2color);
+}
+#move-flash-who {
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--muted);
+}
+#move-flash-attacker {
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+#move-flash.p1 #move-flash-attacker { color: var(--p1color); }
+#move-flash.p2 #move-flash-attacker { color: var(--p2color); }
+#move-flash-move {
+  font-size: 22px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  line-height: 1.3;
+}
+#move-flash-dmg {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
 /* ── COIN FLIP OVERLAY ───────────────────────────── */
 #coin-overlay {
   display: none;
@@ -2004,6 +2060,16 @@ html, body {
 <!-- Turn change overlay -->
 <div id="turn-overlay">
   <div id="turn-overlay-inner"></div>
+</div>
+
+<!-- Move flash overlay -->
+<div id="move-flash">
+  <div id="move-flash-inner">
+    <div id="move-flash-who"></div>
+    <div id="move-flash-attacker"></div>
+    <div id="move-flash-move"></div>
+    <div id="move-flash-dmg"></div>
+  </div>
 </div>
 
 <!-- Coin flip overlay -->
@@ -3863,6 +3929,9 @@ async function performAttack(player, atk) {
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
 
+  // Show move flash for opponent attacks
+  showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?');
+
   // Resolve coin-flip damage if the attack text requires it
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
@@ -5195,6 +5264,35 @@ function showTurnFlash(player) {
   setTimeout(() => el.classList.remove('show'), 1300);
 }
 
+function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName) {
+  // Only show for the opponent's moves (not your own)
+  const isOpponent = myRole !== null && attackingPlayer !== myRole;
+  if (!isOpponent) return;
+
+  const el = document.getElementById('move-flash');
+  const whoEl = document.getElementById('move-flash-who');
+  const attackerEl = document.getElementById('move-flash-attacker');
+  const moveEl = document.getElementById('move-flash-move');
+  const dmgEl = document.getElementById('move-flash-dmg');
+
+  const label = vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`;
+  whoEl.textContent = label;
+  attackerEl.textContent = attackerName.toUpperCase();
+  moveEl.textContent = moveName.toUpperCase();
+  dmgEl.textContent = dmg > 0 ? `${dmg} damage → ${targetName}` : `→ ${targetName}`;
+
+  el.className = `show p${attackingPlayer}`;
+
+  // Reset animation
+  const inner = document.getElementById('move-flash-inner');
+  inner.style.animation = 'none';
+  void inner.offsetWidth;
+  inner.style.animation = '';
+
+  clearTimeout(el._flashTimer);
+  el._flashTimer = setTimeout(() => el.classList.remove('show'), 2100);
+}
+
 // ══════════════════════════════════════════════════
 // WIN SCREEN
 // ══════════════════════════════════════════════════
@@ -6210,12 +6308,42 @@ async function aiTakeTurn() {
 }
 
 function aiChooseEnergyTarget(p2) {
-  // Prefer attaching to active so it can attack sooner
-  if (p2.active) return { zone: 'active', idx: null };
-  // Else bench pokemon with fewest energy
-  for (let i = 0; i < 5; i++) {
-    if (p2.bench[i]) return { zone: 'bench', idx: i };
+  // Helper: how many more energy does a pokemon need to fire its cheapest attack?
+  function energyNeeded(card) {
+    if (!card?.attacks?.length) return 99; // no attacks — don't bother
+    const attached = card.attachedEnergy || [];
+    // Find the attack with the lowest cost that we're closest to affording
+    let minDeficit = 99;
+    for (const atk of card.attacks) {
+      const cost = atk.cost || [];
+      if (cost.length === 0) { minDeficit = 0; break; } // free attack
+      // Count how many more energy are needed (simplified: cost.length vs attached.length)
+      const deficit = Math.max(0, cost.length - attached.length);
+      if (deficit < minDeficit) minDeficit = deficit;
+    }
+    return minDeficit;
   }
+
+  const active = p2.active;
+
+  // Check active first: only attach if it still needs energy
+  if (active) {
+    const needed = energyNeeded(active);
+    if (needed > 0) return { zone: 'active', idx: null };
+  }
+
+  // Active is fully powered — find the bench pokemon with the greatest energy deficit
+  // (most in need of charging up), preferring those with attacks
+  let bestIdx = -1, bestDeficit = 0;
+  for (let i = 0; i < 5; i++) {
+    const b = p2.bench[i];
+    if (!b) continue;
+    const deficit = energyNeeded(b);
+    if (deficit > bestDeficit) { bestDeficit = deficit; bestIdx = i; }
+  }
+  if (bestIdx !== -1) return { zone: 'bench', idx: bestIdx };
+
+  // Everyone is fully powered — skip attaching
   return null;
 }
 
