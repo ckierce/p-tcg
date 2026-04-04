@@ -2283,10 +2283,27 @@ function getActionsForCard(player, card, handIdx) {
     }
   }
 
-  if (!isSetup && card.supertype === 'Energy' && !G.energyPlayedThisTurn) {
-    actions.push({ label: 'Attach to Active', fn: () => attachEnergy(player, handIdx, 'active') });
-    const hasBench = p.bench.some(s => s !== null);
-    if (hasBench) actions.push({ label: 'Attach to Bench...', fn: () => startEnergyAttach(player, handIdx) });
+  if (!isSetup && card.supertype === 'Energy') {
+    const isWaterEnergy = /water/i.test(card.name);
+    const rainDance = rainDanceActive(player) && isWaterEnergy;
+    const canAttach = !G.energyPlayedThisTurn || rainDance;
+    if (canAttach) {
+      // Rain Dance: can only attach to Water-type Pokémon
+      const activeIsWater = !rainDance || (p.active?.types || []).some(t => /water/i.test(t));
+      if (activeIsWater) {
+        actions.push({
+          label: rainDance ? 'Attach to Active (Rain Dance)' : 'Attach to Active',
+          fn: () => attachEnergy(player, handIdx, 'active', null, rainDance)
+        });
+      }
+      const waterBench = p.bench.filter((s, i) => s !== null && (!rainDance || (s.types || []).some(t => /water/i.test(t))));
+      if (waterBench.length > 0 || (!rainDance && p.bench.some(s => s !== null))) {
+        actions.push({
+          label: rainDance ? 'Attach to Bench... (Rain Dance)' : 'Attach to Bench...',
+          fn: () => startEnergyAttach(player, handIdx, rainDance)
+        });
+      }
+    }
   }
   if (!isSetup && card.supertype === 'Trainer') {
     actions.push({ label: 'Play Trainer', fn: async () => { closeActionMenu(); await playTrainer(player, handIdx); } });
@@ -2359,29 +2376,40 @@ function playToBench(player, slotIdx) {
   renderAll();
 }
 
-function attachEnergy(player, handIdx, target, benchIdx = null) {
+function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = false) {
   closeActionMenu();
-  if (G.energyPlayedThisTurn) { showToast('Already attached energy this turn!', true); return; }
+  if (G.energyPlayedThisTurn && !isRainDance) { showToast('Already attached energy this turn!', true); return; }
   const p = G.players[player];
   const energy = p.hand.splice(handIdx, 1)[0];
   let targetCard = target === 'active' ? p.active : p.bench[benchIdx];
   if (!targetCard) { showToast('No Pokémon there!', true); p.hand.splice(handIdx, 0, energy); return; }
+  // Rain Dance: target must be a Water Pokémon
+  if (isRainDance && !(targetCard.types || []).some(t => /water/i.test(t))) {
+    showToast('Rain Dance only works on Water Pokémon!', true);
+    p.hand.splice(handIdx, 0, energy); return;
+  }
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
   targetCard.attachedEnergy.push(energy);
-  G.energyPlayedThisTurn = true;
+  if (!isRainDance) G.energyPlayedThisTurn = true;
   G.pendingAction = null;
   clearHighlights();
-  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}.`);
+  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}.`);
   renderAll();
 }
 
-function startEnergyAttach(player, handIdx) {
+function startEnergyAttach(player, handIdx, isRainDance = false) {
   closeActionMenu();
-  G.pendingAction = { type: 'energy', player, handIdx };
+  G.pendingAction = { type: 'energy', player, handIdx, isRainDance };
+  const p = G.players[player];
   for (let i = 0; i < 5; i++) {
-    if (G.players[player].bench[i]) document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
+    const bench = p.bench[i];
+    if (bench) {
+      // Rain Dance: only highlight Water Pokémon
+      const eligible = !isRainDance || (bench.types || []).some(t => /water/i.test(t));
+      if (eligible) document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
+    }
   }
-  setMidline('Choose a bench Pokémon to attach energy to');
+  setMidline(isRainDance ? 'Rain Dance: choose a Water Pokémon to attach energy to' : 'Choose a bench Pokémon to attach energy to');
 }
 
 async function playTrainer(player, handIdx) {
@@ -3226,7 +3254,7 @@ function onActiveClick(player, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player) {
-    attachEnergy(player, G.pendingAction.handIdx, 'active');
+    attachEnergy(player, G.pendingAction.handIdx, 'active', null, G.pendingAction.isRainDance || false);
     G.pendingAction = null; clearHighlights(); return;
   }
   const p = G.players[player];
@@ -3239,16 +3267,18 @@ function onActiveClick(player, evt) {
   }
 }
 
-function canAffordAttack(attachedEnergy, cost) {
+function canAffordAttack(attachedEnergy, cost, attackerCard) {
   if (!cost || cost.length === 0) return true;
 
   // Build a pool of energy tokens from attached cards
-  // Double Colorless Energy counts as 2 Colorless tokens
-  // All other energy cards count as 1 token of their type
+  // Energy Burn (Charizard): all attached energy counts as Fire
+  const energyBurn = attackerCard && hasEnergyBurn(attackerCard);
   const pool = [];
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
-    if (/double colorless/i.test(name)) {
+    if (energyBurn) {
+      pool.push('Fire');
+    } else if (/double colorless/i.test(name)) {
       pool.push('Colorless', 'Colorless');
     } else {
       // Derive type from name e.g. "Water Energy" → "Water"
@@ -3297,14 +3327,17 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
 
   // Attacks — only from active slot, only on your turn during MAIN phase
   if (zone === 'active' && G.turn === player && G.phase === 'MAIN') {
-    const attacks = card.attacks || [];
+    // Ditto: use opponent's attacks via Transform power
+    const transformAttacks = dittoAttacks(player);
+    const attacks = transformAttacks || card.attacks || [];
+    if (transformAttacks) addLog && undefined; // no-op, just using the branch
     if (attacks.length === 0) {
       actions.push({ label: 'No attacks', disabled: true });
     } else {
       attacks.forEach(atk => {
         const costStr = atk.cost?.join(', ') || '—';
         const dmg = atk.damage || '0';
-        const canAfford = canAffordAttack(card.attachedEnergy, atk.cost);
+        const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
         actions.push({
           label: `⚔ ${atk.name}`,
           sub: canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
@@ -3314,6 +3347,30 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
       });
     }
     actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
+
+    // ── Pokémon Power actions ──
+    if (!isMukActive()) {
+      // Damage Swap (Alakazam anywhere on bench/active)
+      if (damageSwapActive(player) && G.phase === 'MAIN') {
+        actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
+      }
+      // Energy Trans (Venusaur)
+      if (energyTransActive(player) && G.phase === 'MAIN') {
+        actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
+      }
+      // Curse (Gengar) — once per turn
+      if (!G.cursedThisTurn && [p.active, ...p.bench].some(c => isPowerActive(c, 'Curse')) && G.phase === 'MAIN') {
+        actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
+      }
+      // Metronome (Clefable must be active)
+      if (zone === 'active' && isPowerActive(card, 'Metronome') && G.phase === 'MAIN') {
+        actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
+      }
+      // Buzzap (Electrode on bench)
+      if (zone === 'bench' && isPowerActive(card, 'Buzzap') && G.phase === 'MAIN') {
+        actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
+      }
+    }
   }
 
   // Clefairy Doll / Mysterious Fossil: can be voluntarily discarded from bench on your turn
@@ -3405,7 +3462,7 @@ function handleBenchClick(player, slotIdx, evt) {
     playToBench(player, slotIdx); return;
   }
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player && slot) {
-    attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx);
+    attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx, G.pendingAction.isRainDance || false);
     G.pendingAction = null; clearHighlights(); return;
   }
   const canAct = G.phase === 'SETUP' || G.turn === player;
@@ -3768,6 +3825,9 @@ async function performAttack(player, atk) {
     } else if (oppActive.defenderThreshold && dmg <= oppActive.defenderThreshold) {
       addLog(`${oppActive.name} is protected — ${dmg} damage is blocked (≤${oppActive.defenderThreshold} threshold)!`);
       dmg = 0;
+    } else if (hasInvisibleWall(oppActive) && dmg <= 30) {
+      addLog(`${oppActive.name}'s Invisible Wall blocks ${dmg} damage!`, true);
+      dmg = 0;
     } else if (oppActive.defender) {
       dmg = Math.max(0, dmg - 20);
       addLog(`Defender reduces damage to ${dmg}.`);
@@ -3841,21 +3901,21 @@ async function performAttack(player, atk) {
       const flip = await flipCoin(`${atk.name}: Heads = ${headsName}, Tails = ${tailsName}`);
       const appliedStatus = flip ? eff.heads : eff.tails;
       const appliedName = flip ? headsName : tailsName;
-      applyStatus(target, appliedStatus);
+      tryApplyStatus(target, appliedStatus);
       addLog(`Coin flip: ${flip ? 'HEADS' : 'TAILS'} — ${target.name} is now ${appliedName}!`, true);
     } else if (eff.coinRequired) {
       const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
       const flip = await flipCoin(`${atk.name}: flip for ${statusName}!\n${eff.onTails ? 'Tails' : 'Heads'} = ${statusName}`);
       const shouldApply = eff.onTails ? !flip : flip;
       if (shouldApply) {
-        applyStatus(target, eff.status);
+        tryApplyStatus(target, eff.status);
         addLog(`${target.name} is now ${statusName}!`, true);
       } else {
         addLog(`Coin flip: no ${statusName}.`);
       }
     } else {
       const statusName = eff.status.charAt(0).toUpperCase() + eff.status.slice(1);
-      applyStatus(target, eff.status);
+      tryApplyStatus(target, eff.status);
       addLog(`${target.name} is now ${statusName}!`, true);
     }
   }
@@ -4060,6 +4120,7 @@ function endTurn() {
   G.turnNum++;
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
+  G.cursedThisTurn = false;
   G.plusPowerActive = 0;
   G.pendingAction = null;
   clearHighlights();
@@ -4175,9 +4236,12 @@ function renderField(player) {
         const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 26)).join('');
         const dmg = damageCounters(card.damage, true);
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+        const oppPower1 = getPower(card);
+        const oppPowerSup1 = oppPower1 && isMukActive() && oppPower1.name !== 'Toxic Gas';
         const badgeParts1 = [
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
+          oppPower1 ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${oppPowerSup1 ? 'opacity:.4;text-decoration:line-through' : ''}">${oppPower1.name.substring(0,8)}</div>` : '',
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
@@ -4200,9 +4264,12 @@ function renderField(player) {
         } else {
           if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
           const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+          const benchPower = getPower(card);
+          const benchPowerSup = benchPower && isMukActive() && benchPower.name !== 'Toxic Gas';
           const badgeParts2 = [
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
+            benchPower ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${benchPowerSup ? 'opacity:.4;text-decoration:line-through' : ''}">${benchPower.name.substring(0,8)}</div>` : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
           const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
@@ -4247,9 +4314,12 @@ function renderSlotP1(el, card) {
   const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, isActive ? 26 : 18)).join('');
   const dmg = damageCounters(card.damage, isActive);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+  const power = getPower(card);
+  const powerSuppressed = power && isMukActive() && power.name !== 'Toxic Gas';
   const badgeParts3 = [
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
     card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
+    power ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${powerSuppressed ? 'opacity:.4;text-decoration:line-through' : ''}">${power.name.substring(0,8)}</div>` : '',
   ].filter(Boolean);
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
   const imgSrc = card.images?.small || '';
@@ -4709,6 +4779,7 @@ function enrichCard(card) {
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
+    abilities: full.abilities || card.abilities || [],
     attacks: mergedAttacks,
     hp: (card.hp && card.hp !== '0') ? card.hp : (full.hp || card.hp || '0'),
     weaknesses: full.weaknesses || [],
@@ -5042,6 +5113,294 @@ function cancelPokedex() {
   addLog(`P${player} used Pokédex — viewed top cards but kept original order.`, true);
   document.getElementById('pokedex-modal').classList.remove('show');
   if (_dexResolve) { _dexResolve(); _dexResolve = null; }
+}
+
+// ══════════════════════════════════════════════════
+// POKéMON POWERS
+// ══════════════════════════════════════════════════
+
+// Returns the Pokémon Power ability object for a card, or null if none / suppressed
+function getPower(card) {
+  if (!card) return null;
+  const ability = (card.abilities || []).find(a =>
+    a.type === 'Pokémon Power' || a.type === 'Pokemon Power'
+  );
+  return ability || null;
+}
+
+// Returns true if a card has a named power (case-insensitive)
+function hasPower(card, name) {
+  const p = getPower(card);
+  return p && p.name.toLowerCase() === name.toLowerCase();
+}
+
+// Muk's Toxic Gas suppresses ALL other Pokémon Powers while Muk is in play
+function isMukActive() {
+  for (const pNum of [1, 2]) {
+    const p = G.players[pNum];
+    const all = [p.active, ...p.bench].filter(Boolean);
+    if (all.some(c => hasPower(c, 'Toxic Gas'))) return true;
+  }
+  return false;
+}
+
+// Is a given power active for a card? (checks Muk suppression, status, confusion)
+function isPowerActive(card, powerName) {
+  if (!hasPower(card, powerName)) return false;
+  if (powerName === 'Toxic Gas') return true; // Toxic Gas suppresses others but not itself
+  if (isMukActive()) return false;            // all other powers suppressed
+  return true;
+}
+
+// ── Thick Skin (Snorlax) ─────────────────────────────────
+// Returns true if the card is immune to special conditions
+function hasThickSkin(card) {
+  return isPowerActive(card, 'Thick Skin');
+}
+
+// ── Invisible Wall (Mr. Mime) ─────────────────────────────
+// Prevents all damage from attacks that do 30 or less to Mr. Mime
+function hasInvisibleWall(card) {
+  return isPowerActive(card, 'Invisible Wall');
+}
+
+// ── Energy Burn (Charizard) ───────────────────────────────
+// All energy attached to Charizard counts as Fire
+function hasEnergyBurn(card) {
+  return isPowerActive(card, 'Energy Burn');
+}
+
+// ── Rain Dance (Blastoise) ────────────────────────────────
+// Player may attach unlimited Water Energy to Water Pokémon per turn
+function rainDanceActive(player) {
+  const p = G.players[player];
+  const all = [p.active, ...p.bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Rain Dance'));
+}
+
+// ── Energy Trans (Venusaur) ───────────────────────────────
+// Player may move Grass Energy freely between Grass Pokémon as an action
+function energyTransActive(player) {
+  const p = G.players[player];
+  const all = [p.active, ...p.bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Energy Trans'));
+}
+
+// ── Damage Swap (Alakazam) ────────────────────────────────
+// Player may redistribute damage counters among own Pokémon
+function damageSwapActive(player) {
+  const p = G.players[player];
+  const all = [p.active, ...p.bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Damage Swap'));
+}
+
+// ── Apply Thick Skin: block status if active ──────────────
+// Call this before applyStatus. Returns true if status was blocked.
+function tryApplyStatus(target, status) {
+  if (hasThickSkin(target)) {
+    addLog(`${target.name}'s Thick Skin prevents ${status}!`, true);
+    showToast(`${target.name} is immune to status conditions!`);
+    return false; // blocked
+  }
+  applyStatus(target, status);
+  return true;
+}
+
+// ── Execute Damage Swap UI ────────────────────────────────
+async function doDamageSwap(player) {
+  if (!damageSwapActive(player)) { showToast('Alakazam not in play!', true); return; }
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Damage Swap!", true); return; }
+  const p = G.players[player];
+  const allPokemon = [
+    ...(p.active ? [{ label: `Active: ${p.active.name} (${p.active.damage || 0} dmg)`, card: p.active }] : []),
+    ...p.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name} (${b.damage || 0} dmg)`, card: b } : null).filter(Boolean)
+  ];
+  if (allPokemon.length < 2) { showToast('Need at least 2 Pokémon to swap damage!', true); return; }
+
+  // Pick source
+  const srcPicked = await openCardPicker({
+    title: 'Damage Swap — Source',
+    subtitle: 'Choose Pokémon to take damage counter FROM',
+    cards: allPokemon.filter(x => (x.card.damage || 0) >= 10).map(x => x.card),
+    maxSelect: 1
+  });
+  if (!srcPicked) return;
+  const srcCard = allPokemon.filter(x => (x.card.damage || 0) >= 10)[srcPicked[0]].card;
+
+  // Pick destination
+  const dstCandidates = allPokemon.filter(x => x.card !== srcCard);
+  const dstPicked = await openCardPicker({
+    title: 'Damage Swap — Destination',
+    subtitle: 'Choose Pokémon to move the damage counter TO',
+    cards: dstCandidates.map(x => x.card),
+    maxSelect: 1
+  });
+  if (!dstPicked) return;
+  const dstCard = dstCandidates[dstPicked[0]].card;
+
+  // Move 10 damage
+  srcCard.damage = (srcCard.damage || 0) - 10;
+  dstCard.damage = (dstCard.damage || 0) + 10;
+  addLog(`P${player} used Damage Swap — moved 10 damage from ${srcCard.name} to ${dstCard.name}.`, true);
+
+  // Check if destination is now KO'd
+  const dstOwner = p.active === dstCard ? player :
+    p.bench.findIndex(b => b === dstCard) !== -1 ? player : null;
+  if (dstOwner !== null) checkKO(player === 1 ? 2 : 1, player, dstCard, false);
+  renderAll();
+}
+
+// ── Execute Energy Trans UI ───────────────────────────────
+async function doEnergyTrans(player) {
+  if (!energyTransActive(player)) { showToast('Venusaur not in play!', true); return; }
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Energy Trans!", true); return; }
+  const p = G.players[player];
+
+  // Collect all Grass Pokémon with attached Grass Energy
+  const grassPokemon = [
+    ...(p.active ? [p.active] : []),
+    ...p.bench.filter(Boolean)
+  ].filter(c => (c.types || []).some(t => /grass/i.test(t)) || (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
+
+  const sources = grassPokemon.filter(c => (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
+  if (!sources.length) { showToast('No Grass Energy to move!', true); return; }
+
+  const srcPicked = await openCardPicker({
+    title: 'Energy Trans — Source',
+    subtitle: 'Choose Pokémon to take Grass Energy FROM',
+    cards: sources,
+    maxSelect: 1
+  });
+  if (!srcPicked) return;
+  const srcCard = sources[srcPicked[0]];
+
+  const grassEnergy = srcCard.attachedEnergy.filter(e => /grass/i.test(e.name));
+  const energyPicked = await openCardPicker({
+    title: 'Energy Trans — Which Energy',
+    subtitle: 'Choose which Grass Energy to move',
+    cards: grassEnergy,
+    maxSelect: 1
+  });
+  if (!energyPicked) return;
+  const energyCard = grassEnergy[energyPicked[0]];
+
+  const destinations = grassPokemon.filter(c => c !== srcCard);
+  if (!destinations.length) { showToast('No other Grass Pokémon to move energy to!', true); return; }
+  const dstPicked = await openCardPicker({
+    title: 'Energy Trans — Destination',
+    subtitle: 'Choose Pokémon to attach Grass Energy TO',
+    cards: destinations,
+    maxSelect: 1
+  });
+  if (!dstPicked) return;
+  const dstCard = destinations[dstPicked[0]];
+
+  const idx = srcCard.attachedEnergy.findIndex(e => e === energyCard);
+  if (idx !== -1) {
+    srcCard.attachedEnergy.splice(idx, 1);
+    dstCard.attachedEnergy = dstCard.attachedEnergy || [];
+    dstCard.attachedEnergy.push(energyCard);
+    addLog(`P${player} used Energy Trans — moved Grass Energy from ${srcCard.name} to ${dstCard.name}.`, true);
+    renderAll();
+  }
+}
+
+// ── Execute Curse (Gengar) ─────────────────────────────────
+// Once per turn: move 1 damage counter from Gengar to defending Pokémon
+async function doCurse(player) {
+  const p = G.players[player];
+  const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
+  if (!gengar) { showToast('Gengar not in play!', true); return; }
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
+  if ((gengar.damage || 0) < 10) { showToast("Gengar has no damage counters to move!", true); return; }
+  const opp = G.players[player === 1 ? 2 : 1];
+  if (!opp.active) { showToast('No opposing Active Pokémon!', true); return; }
+
+  gengar.damage -= 10;
+  opp.active.damage = (opp.active.damage || 0) + 10;
+  addLog(`P${player} used Curse — moved 1 damage counter from ${gengar.name} to ${opp.active.name}.`, true);
+  G.cursedThisTurn = true;
+  checkKO(player, player === 1 ? 2 : 1, opp.active, false);
+  renderAll();
+}
+
+// ── Execute Buzzap (Electrode) ───────────────────────────
+// Sacrifice Electrode to add 2 energy of any type to a Pokémon
+async function doBuzzap(player, benchIdx) {
+  const p = G.players[player];
+  const electrode = benchIdx === 'active' ? p.active : p.bench[benchIdx];
+  if (!isPowerActive(electrode, 'Buzzap')) { showToast('No Buzzap Electrode!', true); return; }
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Buzzap!", true); return; }
+
+  const targets = [
+    ...(p.active && p.active !== electrode ? [p.active] : []),
+    ...p.bench.map((b, i) => (b && b !== electrode) ? b : null).filter(Boolean)
+  ];
+  if (!targets.length) { showToast('No other Pokémon to power up!', true); return; }
+
+  const picked = await openCardPicker({
+    title: 'Buzzap!',
+    subtitle: 'Choose a Pokémon to attach 2 Lightning Energy to',
+    cards: targets,
+    maxSelect: 1
+  });
+  if (!picked) return;
+  const target = targets[picked[0]];
+
+  // Create 2 Lightning Energy tokens
+  const lightningEnergy = { id: 'base1-100', name: 'Lightning Energy', supertype: 'Energy', images: { small: '' } };
+  target.attachedEnergy = target.attachedEnergy || [];
+  target.attachedEnergy.push({ ...lightningEnergy }, { ...lightningEnergy });
+
+  // Discard Electrode (KO it, no prize)
+  if (benchIdx === 'active') {
+    p.discard.push(electrode);
+    p.active = null;
+  } else {
+    p.discard.push(electrode);
+    p.bench[benchIdx] = null;
+  }
+  addLog(`P${player} used Buzzap! — ${electrode.name} KO'd itself to power up ${target.name} with 2 ⚡ Energy!`, true);
+  renderAll();
+}
+
+// ── Execute Metronome (Clefable) ─────────────────────────
+// Copy any one of the opponent's active Pokémon's attacks
+async function doMetronome(player) {
+  const p = G.players[player];
+  const clefable = isPowerActive(p.active, 'Metronome') ? p.active : null;
+  if (!clefable) { showToast('Clefable must be Active to use Metronome!', true); return; }
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Metronome!", true); return; }
+  const opp = G.players[player === 1 ? 2 : 1];
+  if (!opp.active?.attacks?.length) { showToast('Opponent has no attacks to copy!', true); return; }
+
+  const attacks = opp.active.attacks;
+  if (attacks.length === 1) {
+    addLog(`${clefable.name} uses Metronome — copying ${attacks[0].name}!`, true);
+    closeActionMenu();
+    await performAttack(player, attacks[0]);
+    return;
+  }
+  closeActionMenu();
+  showActionMenu('Metronome — choose attack to copy', attacks.map(atk => ({
+    label: `${atk.name} — ${atk.damage || '0'}`,
+    sub: atk.cost?.join(', ') || '—',
+    fn: async () => {
+      addLog(`${clefable.name} uses Metronome — copying ${atk.name}!`, true);
+      closeActionMenu();
+      await performAttack(player, atk);
+    }
+  })), null);
+}
+
+// ── Execute Transform (Ditto) ─────────────────────────────
+// Ditto copies all attacks of the opposing Active Pokémon
+function dittoAttacks(player) {
+  const p = G.players[player];
+  if (!isPowerActive(p.active, 'Transform')) return null;
+  if (isMukActive()) return null;
+  const opp = G.players[player === 1 ? 2 : 1];
+  return opp.active?.attacks || null;
 }
 
 // ══════════════════════════════════════════════════
