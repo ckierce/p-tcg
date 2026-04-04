@@ -3085,6 +3085,25 @@ async function performAttack(player, atk) {
     addLog(`P${player} used ${atk.name}!`, true);
   }
 
+  // ── Self-heal effect: "Remove all damage counters from [Pokémon]" ──
+  const healAllMatch = (atk.text || '').match(/remove all damage counters from/i);
+  if (healAllMatch && myActive) {
+    myActive.damage = 0;
+    addLog(`${myActive.name} removed all damage counters!`, true);
+  }
+
+  // ── Attack energy cost discard: "Discard N [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  const discardCostMatch = (atk.text || '').match(
+    /discard (\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+  );
+  if (discardCostMatch && myActive) {
+    const rawN = discardCostMatch[1];
+    const n = /^\d+$/.test(rawN) ? parseInt(rawN) : 1;
+    const discarded = myActive.attachedEnergy.splice(0, n);
+    G.players[player].discard.push(...discarded);
+    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
+  }
+
   // Parse and apply status effects
   const effects = parseStatusEffects(atk.text || '');
   for (const eff of effects) {
