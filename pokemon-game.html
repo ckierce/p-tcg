@@ -561,16 +561,37 @@ html, body {
 }
 /* Larger dots on active Pokémon cards */
 .damage-counters.active-dmg .dmg-dot {
-  width: 16px;
-  height: 16px;
-  border-width: 2px;
-  box-shadow: 0 2px 5px rgba(0,0,0,.9);
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.9);
 }
 
 /* HP bar and stat label removed — damage shown via dot counters only */
 .hp-bar-wrap  { display: none; }
 .hp-bar-fill  { display: none; }
 .active-stat-label { display: none; }
+
+/* Drag-and-drop highlights */
+.drag-valid {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 10px rgba(232,200,74,.5) !important;
+  opacity: 1 !important;
+}
+.drag-valid-evolve {
+  border-color: var(--ok) !important;
+  box-shadow: 0 0 10px rgba(72,187,120,.5) !important;
+  opacity: 1 !important;
+}
+.drag-valid-energy {
+  border-color: #4fc3f7 !important;
+  box-shadow: 0 0 10px rgba(79,195,247,.5) !important;
+  opacity: 1 !important;
+}
+.hand-card.dragging {
+  opacity: .4;
+  transform: scale(.95);
+}
 
 /* Status emoji — floats to the left of the card, top-aligned, never overlaps card content */
 .status-overlay {
@@ -4269,6 +4290,8 @@ function renderAll() {
   updateTurnBadge();
   updatePerspectiveLabels();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
+  // Wire drag-and-drop onto freshly rendered hand cards
+  initDragDrop();
   // Networked: push state and apply role-based visibility
   if (myRole !== null && G.started) {
     pushGameState();
@@ -4864,6 +4887,7 @@ function enrichCard(card) {
       ...card,
       subtypes: safeSubtypes,
       attacks: mergedAttacks,
+      abilities: Array.isArray(card.abilities) ? card.abilities : [],
       weaknesses: Array.isArray(card.weaknesses) ? card.weaknesses : [],
       resistances: Array.isArray(card.resistances) ? card.resistances : [],
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
@@ -5226,7 +5250,8 @@ function cancelPokedex() {
 function getPower(card) {
   if (!card) return null;
   const ability = (card.abilities || []).find(a =>
-    a.type === 'Pokémon Power' || a.type === 'Pokemon Power'
+    a.type === 'Pokémon Power' || a.type === 'Pokemon Power' ||
+    a.type === 'Poké-Power' || a.type === 'Poke-Power'
   );
   return ability || null;
 }
@@ -5267,10 +5292,11 @@ function isPowerActive(card, powerName) {
   return true;
 }
 
-// ── Thick Skin (Snorlax) ─────────────────────────────────
+// ── Thick Skinned (Snorlax) ──────────────────────────────
 // Returns true if the card is immune to special conditions
+// TCG API name is "Thick Skinned" (with 'd')
 function hasThickSkin(card) {
-  return isPowerActive(card, 'Thick Skin');
+  return isPowerActive(card, 'Thick Skinned');
 }
 
 // ── Invisible Wall (Mr. Mime) ─────────────────────────────
@@ -5313,7 +5339,7 @@ function damageSwapActive(player) {
 // Call this before applyStatus. Returns true if status was blocked.
 function tryApplyStatus(target, status) {
   if (hasThickSkin(target)) {
-    addLog(`${target.name}'s Thick Skin prevents ${status}!`, true);
+    addLog(`${target.name}'s Thick Skinned prevents ${status}!`, true);
     showToast(`${target.name} is immune to status conditions!`);
     return false; // blocked
   }
@@ -5516,6 +5542,147 @@ function dittoAttacks(player) {
   if (isMukActive()) return null;
   const opp = G.players[player === 1 ? 2 : 1];
   return opp.active?.attacks || null;
+}
+
+// ══════════════════════════════════════════════════
+// DRAG AND DROP
+// ══════════════════════════════════════════════════
+let _dragHandIdx = null;   // index in hand of card being dragged
+let _dragPlayer  = null;   // which player's hand
+
+function initDragDrop() {
+  // Call after each renderHands() to wire up the newly created hand card elements
+  const localPlayer = (myRole === 2) ? 2 : 1;
+  document.querySelectorAll(`#hand-p1 .hand-card[id^="hand-card-${localPlayer}-"]`).forEach(el => {
+    const parts = el.id.split('-');
+    const idx = parseInt(parts[parts.length - 1]);
+    el.setAttribute('draggable', 'true');
+    el.addEventListener('dragstart', e => onHandDragStart(e, localPlayer, idx));
+    el.addEventListener('dragend', onHandDragEnd);
+  });
+
+  // Wire drop targets: active slot, bench slots
+  wireDropTarget(document.getElementById('active-p1'), 'active', null);
+  for (let i = 0; i < 5; i++) {
+    wireDropTarget(document.getElementById(`bench-p1-${i}`), 'bench', i);
+  }
+}
+
+function onHandDragStart(e, player, handIdx) {
+  if (!isMyTurn() && G.phase !== 'SETUP') return;
+  _dragPlayer  = player;
+  _dragHandIdx = handIdx;
+  e.dataTransfer.effectAllowed = 'move';
+  document.getElementById(`hand-card-${player}-${handIdx}`)?.classList.add('dragging');
+
+  // Highlight valid drop targets
+  const card = G.players[player].hand[handIdx];
+  if (!card) return;
+
+  const p = G.players[player];
+  const isSetup = G.phase === 'SETUP';
+
+  if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
+    // Can play to active (if empty)
+    if (!p.active) highlightSlot('active-p1', 'valid');
+    // Can play to any empty bench slot
+    for (let i = 0; i < 5; i++) {
+      if (!p.bench[i]) highlightSlot(`bench-p1-${i}`, 'valid');
+    }
+  }
+
+  if (!isSetup && card.supertype === 'Pokémon' &&
+      (card.subtypes?.includes('Stage 1') || card.subtypes?.includes('Stage 2')) &&
+      card.evolvesFrom && !prehistoricPowerActive()) {
+    const evolvedUids = G.evolvedThisTurn || [];
+    // Highlight active if it matches
+    if (p.active?.name === card.evolvesFrom && !evolvedUids.includes(p.active.uid)) {
+      highlightSlot('active-p1', 'evolve');
+    }
+    // Highlight bench slots that match
+    for (let i = 0; i < 5; i++) {
+      const b = p.bench[i];
+      if (b?.name === card.evolvesFrom && !evolvedUids.includes(b.uid)) {
+        highlightSlot(`bench-p1-${i}`, 'evolve');
+      }
+    }
+  }
+
+  if (!isSetup && card.supertype === 'Energy') {
+    const isWaterEnergy = /water/i.test(card.name);
+    const rainDance = rainDanceActive(player) && isWaterEnergy;
+    const canAttach = !G.energyPlayedThisTurn || rainDance;
+    if (canAttach) {
+      if (p.active) {
+        const activeIsWater = !rainDance || (p.active.types || []).some(t => /water/i.test(t));
+        if (activeIsWater) highlightSlot('active-p1', 'energy');
+      }
+      for (let i = 0; i < 5; i++) {
+        if (p.bench[i]) {
+          const benchIsWater = !rainDance || (p.bench[i].types || []).some(t => /water/i.test(t));
+          if (benchIsWater) highlightSlot(`bench-p1-${i}`, 'energy');
+        }
+      }
+    }
+  }
+}
+
+function onHandDragEnd() {
+  _dragHandIdx = null;
+  _dragPlayer  = null;
+  document.querySelectorAll('.hand-card.dragging').forEach(el => el.classList.remove('dragging'));
+  clearDragHighlights();
+}
+
+function highlightSlot(id, type) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy');
+  if (type === 'valid')  el.classList.add('drag-valid');
+  if (type === 'evolve') el.classList.add('drag-valid-evolve');
+  if (type === 'energy') el.classList.add('drag-valid-energy');
+  el.dataset.dragType = type;
+}
+
+function clearDragHighlights() {
+  document.querySelectorAll('.drag-valid, .drag-valid-evolve, .drag-valid-energy').forEach(el => {
+    el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy');
+    delete el.dataset.dragType;
+  });
+}
+
+function wireDropTarget(el, zone, benchIdx) {
+  if (!el) return;
+  el.addEventListener('dragover', e => {
+    if (_dragHandIdx === null) return;
+    if (el.classList.contains('drag-valid') ||
+        el.classList.contains('drag-valid-evolve') ||
+        el.classList.contains('drag-valid-energy')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    if (_dragHandIdx === null || _dragPlayer === null) return;
+    const dtype = el.dataset.dragType;
+    if (!dtype) return;
+    const handIdx = _dragHandIdx;
+    const player  = _dragPlayer;
+    onHandDragEnd(); // clear state before action (action may re-render)
+
+    if (dtype === 'valid') {
+      if (zone === 'active') playAsActive(player, handIdx);
+      else startBenchPlay(player, handIdx);
+    } else if (dtype === 'evolve') {
+      evolve(player, handIdx, zone, benchIdx);
+    } else if (dtype === 'energy') {
+      const isWaterEnergy = /water/i.test(G.players[player].hand[handIdx]?.name || '');
+      const rainDance = rainDanceActive(player) && isWaterEnergy;
+      if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
+      else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════
@@ -5765,6 +5932,7 @@ function receiveGameState(state) {
   updateTurnBadge();
   updatePerspectiveLabels();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
+  initDragDrop();
   applyRoleVisibility();
   // Show turn flash if turn just switched to this player
   if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
