@@ -1830,18 +1830,47 @@ html, body {
   }
   #deck-count-p1 { font-size: 9px; }
 
-  /* ── Opponent zone: compress everything ── */
-  #opponent-zone { padding: 4px 6px; gap: 4px; }
-  .opp-label { font-size: 6px; }
-  .opp-bench-slot { width: 44px; height: 62px; }
-  .opp-active-slot { width: 72px; height: 100px; }
-  .opp-deck-slot { width: 36px; height: 50px; }
-  .opp-discard { width: 36px; height: 50px; }
-  .opp-prizes { grid-template-columns: repeat(3, 12px); grid-template-rows: repeat(2, 16px); gap: 2px; }
-  .opp-prize-pip { width: 12px; height: 16px; }
-  .opp-hand-count { font-size: 7px; }
-  #opp-right { gap: 4px; }
-  #opp-left { gap: 4px; }
+  /* ── Opponent zone: two-row layout on mobile ── */
+  #opponent-zone {
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 6px 4px;
+    gap: 5px;
+  }
+  /* Top row: active centered */
+  .opp-active-slot {
+    width: 80px;
+    height: 112px;
+    order: -1; /* float to top */
+  }
+  /* Bottom row: bench + info packed together */
+  #opp-left {
+    flex: none;
+    width: 100%;
+    justify-content: center;
+    gap: 3px;
+    order: 1;
+  }
+  .opp-label { display: none; }
+  #opp-right {
+    flex: none;
+    width: 100%;
+    justify-content: center;
+    gap: 5px;
+    order: 2;
+  }
+  .opp-bench { gap: 3px; }
+  .opp-bench-slot { width: 40px; height: 56px; }
+  .opp-deck-slot { width: 32px; height: 44px; }
+  .opp-discard { width: 32px; height: 44px; }
+  .opp-prizes {
+    grid-template-columns: repeat(6, 10px);
+    grid-template-rows: repeat(1, 14px);
+    gap: 2px;
+  }
+  .opp-prize-pip { width: 10px; height: 14px; }
+  .opp-aux-row { gap: 3px; }
+  .opp-hand-count { font-size: 6px; }
 
   /* ── Midline ── */
   #midline { padding: 1px 0; }
@@ -1962,8 +1991,8 @@ html, body {
   #bottom-bar { max-height: 28vh; }
   #hand-p1 { max-height: 22vh; }
   .hand-card { width: 42px; }
-  .opp-active-slot { width: 60px; height: 84px; }
-  #player-prizes-panel { display: none; } /* too cramped in landscape */
+  .opp-active-slot { width: 64px; height: 90px; }
+  #player-prizes-panel { display: none; }
   #player-aux { display: none; }
 }
 </style>
