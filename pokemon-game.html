@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Pokémon TCG — Game Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -792,7 +795,7 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px 10px;
+  padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0px));
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -815,6 +818,7 @@ html, body {
   align-items: flex-end;
   justify-content: center;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   max-height: 220px;
   width: 100%;
   padding-bottom: 2px;
@@ -905,6 +909,7 @@ html, body {
 #sidebar-content {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 10px;
 }
 #sidebar-content::-webkit-scrollbar { width: 4px; }
@@ -1741,6 +1746,226 @@ html, body {
   0%   { opacity: 1; transform: translateY(0) rotate(0deg); }
   100% { opacity: 0; transform: translateY(100vh) rotate(720deg); }
 }
+/* ══════════════════════════════════════════════════
+   MOBILE OPTIMIZATIONS  (max-width: 600px)
+   ══════════════════════════════════════════════════ */
+
+/* ── Global touch sizing ── */
+@media (max-width: 600px) {
+  :root {
+    --active-w:  clamp(80px,  22vw, 120px);
+    --active-h:  clamp(112px, 31vw, 168px);
+    --card-w-sm: clamp(44px,  12vw,  72px);
+    --card-h-sm: clamp(62px,  17vw, 100px);
+  }
+
+  html, body { overflow: hidden; touch-action: manipulation; }
+
+  /* Prevent double-tap zoom on all interactive elements */
+  button, .hand-card, .zone-slot, .opp-bench-slot, .opp-active-slot,
+  .setup-player, .lobby-btn, .action-btn, .modal-deck-item {
+    touch-action: manipulation;
+  }
+
+  /* ── Setup screen ── */
+  #setup-screen { gap: 16px; padding: 16px; }
+  #setup-screen h1 { font-size: 11px; }
+  .setup-players { flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .setup-player { width: 140px; padding: 16px 12px; }
+  .lobby-btn { font-size: 8px; padding: 12px 14px; }
+
+  /* ── Game board: sidebar becomes full-overlay drawer ── */
+  #game-board {
+    grid-template-columns: 1fr !important;
+    position: relative;
+  }
+  #sidebar {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: min(320px, 88vw);
+    transform: translateX(100%);
+    transition: transform 0.25s ease;
+    z-index: 890;
+    border-left: 1px solid var(--border2);
+    box-shadow: -8px 0 32px rgba(0,0,0,.6);
+  }
+  #game-board.sidebar-open #sidebar {
+    transform: translateX(0);
+  }
+  /* Dim backdrop behind sidebar on mobile */
+  #sidebar-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.5);
+    z-index: 889;
+  }
+  #game-board.sidebar-open #sidebar-backdrop { display: block; }
+
+  /* ── Top bar ── */
+  #top-bar { padding: 6px 10px; gap: 6px; }
+  .top-bar-logo { font-size: 7px; }
+  #turn-badge { font-size: 7px; padding: 5px 7px; }
+  #phase-badge { display: none; }
+  .top-bar-btn { font-size: 7px; padding: 7px 10px; min-height: 36px; }
+
+  /* ── Field body: remove large horizontal padding, side panels collapse ── */
+  #field-body { padding: 6px 4px; gap: 4px; }
+
+  /* Side panels: prizes left, deck/discard right — shrink to icon-size */
+  #player-prizes-panel { left: 2px; gap: 2px; }
+  #player-prizes-panel .panel-label { display: none; }
+  .prize-grid {
+    grid-template-columns: repeat(2, clamp(28px, 6vw, 40px));
+    grid-template-rows: repeat(3, clamp(20px, 4.5vw, 28px));
+    gap: 2px;
+  }
+  #player-aux { right: 2px; gap: 4px; }
+  .player-deck-slot {
+    width: clamp(36px, 9vw, 52px);
+    height: clamp(50px, 12.5vw, 72px);
+  }
+  .player-discard-slot {
+    width: clamp(36px, 9vw, 52px);
+    height: clamp(50px, 12.5vw, 72px);
+  }
+  #deck-count-p1 { font-size: 9px; }
+
+  /* ── Opponent zone: compress everything ── */
+  #opponent-zone { padding: 4px 6px; gap: 4px; }
+  .opp-label { font-size: 6px; }
+  .opp-bench-slot { width: 44px; height: 62px; }
+  .opp-active-slot { width: 72px; height: 100px; }
+  .opp-deck-slot { width: 36px; height: 50px; }
+  .opp-discard { width: 36px; height: 50px; }
+  .opp-prizes { grid-template-columns: repeat(3, 12px); grid-template-rows: repeat(2, 16px); gap: 2px; }
+  .opp-prize-pip { width: 12px; height: 16px; }
+  .opp-hand-count { font-size: 7px; }
+  #opp-right { gap: 4px; }
+  #opp-left { gap: 4px; }
+
+  /* ── Midline ── */
+  #midline { padding: 1px 0; }
+  #midline-info { font-size: 6px; white-space: normal; text-align: center; max-width: 180px; }
+
+  /* ── Player zone ── */
+  #player-zone { gap: 4px; }
+  #player-field-col { gap: 4px; }
+  .bench-row { gap: 4px; }
+  .bench-label { display: none; }
+
+  /* ── Hand area: 3 rows max, scrollable ── */
+  #bottom-bar { padding: 6px 8px 8px; gap: 4px; max-height: 35vh; }
+  .hand-label { font-size: 7px; }
+  #hand-p1 { gap: 4px; max-height: 28vh; }
+  .hand-card { width: 52px; }
+  .hand-card:hover { transform: none; } /* no hover on touch */
+  .hand-card:active { transform: translateY(-4px); border-color: var(--border2); }
+  .hand-card-name { font-size: 4px; }
+  .hand-card-sub { font-size: 4px; }
+
+  /* ── Action menu: bottom sheet on mobile ── */
+  #action-menu {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 14px 14px 0 0;
+    border-bottom: none;
+    padding: 16px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    max-height: 70vh;
+    overflow-y: auto;
+    box-shadow: 0 -8px 40px rgba(0,0,0,.7);
+  }
+  #action-menu-title { font-size: 9px; padding-bottom: 10px; margin-bottom: 8px; }
+  .action-btn {
+    font-size: 8px;
+    padding: 13px 12px;
+    margin-bottom: 6px;
+    min-height: 44px;
+  }
+  .action-btn-sub { font-size: 7px; margin-top: 3px; }
+
+  /* ── Modals ── */
+  .modal-box {
+    width: 92vw !important;
+    max-height: 85vh;
+    border-radius: 12px;
+    padding: 16px;
+  }
+  #card-picker-modal .modal-box { width: 96vw !important; }
+  #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
+  .picker-card img { width: 100%; aspect-ratio: 5/7; object-fit: cover; border-radius: 4px; }
+  .picker-card-name { font-size: 5px; }
+  .modal-title { font-size: 9px; }
+  .modal-close-btn { font-size: 8px; padding: 10px 16px; min-height: 44px; }
+  .modal-deck-item { padding: 12px 10px; min-height: 52px; }
+  .d-name { font-size: 8px; }
+  .d-count { font-size: 7px; }
+
+  /* ── Overlays: scale up for readability ── */
+  #move-flash-move { font-size: 16px; }
+  #move-flash-attacker { font-size: 9px; }
+  #move-flash-dmg { font-size: 11px; }
+  #move-flash-who { font-size: 7px; }
+  #move-flash-inner { padding: 20px 24px; }
+
+  #turn-flash-inner { font-size: 14px; padding: 16px 32px; }
+
+  #coin-label { font-size: 8px; }
+  #coin-result { font-size: 14px; }
+
+  /* ── Win screen ── */
+  #win-box { padding: 28px 20px; }
+  #win-trophy { font-size: 36px; }
+  #win-headline { font-size: 8px; }
+  #win-player-name { font-size: 14px; }
+  #win-reason { font-size: 6px; }
+  .win-btn { font-size: 7px; padding: 10px 16px; min-height: 44px; }
+
+  /* ── Promote banner ── */
+  #promote-banner { font-size: 8px; padding: 10px 14px; }
+
+  /* ── Card detail ── */
+  #card-detail-img { max-width: 70vw; }
+
+  /* ── Sidebar tabs ── */
+  .sidebar-tab { font-size: 7px; padding: 12px 4px; min-height: 44px; }
+  .log-entry { font-size: 7px; }
+
+  /* ── Pokedex modal ── */
+  #pokedex-box { padding: 14px; gap: 10px; }
+  #pokedex-title { font-size: 9px; }
+  .dex-card-img { width: 72px; }
+  .dex-btn { font-size: 7px; padding: 10px 16px; min-height: 44px; }
+
+  /* ── VS CPU panel ── */
+  #cpu-difficulty-row { flex-wrap: wrap; gap: 6px; }
+  #start-cpu-btn { font-size: 9px; padding: 12px 24px; }
+
+  /* ── Lass modal ── */
+  #lass-modal-inner { flex-direction: column !important; }
+  #lass-divider { display: none; }
+  #lass-dismiss { font-size: 8px; padding: 10px 24px; min-height: 44px; }
+
+  /* ── Toast ── */
+  #toast { font-size: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
+
+  /* ── Disable backdrop-filter on mobile for perf ── */
+  #action-menu { backdrop-filter: none; }
+  #move-flash { backdrop-filter: none; }
+}
+
+/* Landscape phone: give field body a bit more vertical room */
+@media (max-width: 600px) and (orientation: landscape) {
+  #bottom-bar { max-height: 28vh; }
+  #hand-p1 { max-height: 22vh; }
+  .hand-card { width: 42px; }
+  .opp-active-slot { width: 60px; height: 84px; }
+  #player-prizes-panel { display: none; } /* too cramped in landscape */
+  #player-aux { display: none; }
+}
 </style>
 </head>
 <body>
@@ -1948,6 +2173,7 @@ html, body {
   </div><!-- /field -->
 
   <!-- ── SIDEBAR ── -->
+  <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
   <div id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" id="tab-log" onclick="showTab('log')">LOG</button>
@@ -4972,9 +5198,10 @@ function updateTurnBadge() {
 }
 
 function setMidline(text) {
+  const isMobile = window.innerWidth <= 600;
   const defaultMsg = G.phase === 'SETUP'
-    ? 'Both players: place your Active (and optionally bench basics), then click DONE SETUP'
-    : 'Click a card in your hand to play it';
+    ? (isMobile ? 'Place your Active Pokémon' : 'Both players: place your Active (and optionally bench basics), then click DONE SETUP')
+    : (isMobile ? 'Tap a card to play it' : 'Click a card in your hand to play it');
   document.getElementById('midline-info').textContent = text || defaultMsg;
 }
 
@@ -5045,11 +5272,22 @@ function showActionMenu(title, actions, anchorEvent) {
   cancel.onclick = e => { e.stopPropagation(); closeActionMenu(); cancelAction(); };
   menu.appendChild(cancel);
 
-  // Smart positioning: anchor near click/element, keep within viewport
+  // Smart positioning: bottom sheet on mobile, anchored near click on desktop
+  menu.classList.add('show');
+
+  const isMobile = window.innerWidth <= 600;
+  if (isMobile) {
+    // Bottom sheet — CSS handles positioning via media query
+    menu.style.left = '';
+    menu.style.top = '';
+    menu.style.right = '';
+    menu.style.bottom = '';
+    return;
+  }
+
   menu.style.left = '0';
   menu.style.top = '0';
   menu.style.transform = 'none';
-  menu.classList.add('show');
 
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -5952,12 +6190,115 @@ function initDragDrop() {
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', e => onHandDragStart(e, localPlayer, idx));
     el.addEventListener('dragend', onHandDragEnd);
+    // Touch drag — long-press to initiate
+    addTouchDrag(el, localPlayer, idx);
   });
 
   // Wire drop targets: active slot, bench slots
   wireDropTarget(document.getElementById('active-p1'), 'active', null);
   for (let i = 0; i < 5; i++) {
     wireDropTarget(document.getElementById(`bench-p1-${i}`), 'bench', i);
+  }
+}
+
+// ── Touch drag support ──────────────────────────────
+let _touchDragEl = null;
+let _touchDragGhost = null;
+let _touchLongPressTimer = null;
+let _touchStartX = 0, _touchStartY = 0;
+
+function addTouchDrag(el, player, handIdx) {
+  el.addEventListener('touchstart', e => {
+    _touchStartX = e.touches[0].clientX;
+    _touchStartY = e.touches[0].clientY;
+    // Long-press (300ms) to initiate drag
+    _touchLongPressTimer = setTimeout(() => {
+      if (!isMyTurn() && G.phase !== 'SETUP') return;
+      _dragPlayer = player;
+      _dragHandIdx = handIdx;
+      el.classList.add('dragging');
+      // Highlight valid slots
+      onHandDragStart({ dataTransfer: { effectAllowed: 'move' } }, player, handIdx);
+      // Create ghost
+      _touchDragEl = el;
+      _touchDragGhost = el.cloneNode(true);
+      _touchDragGhost.style.cssText = `position:fixed;opacity:.75;pointer-events:none;z-index:9999;width:${el.offsetWidth}px;transform:scale(1.08);`;
+      _touchDragGhost.style.left = (e.touches[0].clientX - el.offsetWidth / 2) + 'px';
+      _touchDragGhost.style.top  = (e.touches[0].clientY - el.offsetHeight * 0.7) + 'px';
+      document.body.appendChild(_touchDragGhost);
+    }, 300);
+  }, { passive: true });
+
+  el.addEventListener('touchmove', e => {
+    const dx = Math.abs(e.touches[0].clientX - _touchStartX);
+    const dy = Math.abs(e.touches[0].clientY - _touchStartY);
+    // Cancel long-press if moved significantly before it fires
+    if (dx > 8 || dy > 8) { clearTimeout(_touchLongPressTimer); _touchLongPressTimer = null; }
+    if (!_touchDragGhost) return;
+    e.preventDefault();
+    _touchDragGhost.style.left = (e.touches[0].clientX - _touchDragGhost.offsetWidth / 2) + 'px';
+    _touchDragGhost.style.top  = (e.touches[0].clientY - _touchDragGhost.offsetHeight * 0.7) + 'px';
+  }, { passive: false });
+
+  el.addEventListener('touchend', e => {
+    clearTimeout(_touchLongPressTimer);
+    _touchLongPressTimer = null;
+    if (!_touchDragGhost) return;
+    // Find drop target under finger
+    _touchDragGhost.style.display = 'none';
+    const touch = e.changedTouches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY);
+    _touchDragGhost.style.display = '';
+    // Walk up to find a wired drop zone
+    let dropEl = target;
+    while (dropEl && dropEl !== document.body) {
+      if (dropEl.dataset.dragType) {
+        // Simulate a drop
+        const dtype = dropEl.dataset.dragType;
+        const hi = _dragHandIdx, pl = _dragPlayer;
+        onHandDragEnd();
+        _touchDragGhost.remove(); _touchDragGhost = null;
+        executeDrop(dtype, dropEl, pl, hi);
+        return;
+      }
+      dropEl = dropEl.parentElement;
+    }
+    // No drop zone — cancel
+    onHandDragEnd();
+    _touchDragGhost.remove(); _touchDragGhost = null;
+  }, { passive: true });
+
+  el.addEventListener('touchcancel', () => {
+    clearTimeout(_touchLongPressTimer);
+    _touchLongPressTimer = null;
+    onHandDragEnd();
+    if (_touchDragGhost) { _touchDragGhost.remove(); _touchDragGhost = null; }
+  }, { passive: true });
+}
+
+function executeDrop(dtype, dropEl, player, handIdx) {
+  // Determine zone and benchIdx from element id
+  const id = dropEl.id || dropEl.closest('[id]')?.id || '';
+  let zone = 'active', benchIdx = null;
+  if (id.includes('bench')) {
+    zone = 'bench';
+    benchIdx = parseInt(id.split('-').pop());
+  }
+  if (dtype === 'valid') {
+    const droppedCard = G.players[player].hand[handIdx];
+    const isFossilOrDollDrop = droppedCard && /mysterious fossil|clefairy doll/i.test(droppedCard.name) && droppedCard.supertype === 'Trainer';
+    if (isFossilOrDollDrop) playTrainer(player, handIdx);
+    else if (zone === 'active') playAsActive(player, handIdx);
+    else startBenchPlay(player, handIdx);
+  } else if (dtype === 'evolve') {
+    evolve(player, handIdx, zone, benchIdx);
+  } else if (dtype === 'energy') {
+    const isWaterEnergy = /water/i.test(G.players[player].hand[handIdx]?.name || '');
+    const rainDance = rainDanceActive(player) && isWaterEnergy;
+    if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
+    else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
+  } else if (dtype === 'heal') {
+    playTrainer(player, handIdx);
   }
 }
 
