@@ -2961,16 +2961,30 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   const dmgStr = atk.damage || '0';
   const baseDmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
 
-  // Pattern 1: "Flip a coin for each [Energy/Fighting/etc] energy attached...
-  //             This attack does N damage times the number of heads."
-  // e.g. Stone Barrage, Kingler Crabhammer, Clefable Metronome-ish
-  const perEnergyMatch = text.match(
-    /flip a coin for each [^\n.]*energy[^\n.]*/i
-  );
-  const timesHeadsMatch = text.match(
-    /(\d+)\s*damage.*times the number of heads/i
-  ) || text.match(/times the number of heads.*?(\d+)\s*damage/i);
+  // Pattern 1a: "Flip a coin until you get tails. This attack does N damage times the number of heads."
+  // e.g. Stone Barrage (Geodude), Continuous Lick (Haunter)
+  const untilTailsMatch = text.match(/flip a coin until you get tails/i);
+  const untilTailsDmgMatch = text.match(/(\d+) damage times the number of heads/i);
+  if (untilTailsMatch && (untilTailsDmgMatch || baseDmg > 0)) {
+    const perFlip = untilTailsDmgMatch ? parseInt(untilTailsDmgMatch[1]) : baseDmg;
+    let heads = 0;
+    let flipNum = 0;
+    while (true) {
+      flipNum++;
+      const result = await flipCoin(`${atk.name}: Flip #${flipNum} — Heads = +${perFlip} dmg, keep flipping | Tails = stop`);
+      if (!result) break;
+      heads++;
+    }
+    addLog(`${atk.name}: ${heads} heads before tails — ${heads * perFlip} damage!`);
+    return heads * perFlip;
+  }
 
+  // Pattern 1b: "Flip a coin for each [Type] Energy card attached...
+  //              This attack does N damage times the number of heads."
+  // e.g. Kingler Crabhammer
+  const perEnergyMatch = text.match(/flip a coin for each [^\n.]*energy[^\n.]*/i);
+  const timesHeadsMatch = text.match(/(\d+)\s*damage.*times the number of heads/i)
+    || text.match(/times the number of heads.*?(\d+)\s*damage/i);
   if (perEnergyMatch && (timesHeadsMatch || baseDmg > 0)) {
     const perFlip = timesHeadsMatch ? parseInt(timesHeadsMatch[1]) : baseDmg;
     const numFlips = energyCount || 1;
@@ -3147,7 +3161,10 @@ async function performAttack(player, atk) {
       }
     }
     // Defender reduction — on the target, after weakness/resistance
-    if (oppActive.defender) {
+    if (oppActive.defenderFull) {
+      addLog(`${oppActive.name} is fully protected — all damage prevented!`);
+      dmg = 0;
+    } else if (oppActive.defender) {
       dmg = Math.max(0, dmg - 20);
       addLog(`Defender reduces damage to ${dmg}.`);
     }
@@ -3186,8 +3203,22 @@ async function performAttack(player, atk) {
     addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
   }
 
-  // Parse and apply status effects
-  const effects = parseStatusEffects(atk.text || '');
+  // ── Coin-flip self-protection: "Flip a coin. If heads, prevent all damage done to [Pokémon] during opponent's next turn." ──
+  const selfProtectMatch = (atk.text || '').match(
+    /flip a coin[^.]*\.\s*if heads[^.]*prevent all damage done to/i
+  );
+  if (selfProtectMatch && myActive) {
+    const heads = await flipCoin(`${atk.name}: Heads = prevent all damage next turn, Tails = no effect`);
+    if (heads) {
+      myActive.defender = true;
+      myActive.defenderFull = true; // full block, not just -20
+      addLog(`${atk.name}: HEADS — ${myActive.name} is protected from all damage until end of opponent's next turn!`, true);
+    } else {
+      addLog(`${atk.name}: TAILS — no protection.`);
+    }
+  }
+
+
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
@@ -3367,6 +3398,7 @@ function endTurn() {
   const newActive = G.players[newPlayer].active;
   if (newActive?.defender) {
     newActive.defender = false;
+    newActive.defenderFull = false;
     addLog(`Defender on ${newActive.name} has expired.`);
   }
   // Also clear PlusPower from active (it was already applied or expires)
@@ -3910,11 +3942,16 @@ function enrichCard(card) {
     (full?.subtypes || []);
   const safeAttacks = Array.isArray(card.attacks) && card.attacks.length ? card.attacks :
     (full?.attacks || []);
+  // Always merge attack text/cost from CARD_DATA so Firebase round-trips don't drop them
+  const mergedAttacks = safeAttacks.map((atk, i) => {
+    const fullAtk = full?.attacks?.[i] || {};
+    return { ...fullAtk, ...atk, text: atk.text || fullAtk.text || '', cost: atk.cost || fullAtk.cost || [] };
+  });
   if (!full) {
     return {
       ...card,
       subtypes: safeSubtypes,
-      attacks: safeAttacks,
+      attacks: mergedAttacks,
       weaknesses: Array.isArray(card.weaknesses) ? card.weaknesses : [],
       resistances: Array.isArray(card.resistances) ? card.resistances : [],
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
@@ -3927,7 +3964,7 @@ function enrichCard(card) {
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
-    attacks: safeAttacks,
+    attacks: mergedAttacks,
     hp: card.hp || full.hp || '0',
     weaknesses: full.weaknesses || [],
     resistances: full.resistances || [],
