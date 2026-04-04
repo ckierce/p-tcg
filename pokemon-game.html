@@ -4165,7 +4165,7 @@ function renderField(player) {
       } else {
         const card = p.active;
         if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-        const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 14)).join('');
+        const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 26)).join('');
         const dmg = damageCounters(card.damage, true);
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
         const badgeParts1 = [
@@ -4198,7 +4198,7 @@ function renderField(player) {
             card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
-          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 13)).join('');
+          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
             <div class="energy-overlay-bench">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
@@ -4237,7 +4237,7 @@ function renderSlotP1(el, card) {
 
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
-  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 16)).join('');
+  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, isActive ? 26 : 18)).join('');
   const dmg = damageCounters(card.damage, isActive);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
   const badgeParts3 = [
@@ -4621,9 +4621,8 @@ function energyIcon(energyName, size = 16) {
   const s = size;
 
   if (url) {
-    // Show the card image cropped to just the top portion where the energy symbol lives.
-    // We use a small square container with object-fit + object-position to focus on the symbol.
-    return `<span style="display:inline-block;width:${s}px;height:${s}px;border-radius:50%;overflow:hidden;flex-shrink:0;box-shadow:0 1px 3px rgba(0,0,0,.7);vertical-align:middle"><img src="${url}" alt="${key}" style="width:${Math.round(s*2.2)}px;height:${Math.round(s*3.08)}px;margin-left:-${Math.round(s*0.6)}px;margin-top:-${Math.round(s*0.55)}px;object-fit:cover"></span>`;
+    // Icon PNGs are transparent-background symbol images — render at size directly, no cropping.
+    return `<img src="${url}" alt="${key}" style="width:${s}px;height:${s}px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));vertical-align:middle">`;
   }
 
   // ── SVG fallbacks (used if energy-icons.json not loaded) ──
