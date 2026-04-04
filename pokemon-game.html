@@ -3438,23 +3438,21 @@ async function createRoom() {
     if (isWriting) return;
     const data = snap.val();
     if (!data) return;
-    // Update lobby UI while in setup
     if (!G.started) {
       if (data.p2Ready) {
         const ws = document.getElementById('waiting-status');
         if (ws) ws.textContent = '✅ Player 2 has joined and loaded a deck!';
       }
       checkBothReady(data);
-      // During SETUP: merge opponent's slot (P2's active/bench) into our local G
       if (data.setup_p2 && G.phase === 'SETUP') mergeSetupSlot(2, data.setup_p2);
-      // Game just started — receive initial state
       if (data.state?.started) receiveGameState(data.state);
     } else {
-      // Game running — receive opponent's moves (when it's P2's turn)
+      // Post-start SETUP: merge P2's placement updates
+      if (G.phase === 'SETUP' && data.setup_p2) mergeSetupSlot(2, data.setup_p2);
+      // Game running — receive opponent's moves
       if (data.state && data.state.turn !== myRole) {
         receiveGameState(data.state);
       }
-      // Also receive PROMOTE state if P2 is the one promoting
       if (data.state?.phase === 'PROMOTE' && data.state.pendingPromotion !== myRole) {
         receiveGameState(data.state);
       }
@@ -3488,15 +3486,15 @@ async function joinRoom() {
     const data = snap.val();
     if (!data) return;
     if (!G.started) {
-      // Lobby updates
       if (data.p1Ready) {
         const el = document.getElementById('p1-ready-status');
         if (el) el.textContent = '✅ Player 1 has loaded a deck';
       }
-      // During SETUP: merge opponent's slot (P1's active/bench) into our local G
       if (data.setup_p1 && G.phase === 'SETUP') mergeSetupSlot(1, data.setup_p1);
       if (data.state?.started) receiveGameState(data.state);
     } else {
+      // Post-start SETUP: merge P1's placement updates
+      if (G.phase === 'SETUP' && data.setup_p1) mergeSetupSlot(1, data.setup_p1);
       // Game running — receive P1's moves
       if (data.state && data.state.turn !== myRole) {
         receiveGameState(data.state);
@@ -3556,8 +3554,8 @@ async function pushGameState() {
   if (!shouldPush) return;
   isWriting = true;
   try {
-    if (G.phase === 'SETUP') {
-      // During setup only push our own player slot to avoid overwriting opponent
+    if (G.phase === 'SETUP' && !G.started) {
+      // Pre-game: only push own player slot so players don't overwrite each other
       const myP = G.players[myRole];
       await gameRef.update({
         [`setup_p${myRole}`]: serializeG({
@@ -3565,7 +3563,22 @@ async function pushGameState() {
           bench: myP.bench,
         })
       });
+    } else if (G.phase === 'SETUP' && G.started) {
+      // Post-start SETUP (placing Pokémon): only P1 owns and pushes full state
+      // P2 just pushes their own slot so P1 can see it
+      if (myRole === 1) {
+        await gameRef.update({ state: serializeG(G) });
+      } else {
+        const myP = G.players[myRole];
+        await gameRef.update({
+          [`setup_p${myRole}`]: serializeG({
+            active: myP.active,
+            bench: myP.bench,
+          })
+        });
+      }
     } else {
+      // Normal game: acting player pushes full state
       await gameRef.update({ state: serializeG(G) });
     }
   } finally {
