@@ -218,8 +218,8 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 10px 14px;
-  gap: 6px;
+  padding: 8px 12px;
+  gap: 4px;
   min-height: 0; /* critical: allows flex child to shrink below content size */
 }
 
@@ -227,8 +227,8 @@ html, body {
 #opponent-zone {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 6px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -376,8 +376,9 @@ html, body {
   flex: 1;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: 10px;
   overflow: hidden;
+  min-height: 0;
 }
 
 /* Player bench sits behind (visually above) active */
@@ -456,6 +457,43 @@ html, body {
   border-radius: 3px;
   z-index: 2;
   letter-spacing: 0.5px;
+}
+
+/* HP bar shown below active Pokémon slots */
+.hp-bar-wrap {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 4px;
+  background: rgba(0,0,0,.5);
+  border-radius: 0 0 4px 4px;
+  overflow: hidden;
+  z-index: 3;
+}
+.hp-bar-fill {
+  height: 100%;
+  transition: width .3s ease;
+}
+.hp-bar-fill.hp-high  { background: var(--ok); }
+.hp-bar-fill.hp-mid   { background: var(--warn); }
+.hp-bar-fill.hp-low   { background: var(--p2color); }
+
+/* Active slot stat label (name + HP text) */
+.active-stat-label {
+  position: absolute;
+  top: 2px; left: 3px;
+  font-size: 5px;
+  font-family: var(--font);
+  color: rgba(255,255,255,.85);
+  background: rgba(0,0,0,.55);
+  padding: 1px 3px;
+  border-radius: 2px;
+  z-index: 3;
+  pointer-events: none;
+  line-height: 1.5;
+  max-width: calc(100% - 6px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-overlay {
@@ -602,6 +640,7 @@ html, body {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
+  min-height: 130px;
 }
 
 .hand-label {
@@ -621,18 +660,18 @@ html, body {
 }
 
 .hand-card {
-  width: var(--card-w-sm);
+  width: 64px;
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--surface2);
   cursor: pointer;
   overflow: hidden;
-  transition: transform .1s, border-color .1s;
+  transition: transform .1s, border-color .1s, box-shadow .1s;
   position: relative;
 }
-.hand-card:hover { transform: translateY(-4px); border-color: var(--border2); }
-.hand-card.selected { border-color: var(--accent); transform: translateY(-6px); }
+.hand-card:hover { transform: translateY(-6px); border-color: var(--border2); box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.hand-card.selected { border-color: var(--accent); transform: translateY(-8px); box-shadow: 0 0 10px rgba(232,200,74,.4); }
 
 .hand-card-img {
   width: 100%;
@@ -642,8 +681,8 @@ html, body {
 }
 
 .hand-card-info {
-  padding: 3px 4px;
-  background: rgba(0,0,0,.5);
+  padding: 3px 4px 4px;
+  background: rgba(0,0,0,.6);
 }
 .hand-card-name {
   font-size: 5px;
@@ -651,10 +690,20 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.5;
 }
 .hand-card-sub {
   font-size: 5px;
   color: var(--muted);
+  line-height: 1.4;
+}
+.hand-card-type-pip {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-right: 2px;
+  vertical-align: middle;
+  border: 1px solid rgba(255,255,255,.2);
 }
 
 /* Prevent child elements swallowing clicks on hand cards */
@@ -733,11 +782,13 @@ html, body {
   position: fixed;
   background: var(--surface);
   border: 1px solid var(--border2);
-  border-radius: 6px;
-  padding: 14px;
-  min-width: 180px;
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 210px;
+  max-width: 280px;
   z-index: 800;
-  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  box-shadow: 0 12px 40px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04);
+  backdrop-filter: blur(4px);
 }
 #action-menu.show { display: block; }
 
@@ -746,6 +797,9 @@ html, body {
   color: var(--accent);
   margin-bottom: 10px;
   text-align: center;
+  letter-spacing: 1px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .action-btn {
@@ -755,17 +809,26 @@ html, body {
   border: 1px solid var(--border);
   color: var(--text);
   font-family: var(--font);
-  font-size: 8px;
-  padding: 8px 10px;
+  font-size: 7px;
+  padding: 9px 11px;
   cursor: pointer;
-  border-radius: 3px;
-  margin-bottom: 5px;
+  border-radius: 4px;
+  margin-bottom: 4px;
   text-align: left;
   letter-spacing: .5px;
+  line-height: 1.6;
+  transition: border-color .1s, color .1s, background .1s;
 }
-.action-btn:hover { border-color: var(--accent); color: var(--accent); }
+.action-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(232,200,74,.06); }
 .action-btn.danger { color: var(--p2color); }
-.action-btn.danger:hover { border-color: var(--p2color); }
+.action-btn.danger:hover { border-color: var(--p2color); background: rgba(245,101,101,.06); }
+.action-btn-sub {
+  display: block;
+  font-size: 6px;
+  color: var(--muted);
+  margin-top: 2px;
+  letter-spacing: 0;
+}
 
 /* ── LOAD MODAL ───────────────────────────────────────────── */
 .modal-overlay {
@@ -885,10 +948,11 @@ html, body {
   position: fixed;
   z-index: 900;
   pointer-events: none;
-  width: 130px;
+  width: 200px;
+  filter: drop-shadow(0 8px 24px rgba(0,0,0,.8));
 }
 #card-detail.show { display: block; }
-#card-detail-img { width: 100%; border-radius: 6px; box-shadow: 0 4px 20px rgba(0,0,0,.7); }
+#card-detail-img { width: 100%; border-radius: 8px; display: block; }
 
 /* ── TOAST ────────────────────────────────────────────────── */
 #toast {
@@ -1282,17 +1346,17 @@ html, body {
         <span class="opp-label" id="opp-label">PLAYER 2</span>
 
         <!-- Opp active -->
-        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2)">
+        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2,event)">
           <span class="slot-label">ACTIVE</span>
         </div>
 
         <!-- Opp bench -->
         <div class="opp-bench">
-          <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0)"></div>
-          <div class="opp-bench-slot empty" id="bench-p2-1" onclick="event.stopPropagation();handleBenchClick(2,1)"></div>
-          <div class="opp-bench-slot empty" id="bench-p2-2" onclick="event.stopPropagation();handleBenchClick(2,2)"></div>
-          <div class="opp-bench-slot empty" id="bench-p2-3" onclick="event.stopPropagation();handleBenchClick(2,3)"></div>
-          <div class="opp-bench-slot empty" id="bench-p2-4" onclick="event.stopPropagation();handleBenchClick(2,4)"></div>
+          <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
+          <div class="opp-bench-slot empty" id="bench-p2-1" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
+          <div class="opp-bench-slot empty" id="bench-p2-2" onclick="event.stopPropagation();handleBenchClick(2,2,event)"></div>
+          <div class="opp-bench-slot empty" id="bench-p2-3" onclick="event.stopPropagation();handleBenchClick(2,3,event)"></div>
+          <div class="opp-bench-slot empty" id="bench-p2-4" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
         </div>
 
         <!-- Opp prizes -->
@@ -1326,17 +1390,17 @@ html, body {
           <!-- Bench row -->
           <div class="bench-row">
             <span class="bench-label">BENCH</span>
-            <div class="zone-slot" id="bench-p1-0" onclick="event.stopPropagation();handleBenchClick(1,0)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-1" onclick="event.stopPropagation();handleBenchClick(1,1)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-2" onclick="event.stopPropagation();handleBenchClick(1,2)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-3" onclick="event.stopPropagation();handleBenchClick(1,3)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-4" onclick="event.stopPropagation();handleBenchClick(1,4)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-0" onclick="event.stopPropagation();handleBenchClick(1,0,event)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-1" onclick="event.stopPropagation();handleBenchClick(1,1,event)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-2" onclick="event.stopPropagation();handleBenchClick(1,2,event)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-3" onclick="event.stopPropagation();handleBenchClick(1,3,event)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-4" onclick="event.stopPropagation();handleBenchClick(1,4,event)"><div class="zone-slot-empty">bench</div></div>
           </div>
 
           <!-- Active row — larger, pushed "forward" -->
           <div id="active-row">
             <span class="active-label">ACTIVE</span>
-            <div class="zone-slot" id="active-p1" onclick="event.stopPropagation();onActiveClick(1)">
+            <div class="zone-slot" id="active-p1" onclick="event.stopPropagation();onActiveClick(1,event)">
               <div class="zone-slot-empty">Active<br>Pokémon</div>
             </div>
           </div>
@@ -1734,7 +1798,7 @@ function drawCard(player, auto = false) {
 // ══════════════════════════════════════════════════
 // PLAY CARDS
 // ══════════════════════════════════════════════════
-function selectHandCard(player, handIdx) {
+function selectHandCard(player, handIdx, evt) {
   if (G.phase === 'PROMOTE') {
     showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true); return;
   }
@@ -1753,7 +1817,7 @@ function selectHandCard(player, handIdx) {
   document.querySelectorAll('.hand-card').forEach(el => el.classList.remove('selected'));
   document.getElementById(`hand-card-${player}-${handIdx}`)?.classList.add('selected');
   G.pendingAction = { player, card, handIdx };
-  showActionMenu(card.name, actions);
+  showActionMenu(card.name, actions, evt);
 }
 
 function getActionsForCard(player, card, handIdx) {
@@ -2029,7 +2093,7 @@ async function playTrainer(player, handIdx) {
         addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
         closeActionMenu(); renderAll();
       }
-    })));
+    })), null);
     return;
   }
 
@@ -2589,7 +2653,7 @@ async function playTrainer(player, handIdx) {
     closeActionMenu();
     showActionMenu('Devolution Spray — choose target', evolvedTargets.map(t => ({
       label: t.label, fn: () => { closeActionMenu(); doDevolution(t.zone, t.idx); }
-    })));
+    })), null);
     return;
   }
 
@@ -2671,7 +2735,7 @@ async function playTrainer(player, handIdx) {
           addLog(`P${player} used Pokémon Breeder — ${target.name} → ${stage2.name}!`, true);
           closeActionMenu(); renderAll();
         }
-      })));
+      })), null);
     })();
     return;
   }
@@ -2710,7 +2774,7 @@ async function playTrainer(player, handIdx) {
   renderAll();
 }
 
-function onActiveClick(player) {
+function onActiveClick(player, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player) {
@@ -2720,7 +2784,7 @@ function onActiveClick(player) {
   const p = G.players[player];
   const canAct = G.phase === 'SETUP' || (G.turn === player && G.phase === 'MAIN');
   if (p.active && canAct) {
-    showFieldActionMenu(player, 'active', null);
+    showFieldActionMenu(player, 'active', null, evt);
   }
 }
 
@@ -2764,7 +2828,7 @@ function canAffordAttack(attachedEnergy, cost) {
   return true;
 }
 
-function showFieldActionMenu(player, zone, benchIdx) {
+function showFieldActionMenu(player, zone, benchIdx, evt) {
   const p = G.players[player];
   const opp = G.players[player === 1 ? 2 : 1];
   const card = zone === 'active' ? p.active : p.bench[benchIdx];
@@ -2791,10 +2855,10 @@ function showFieldActionMenu(player, zone, benchIdx) {
         const dmg = atk.damage || '0';
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost);
         actions.push({
-          label: `⚔ ${atk.name} (${costStr}) — ${dmg}`,
+          label: `⚔ ${atk.name}`,
+          sub: canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
           fn: canAfford ? async () => { closeActionMenu(); await performAttack(player, atk); } : null,
           disabled: !canAfford,
-          tooltip: canAfford ? null : 'Not enough energy'
         });
       });
     }
@@ -2817,7 +2881,7 @@ function showFieldActionMenu(player, zone, benchIdx) {
   }
 
   actions.push({ label: 'View Card', fn: () => { closeActionMenu(); } });
-  showActionMenu(card.name, actions);
+  showActionMenu(card.name, actions, evt);
 }
 
 function attemptRetreat(player) {
@@ -2866,7 +2930,7 @@ function executeRetreat(player, benchIdx) {
   renderAll();
 }
 
-function handleBenchClick(player, slotIdx) {
+function handleBenchClick(player, slotIdx, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   const slot = G.players[player].bench[slotIdx];
@@ -2893,7 +2957,7 @@ function handleBenchClick(player, slotIdx) {
     G.pendingAction = null; clearHighlights(); return;
   }
   const canAct = G.phase === 'SETUP' || G.turn === player;
-  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx); }
+  if (slot && canAct) { showFieldActionMenu(player, 'bench', slotIdx, evt); }
 }
 
 function cancelAction() {
@@ -3652,9 +3716,21 @@ function renderField(player) {
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
         ].join('');
-        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-          <div class="slot-label">${card.name.substring(0,8)}</div>
-          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+        // HP bar for opponent active
+        let hpBarHtml = '';
+        if (card.hp) {
+          const maxHp = parseInt(card.hp) || 100;
+          const curHp = Math.max(0, maxHp - (card.damage || 0));
+          const pct = Math.round((curHp / maxHp) * 100);
+          const hpClass = pct > 50 ? 'hp-high' : pct > 25 ? 'hp-mid' : 'hp-low';
+          hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
+        }
+        const largeSrc = card.images?.large || card.images?.small || '';
+        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}"
+          onmouseover="showCardDetail(event,'${largeSrc}')"
+          onmouseout="hideCardDetail()">
+          <div class="slot-label">${card.name.substring(0,9)}</div>
+          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
       }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
@@ -3724,10 +3800,28 @@ function renderSlotP1(el, card) {
   ].join('');
   const imgSrc = card.images?.small || '';
   const largeSrc = card.images?.large || imgSrc;
-  el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
-    onmouseover="showCardDetail(event,'${largeSrc}')"
-    onmouseout="hideCardDetail()">
-    <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+
+  // HP bar for active slot
+  let hpBarHtml = '';
+  const isActive = el.id.includes('active');
+  if (isActive && card.hp) {
+    const maxHp = parseInt(card.hp) || 100;
+    const curHp = Math.max(0, maxHp - (card.damage || 0));
+    const pct = Math.round((curHp / maxHp) * 100);
+    const hpClass = pct > 50 ? 'hp-high' : pct > 25 ? 'hp-mid' : 'hp-low';
+    hpBarHtml = `<div class="hp-bar-wrap"><div class="hp-bar-fill ${hpClass}" style="width:${pct}%"></div></div>`;
+    const statLabel = `<div class="active-stat-label">${card.name.substring(0,10)} · ${curHp}/${maxHp}</div>`;
+    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
+      onmouseover="showCardDetail(event,'${largeSrc}')"
+      onmouseout="hideCardDetail()">
+      ${statLabel}
+      <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
+  } else {
+    el.innerHTML = `<img src="${imgSrc}" alt="${card.name}"
+      onmouseover="showCardDetail(event,'${largeSrc}')"
+      onmouseout="hideCardDetail()">
+      <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+  }
   if (wasHighlighted) el.classList.add('highlight');
 }
 
@@ -3750,14 +3844,25 @@ function renderHands() {
     container1.innerHTML = localHand.map((card, i) => {
       const imgSrc = card.images?.small || '';
       const largeSrc = card.images?.large || imgSrc;
+      let pipHtml = '';
+      if (card.supertype === 'Pokémon') {
+        const typeColor = energyColor((card.types || [])[0] || '');
+        pipHtml = `<span class="hand-card-type-pip" style="background:${typeColor}"></span>`;
+      } else if (card.supertype === 'Energy') {
+        const typeColor = energyColor(card.name);
+        pipHtml = `<span class="hand-card-type-pip" style="background:${typeColor}"></span>`;
+      }
+      const subText = card.supertype === 'Pokémon'
+        ? `${pipHtml}${(card.subtypes || []).join(' ')} · ${card.hp || '?'}HP`
+        : `${pipHtml}${card.supertype || ''}`;
       return `<div class="hand-card" id="hand-card-${localPlayer}-${i}"
-        onclick="event.stopPropagation();selectHandCard(${localPlayer},${i})"
+        onclick="event.stopPropagation();selectHandCard(${localPlayer},${i},event)"
         onmouseover="showCardDetail(event,'${largeSrc}')"
         onmouseout="hideCardDetail()">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
           <div class="hand-card-name">${card.name}</div>
-          <div class="hand-card-sub">${card.supertype || ''}</div>
+          <div class="hand-card-sub">${subText}</div>
         </div>
       </div>`;
     }).join('');
@@ -3945,14 +4050,19 @@ function showTab(tab) {
 // ══════════════════════════════════════════════════
 // ACTION MENU
 // ══════════════════════════════════════════════════
-function showActionMenu(title, actions) {
+function showActionMenu(title, actions, anchorEvent) {
   const menu = document.getElementById('action-menu');
   document.getElementById('action-menu-title').textContent = title;
   menu.querySelectorAll('.action-btn').forEach(b => b.remove());
   actions.forEach(a => {
     const btn = document.createElement('button');
     btn.className = 'action-btn' + (a.danger ? ' danger' : '') + (a.disabled ? ' disabled' : '');
-    btn.textContent = a.label + (a.tooltip ? ` — ${a.tooltip}` : '');
+    // Build label: attack buttons get a sub-line for cost/damage details
+    if (a.sub) {
+      btn.innerHTML = `${escapeHtml(a.label)}<span class="action-btn-sub">${escapeHtml(a.sub)}</span>`;
+    } else {
+      btn.textContent = a.label + (a.tooltip ? ` — ${a.tooltip}` : '');
+    }
     if (a.disabled) {
       btn.style.opacity = '0.35';
       btn.style.cursor = 'not-allowed';
@@ -3966,12 +4076,40 @@ function showActionMenu(title, actions) {
   cancel.className = 'action-btn';
   cancel.textContent = 'Cancel';
   cancel.style.color = 'var(--muted)';
+  cancel.style.marginTop = '2px';
   cancel.onclick = e => { e.stopPropagation(); closeActionMenu(); cancelAction(); };
   menu.appendChild(cancel);
-  menu.style.left = '50%';
-  menu.style.top = '50%';
-  menu.style.transform = 'translate(-50%, -50%)';
+
+  // Smart positioning: anchor near click/element, keep within viewport
+  menu.style.left = '0';
+  menu.style.top = '0';
+  menu.style.transform = 'none';
   menu.classList.add('show');
+
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  let cx, cy;
+  if (anchorEvent) {
+    cx = anchorEvent.clientX;
+    cy = anchorEvent.clientY;
+  } else {
+    cx = vw / 2;
+    cy = vh / 2;
+  }
+
+  // Prefer opening to the right and below; flip if it would clip
+  let left = cx + 12;
+  let top  = cy - 20;
+  if (left + mw > vw - 10) left = cx - mw - 12;
+  if (top + mh > vh - 10) top = vh - mh - 10;
+  if (top < 10) top = 10;
+  if (left < 10) left = 10;
+
+  menu.style.left = left + 'px';
+  menu.style.top  = top + 'px';
 }
 
 function closeActionMenu() {
@@ -3983,8 +4121,13 @@ function showCardDetail(event, imgSrc) {
   if (!imgSrc) return;
   const detail = document.getElementById('card-detail');
   document.getElementById('card-detail-img').src = imgSrc;
-  const x = Math.min(event.clientX + 16, window.innerWidth - 150);
-  const y = Math.min(event.clientY - 20, window.innerHeight - 200);
+  const pw = 200, ph = 280; // approx card preview size
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let x = event.clientX + 20;
+  let y = event.clientY - 30;
+  if (x + pw > vw - 10) x = event.clientX - pw - 10;
+  if (y + ph > vh - 10) y = vh - ph - 10;
+  if (y < 10) y = 10;
   detail.style.left = x + 'px';
   detail.style.top = y + 'px';
   detail.classList.add('show');
