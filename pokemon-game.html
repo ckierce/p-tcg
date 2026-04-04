@@ -2845,23 +2845,32 @@ function renderField(player) {
     if (label1) label1.style.color = isP2Perspective ? 'var(--p2color)' : 'var(--p1color)';
   } else {
     // Render in the top "opponent" zone
+    // During SETUP in networked mode: show face-down placeholders so opponent's choices are hidden
+    const setupHide = G.phase === 'SETUP' && myRole !== 'hotseat' && myRole !== null;
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
-      const card = p.active;
-      if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-      const energyPips = (card.attachedEnergy || []).map(e =>
-        `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
-      ).join('');
-      const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
-      const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
-      const badges = [
-        card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
-        card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
-      ].join('');
-      activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-        <div class="slot-label">${card.name.substring(0,8)}</div>
-        <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+      if (setupHide) {
+        activeEl.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
+          <div style="font-size:18px">🂠</div>
+          <div style="font-size:6px;color:var(--muted)">PLACED</div>
+        </div>`;
+      } else {
+        const card = p.active;
+        if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
+        const energyPips = (card.attachedEnergy || []).map(e =>
+          `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
+        ).join('');
+        const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+        const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+        const badges = [
+          card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
+          card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
+        ].join('');
+        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
+          <div class="slot-label">${card.name.substring(0,8)}</div>
+          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+      }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
     }
@@ -2873,15 +2882,20 @@ function renderField(player) {
       slotEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
       const card = p.bench[i];
       if (card) {
-        if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-        const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
-        const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
-        const badges = [
-          card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
-          card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
-        ].join('');
-        slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}${badges}`;
-        slotEl.classList.remove('empty');
+        if (setupHide) {
+          slotEl.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">🂠</div>`;
+          slotEl.classList.remove('empty');
+        } else {
+          if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
+          const dmg = card.damage > 0 ? `<div class="damage-overlay">${card.damage}</div>` : '';
+          const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+          const badges = [
+            card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
+            card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
+          ].join('');
+          slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}${badges}`;
+          slotEl.classList.remove('empty');
+        }
       } else {
         slotEl.innerHTML = '';
         slotEl.classList.add('empty');
