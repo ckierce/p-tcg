@@ -1830,54 +1830,69 @@ html, body {
   }
   #deck-count-p1 { font-size: 9px; }
 
-  /* ── Opponent zone: active at bottom near midline, compact above ── */
+  /* ── Opponent zone: bench row on top, active (full size) below, prizes left, deck/disc right ── */
   #opponent-zone {
-    flex-direction: row;
-    align-items: flex-end;  /* everything anchors to the bottom edge */
-    justify-content: center;
-    padding: 4px 6px 6px;
-    gap: 6px;
+    display: grid;
+    grid-template-areas:
+      "prizes bench aux"
+      "prizes active aux";
+    grid-template-columns: 44px 1fr 44px;
+    grid-template-rows: auto auto;
+    align-items: center;
+    justify-items: center;
+    padding: 6px 4px 6px;
+    gap: 4px;
     position: relative;
   }
-  /* Active — bottom, near midline, slightly larger than bench */
-  .opp-active-slot {
-    width: 72px;
-    height: 100px;
-    flex-shrink: 0;
-    order: 2;
-  }
-  /* Bench — left of active, smaller, bottom-aligned */
+  /* Bench — horizontal row, top area */
   #opp-left {
-    flex: none;
-    flex-direction: column;
+    grid-area: bench;
+    display: flex;
+    flex-direction: row;
     align-items: flex-end;
+    justify-content: center;
     gap: 3px;
-    order: 1;
+    flex: none;
+    width: 100%;
   }
   .opp-label { display: none; }
-  .opp-bench {
-    flex-direction: column;
-    gap: 3px;
+  .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
+  .opp-bench-slot { width: 40px; height: 56px; }
+
+  /* Active — full player-active size, bottom area */
+  .opp-active-slot {
+    grid-area: active;
+    width: var(--active-w);
+    height: var(--active-h);
+    flex-shrink: 0;
   }
-  .opp-bench-slot { width: 36px; height: 50px; }
-  /* Prizes + deck/discard — right of active, stacked vertically */
-  #opp-right {
-    flex: none;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    order: 3;
-  }
+
+  /* opp-right uses display:contents so its children sit in their own grid areas */
+  #opp-right { display: contents; }
+
+  /* Prizes — left column */
   .opp-prizes {
-    grid-template-columns: repeat(3, 10px);
-    grid-template-rows: repeat(2, 14px);
-    gap: 2px;
+    grid-area: prizes;
+    grid-template-columns: repeat(2, 13px);
+    grid-template-rows: repeat(3, 18px);
+    gap: 3px;
+    align-self: center;
   }
-  .opp-prize-pip { width: 10px; height: 14px; }
-  .opp-aux-row { flex-direction: column; gap: 3px; }
-  .opp-deck-slot { width: 32px; height: 44px; }
-  .opp-discard { width: 32px; height: 44px; }
-  .opp-hand-count { font-size: 6px; }
+  .opp-prize-pip { width: 13px; height: 18px; }
+
+  /* Deck + discard — right column, stacked */
+  .opp-aux-row {
+    grid-area: aux;
+    flex-direction: column;
+    gap: 4px;
+    align-self: center;
+    align-items: center;
+  }
+  .opp-deck-slot { width: 36px; height: 50px; }
+  .opp-discard   { width: 36px; height: 50px; }
+
+  /* Hand count hidden — too little space */
+  .opp-hand-count { display: none; }
 
   /* ── Midline ── */
   #midline { padding: 1px 0; }
@@ -1998,7 +2013,6 @@ html, body {
   #bottom-bar { max-height: 28vh; }
   #hand-p1 { max-height: 22vh; }
   .hand-card { width: 42px; }
-  .opp-active-slot { width: 64px; height: 90px; }
   #player-prizes-panel { display: none; }
   #player-aux { display: none; }
 }
