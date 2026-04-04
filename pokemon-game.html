@@ -3203,7 +3203,43 @@ async function performAttack(player, atk) {
     addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
   }
 
-  // ── Coin-flip self-protection: "Flip a coin. If heads, prevent all damage done to [Pokémon] during opponent's next turn." ──
+  // ── Bench splash damage: "Does N damage to each Pokémon on each player's Bench" ──
+  // e.g. Selfdestruct, Explosion
+  const benchSplashMatch = (atk.text || '').match(/does (\d+) damage to each pok[eé]mon on each player[''s]* bench/i);
+  if (benchSplashMatch) {
+    const splashDmg = parseInt(benchSplashMatch[1]);
+    for (const pNum of [1, 2]) {
+      const pObj = G.players[pNum];
+      for (let i = 0; i < pObj.bench.length; i++) {
+        const b = pObj.bench[i];
+        if (!b) continue;
+        b.damage = (b.damage || 0) + splashDmg;
+        addLog(`${b.name} (P${pNum} bench) took ${splashDmg} splash damage! (${b.damage}/${b.hp} HP)`);
+        const benchKo = checkKO(player, pNum, b, false);
+        if (benchKo === 'win') { renderAll(); return; }
+        if (benchKo) {
+          // KO'd bench pokemon — move to discard, clear slot (no prize for bench KO from splash)
+          pObj.discard.push(b);
+          pObj.bench[i] = null;
+          addLog(`${b.name} was knocked out by splash damage!`, true);
+        }
+      }
+    }
+  }
+
+  // ── Self-damage: "[Pokémon] does N damage to itself" (unconditional, not coin-gated)
+  // e.g. Selfdestruct, Explosion — excludes "If tails, X does N damage to itself" (handled by Pattern 6)
+  const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
+  const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
+  if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
+    const selfDmg = parseInt(selfDmgTextMatch[1]);
+    myActive.damage = (myActive.damage || 0) + selfDmg;
+    addLog(`${myActive.name} took ${selfDmg} damage from recoil! (${myActive.damage}/${myActive.hp} HP)`);
+    const selfKo = checkKO(player, opp, myActive, true);
+    if (selfKo === 'win') { renderAll(); return; }
+  }
+
+
   const selfProtectMatch = (atk.text || '').match(
     /flip a coin[^.]*\.\s*if heads[^.]*prevent all damage done to/i
   );
