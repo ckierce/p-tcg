@@ -2743,26 +2743,44 @@ async function playTrainer(player, handIdx) {
 
   // ── Energy Removal ────────────────────────────────
   if (name === 'Energy Removal') {
-    if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
+    // Build list of all opponent Pokémon that have energy attached
+    const oppTargets = [
+      ...(opp.active?.attachedEnergy?.length ? [{ card: opp.active, zone: 'active', idx: null }] : []),
+      ...opp.bench.map((b, i) => (b?.attachedEnergy?.length ? { card: b, zone: 'bench', idx: i } : null)).filter(Boolean)
+    ];
+    if (!oppTargets.length) { showToast("Opponent has no energy to remove!", true); return; }
     consume();
-    // If only 1 energy, remove it automatically; otherwise let player choose
-    if (opp.active.attachedEnergy.length === 1) {
-      const removed = opp.active.attachedEnergy.splice(0, 1)[0];
-      opp.discard.push(removed);
-      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
-    } else {
-      const picked = await openCardPicker({
+
+    // Step 1: choose which Pokémon to target (skip if only one option)
+    let targetEntry = oppTargets[0];
+    if (oppTargets.length > 1) {
+      const targetPicked = await openCardPicker({
         title: 'Energy Removal',
-        subtitle: `Choose 1 energy to discard from ${opp.active.name}`,
-        cards: opp.active.attachedEnergy,
+        subtitle: "Choose opponent's Pokémon to remove energy from",
+        cards: oppTargets.map(e => e.card),
         maxSelect: 1
       });
-      if (!picked || !picked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
-      const idx = opp.active.attachedEnergy.indexOf(picked[0]);
-      const removed = opp.active.attachedEnergy.splice(idx, 1)[0];
-      opp.discard.push(removed);
-      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
+      if (!targetPicked || !targetPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      targetEntry = oppTargets[targetPicked[0]];
     }
+    const targetCard = targetEntry.zone === 'active' ? opp.active : opp.bench[targetEntry.idx];
+
+    // Step 2: choose which energy to discard (skip if only one)
+    let removed;
+    if (targetCard.attachedEnergy.length === 1) {
+      removed = targetCard.attachedEnergy.splice(0, 1)[0];
+    } else {
+      const energyPicked = await openCardPicker({
+        title: 'Energy Removal',
+        subtitle: `Choose 1 energy to discard from ${targetCard.name}`,
+        cards: targetCard.attachedEnergy,
+        maxSelect: 1
+      });
+      if (!energyPicked || !energyPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      removed = targetCard.attachedEnergy.splice(energyPicked[0], 1)[0];
+    }
+    opp.discard.push(removed);
+    addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${targetCard.name}.`, true);
     renderAll(); return;
   }
 
@@ -3685,28 +3703,43 @@ function flipCoin(label) {
     const labelEl = document.getElementById('coin-label');
 
     const heads = Math.random() < 0.5;
-    // heads = 0deg final (front face showing), tails = 180deg
-    const endDeg = heads ? 1440 : 1620; // multiple full rotations + land on face
-    coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
+    const endDeg = heads ? 1440 : 1620;
 
-    labelEl.textContent = label || 'Flipping a coin...';
-    resultEl.textContent = '';
-    overlay.classList.add('show');
+    // Brief pause so any move flash has time to register before the coin appears
+    const PRE_DELAY = 700;
 
-    // Reset animation
-    coin.classList.remove('flipping');
-    void coin.offsetWidth; // reflow
-    coin.classList.add('flipping');
+    // Extend move flash to stay visible through the coin flip
+    const moveFlashEl = document.getElementById('move-flash');
+    if (moveFlashEl?.classList.contains('show')) {
+      const COIN_TOTAL = PRE_DELAY + 1000 + 1200 + 600; // pre + spin + result + buffer
+      const newUntil = Date.now() + COIN_TOTAL;
+      if (!moveFlashEl._moveFlashUntil || moveFlashEl._moveFlashUntil < newUntil) {
+        clearTimeout(moveFlashEl._flashTimer);
+        moveFlashEl._moveFlashUntil = newUntil;
+        moveFlashEl._flashTimer = setTimeout(() => moveFlashEl.classList.remove('show'), COIN_TOTAL);
+      }
+    }
 
     setTimeout(() => {
-      resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
-      resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
+      coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
+      labelEl.textContent = label || 'Flipping a coin...';
+      resultEl.textContent = '';
+      overlay.classList.add('show');
+
+      coin.classList.remove('flipping');
+      void coin.offsetWidth;
+      coin.classList.add('flipping');
+
       setTimeout(() => {
-        overlay.classList.remove('show');
-        coin.classList.remove('flipping');
-        resolve(heads);
-      }, 1200);
-    }, 1000);
+        resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
+        resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
+        setTimeout(() => {
+          overlay.classList.remove('show');
+          coin.classList.remove('flipping');
+          resolve(heads);
+        }, 1200);
+      }, 1000);
+    }, PRE_DELAY);
   });
 }
 
