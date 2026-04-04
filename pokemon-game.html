@@ -1365,6 +1365,143 @@ html, body {
 }
 .win-btn.primary:hover { opacity: .85; }
 
+/* ── POKÉDEX MODAL ────────────────────────────────────────── */
+#pokedex-modal {
+  display: none;
+  position: fixed; inset: 0; z-index: 1050;
+  background: rgba(0,0,0,.82);
+  align-items: center; justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  backdrop-filter: blur(3px);
+}
+#pokedex-modal.show { display: flex; }
+
+#pokedex-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 700px;
+  width: 94vw;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 16px 60px rgba(0,0,0,.7);
+}
+
+#pokedex-title {
+  font-size: 11px;
+  color: var(--accent);
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+#pokedex-subtitle {
+  font-size: 7px;
+  color: var(--muted);
+  text-align: center;
+  letter-spacing: 1px;
+  margin-top: -8px;
+}
+
+#pokedex-cards {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.dex-card-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: grab;
+  transition: transform .15s;
+  user-select: none;
+}
+.dex-card-wrap:active { cursor: grabbing; }
+.dex-card-wrap.dex-dragging {
+  opacity: .4;
+  transform: scale(.96);
+}
+.dex-card-wrap.dex-over {
+  transform: scale(1.06);
+  outline: 2px solid var(--accent);
+  border-radius: 8px;
+}
+
+.dex-card-img {
+  width: 100px;
+  border-radius: 7px;
+  display: block;
+  aspect-ratio: 5/7;
+  object-fit: cover;
+  box-shadow: 0 4px 16px rgba(0,0,0,.5);
+  pointer-events: none;
+}
+
+.dex-card-label {
+  font-size: 5px;
+  color: var(--muted);
+  text-align: center;
+  max-width: 100px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dex-card-pos {
+  font-size: 8px;
+  color: var(--border2);
+  letter-spacing: 1px;
+}
+
+.dex-card-arrows {
+  display: flex;
+  gap: 4px;
+}
+
+.dex-arrow-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 10px;
+  width: 22px; height: 22px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+}
+.dex-arrow-btn:hover { border-color: var(--accent); color: var(--accent); }
+.dex-arrow-btn:disabled { opacity: .25; cursor: default; }
+
+#pokedex-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.dex-btn {
+  font-family: var(--font);
+  font-size: 8px;
+  padding: 10px 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  letter-spacing: 1px;
+}
+.dex-btn:hover { border-color: var(--accent); color: var(--accent); }
+.dex-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+.dex-btn.primary:hover { opacity: .85; }
+
 /* Confetti particles */
 .confetti-piece {
   position: fixed;
@@ -1633,6 +1770,19 @@ html, body {
     <div id="win-actions">
       <button class="win-btn primary" onclick="playAgain()">▶ PLAY AGAIN</button>
       <button class="win-btn" onclick="viewBoard()">VIEW BOARD</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pokédex Modal -->
+<div id="pokedex-modal">
+  <div id="pokedex-box">
+    <div id="pokedex-title">POKéDEX</div>
+    <div id="pokedex-subtitle">Drag cards or use arrows to rearrange. Top of deck is position 1.</div>
+    <div id="pokedex-cards"></div>
+    <div id="pokedex-actions">
+      <button class="dex-btn primary" onclick="confirmPokedex()">CONFIRM ORDER</button>
+      <button class="dex-btn" onclick="cancelPokedex()">CANCEL</button>
     </div>
   </div>
 </div>
@@ -2660,9 +2810,7 @@ async function playTrainer(player, handIdx) {
   if (name === 'Pokédex') {
     if (!p.deck.length) { showToast('Deck is empty!', true); return; }
     consume();
-    const top5 = p.deck.slice(0, Math.min(5, p.deck.length));
-    addLog(`P${player} used Pokédex — viewed top ${top5.length} cards of deck: ${top5.map(c => c.name).join(', ')}.`, true);
-    showToast(`Top of deck: ${top5.map(c => c.name).join(', ')}`);
+    await openPokedex(player);
     renderAll(); return;
   }
 
@@ -4348,6 +4496,12 @@ function enrichCard(card) {
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
       convertedRetreatCost: card.convertedRetreatCost || 0,
       attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
+      status:           card.status            ?? null,
+      damage:           card.damage            ?? 0,
+      defender:         card.defender          ?? false,
+      defenderFull:     card.defenderFull      ?? false,
+      defenderThreshold:card.defenderThreshold ?? 0,
+      plusPower:        card.plusPower         ?? 0,
     };
   }
   return {
@@ -4362,6 +4516,13 @@ function enrichCard(card) {
     retreatCost: full.retreatCost || [],
     convertedRetreatCost: full.convertedRetreatCost || 0,
     attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
+    // Game-state fields — always carry through explicitly so they survive any merge
+    status:           card.status            ?? null,
+    damage:           card.damage            ?? 0,
+    defender:         card.defender          ?? false,
+    defenderFull:     card.defenderFull      ?? false,
+    defenderThreshold:card.defenderThreshold ?? 0,
+    plusPower:        card.plusPower         ?? 0,
   };
 }
 
@@ -4545,6 +4706,103 @@ function cancelCardPick() {
   document.getElementById('card-picker-modal').classList.remove('show');
   hideCardDetail();
   if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
+}
+
+// ══════════════════════════════════════════════════
+// POKéDEX
+// ══════════════════════════════════════════════════
+let _dexResolve = null;
+let _dexCards = [];   // working copy, gets reordered
+let _dexDragSrc = null;
+
+function openPokedex(player) {
+  return new Promise(resolve => {
+    _dexResolve = resolve;
+    const p = G.players[player];
+    _dexCards = p.deck.slice(0, Math.min(5, p.deck.length)).map((c, i) => ({ ...c, _dexIdx: i }));
+    renderDexCards();
+    document.getElementById('pokedex-modal').classList.add('show');
+  });
+}
+
+function renderDexCards() {
+  const container = document.getElementById('pokedex-cards');
+  container.innerHTML = '';
+  _dexCards.forEach((card, pos) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'dex-card-wrap';
+    wrap.draggable = true;
+    wrap.dataset.pos = pos;
+
+    const imgSrc = card.images?.small || '';
+    const largeSrc = card.images?.large || imgSrc;
+
+    wrap.innerHTML = `
+      <div class="dex-card-pos">${pos + 1}</div>
+      <img class="dex-card-img" src="${imgSrc}" alt="${card.name}"
+        onclick="event.stopPropagation();showCardDetail('${largeSrc}')">
+      <div class="dex-card-label">${card.name}</div>
+      <div class="dex-card-arrows">
+        <button class="dex-arrow-btn" onclick="dexMove(${pos},-1)" ${pos === 0 ? 'disabled' : ''}>◀</button>
+        <button class="dex-arrow-btn" onclick="dexMove(${pos},1)" ${pos === _dexCards.length - 1 ? 'disabled' : ''}>▶</button>
+      </div>`;
+
+    // Drag events
+    wrap.addEventListener('dragstart', e => {
+      _dexDragSrc = pos;
+      wrap.classList.add('dex-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    wrap.addEventListener('dragend', () => {
+      wrap.classList.remove('dex-dragging');
+      document.querySelectorAll('.dex-card-wrap').forEach(w => w.classList.remove('dex-over'));
+    });
+    wrap.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      document.querySelectorAll('.dex-card-wrap').forEach(w => w.classList.remove('dex-over'));
+      wrap.classList.add('dex-over');
+    });
+    wrap.addEventListener('drop', e => {
+      e.preventDefault();
+      if (_dexDragSrc === null || _dexDragSrc === pos) return;
+      const moved = _dexCards.splice(_dexDragSrc, 1)[0];
+      _dexCards.splice(pos, 0, moved);
+      _dexDragSrc = null;
+      renderDexCards();
+    });
+
+    container.appendChild(wrap);
+  });
+}
+
+function dexMove(pos, dir) {
+  const target = pos + dir;
+  if (target < 0 || target >= _dexCards.length) return;
+  [_dexCards[pos], _dexCards[target]] = [_dexCards[target], _dexCards[pos]];
+  renderDexCards();
+}
+
+function confirmPokedex() {
+  // Find which player owns this deck call
+  // We need to put _dexCards back as the top N cards of the deck
+  // Determine player from whose turn it is
+  const player = G.turn;
+  const p = G.players[player];
+  const n = _dexCards.length;
+  // Replace top n cards with reordered set
+  p.deck.splice(0, n, ..._dexCards);
+  addLog(`P${player} used Pokédex — rearranged top ${n} card(s) of their deck.`, true);
+  document.getElementById('pokedex-modal').classList.remove('show');
+  if (_dexResolve) { _dexResolve(); _dexResolve = null; }
+}
+
+function cancelPokedex() {
+  // Cards go back in original order (we didn't touch the real deck yet)
+  const player = G.turn;
+  addLog(`P${player} used Pokédex — viewed top cards but kept original order.`, true);
+  document.getElementById('pokedex-modal').classList.remove('show');
+  if (_dexResolve) { _dexResolve(); _dexResolve = null; }
 }
 
 // ══════════════════════════════════════════════════
