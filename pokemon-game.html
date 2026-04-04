@@ -565,20 +565,22 @@ html, body {
 .hp-bar-fill  { display: none; }
 .active-stat-label { display: none; }
 
+/* Status emoji — floats to the left of the card, top-aligned, never overlaps card content */
 .status-overlay {
   position: absolute;
-  bottom: 6px; left: 50%;
-  transform: translateX(-50%);
+  top: 0;
+  right: calc(100% + 4px);   /* sits just outside the left edge */
   font-size: clamp(18px, 3vh, 32px);
   z-index: 5;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,.9));
   pointer-events: none;
+  line-height: 1;
 }
-/* Smaller status on bench slots */
+/* Bench slots get a smaller emoji */
 .opp-bench-slot .status-overlay,
 .zone-slot:not(#active-p1) .status-overlay {
-  font-size: 12px;
-  bottom: 3px;
+  font-size: 14px;
+  right: calc(100% + 3px);
 }
 
 /* Status colored borders */
