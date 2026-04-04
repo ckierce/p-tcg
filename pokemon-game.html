@@ -1031,6 +1031,131 @@ html, body {
 }
 #turn-flash-inner.p1 { border-color: var(--p1color); color: var(--p1color); }
 #turn-flash-inner.p2 { border-color: var(--p2color); color: var(--p2color); }
+
+/* ── WIN SCREEN ───────────────────────────────────────────── */
+#win-screen {
+  display: none;
+  position: fixed; inset: 0; z-index: 1000;
+  align-items: center; justify-content: center;
+  flex-direction: column;
+  background: rgba(0,0,0,.88);
+  backdrop-filter: blur(6px);
+}
+#win-screen.show { display: flex; }
+
+#win-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 44px 60px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 60px rgba(232,200,74,.25), 0 0 120px rgba(232,200,74,.08);
+  animation: winBoxIn .45s cubic-bezier(.175,.885,.32,1.275) forwards;
+  text-align: center;
+  max-width: 480px;
+  width: 90%;
+}
+
+@keyframes winBoxIn {
+  from { opacity: 0; transform: scale(.7) translateY(30px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+#win-trophy {
+  font-size: 52px;
+  animation: trophyBounce .6s .3s cubic-bezier(.175,.885,.32,1.5) both;
+}
+@keyframes trophyBounce {
+  from { opacity: 0; transform: scale(0) rotate(-20deg); }
+  to   { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+
+#win-headline {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+#win-player-name {
+  font-size: 20px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  line-height: 1.5;
+  animation: namePulse 1.8s 0.6s ease-in-out infinite;
+}
+@keyframes namePulse {
+  0%, 100% { text-shadow: 0 0 8px rgba(232,200,74,.4); }
+  50%       { text-shadow: 0 0 24px rgba(232,200,74,.8), 0 0 48px rgba(232,200,74,.3); }
+}
+#win-player-name.p1 { color: var(--p1color); animation: namePulseP1 1.8s .6s ease-in-out infinite; }
+#win-player-name.p2 { color: var(--p2color); animation: namePulseP2 1.8s .6s ease-in-out infinite; }
+@keyframes namePulseP1 {
+  0%, 100% { text-shadow: 0 0 8px rgba(91,156,246,.4); }
+  50%       { text-shadow: 0 0 24px rgba(91,156,246,.9), 0 0 48px rgba(91,156,246,.3); }
+}
+@keyframes namePulseP2 {
+  0%, 100% { text-shadow: 0 0 8px rgba(245,101,101,.4); }
+  50%       { text-shadow: 0 0 24px rgba(245,101,101,.9), 0 0 48px rgba(245,101,101,.3); }
+}
+
+#win-reason {
+  font-size: 7px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  line-height: 1.8;
+}
+
+#win-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+
+#win-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.win-btn {
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 12px 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: border-color .15s, color .15s;
+}
+.win-btn:hover { border-color: var(--accent); color: var(--accent); }
+.win-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+.win-btn.primary:hover { opacity: .85; }
+
+/* Confetti particles */
+.confetti-piece {
+  position: fixed;
+  width: 8px; height: 10px;
+  border-radius: 2px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 999;
+  animation: confettiFall linear forwards;
+}
+@keyframes confettiFall {
+  0%   { opacity: 1; transform: translateY(0) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(100vh) rotate(720deg); }
+}
 </style>
 </head>
 <body>
@@ -1262,6 +1387,23 @@ html, body {
 
 <!-- Turn change flash -->
 <div id="turn-flash"><div id="turn-flash-inner"></div></div>
+
+<!-- ══════════════════════════════════════════════ -->
+<!-- WIN SCREEN                                     -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="win-screen">
+  <div id="win-box">
+    <div id="win-trophy">🏆</div>
+    <div id="win-headline">WINNER</div>
+    <div id="win-player-name"></div>
+    <div id="win-reason"></div>
+    <div id="win-divider"></div>
+    <div id="win-actions">
+      <button class="win-btn primary" onclick="playAgain()">▶ PLAY AGAIN</button>
+      <button class="win-btn" onclick="viewBoard()">VIEW BOARD</button>
+    </div>
+  </div>
+</div>
 
 <!-- Toast -->
 <div id="toast"></div>
@@ -1532,8 +1674,11 @@ function drawCard(player, auto = false) {
   }
   const p = G.players[player];
   if (p.deck.length === 0) {
-    showToast(`P${player} deck empty — they lose!`, true);
     addLog(`Player ${player} has no cards left to draw! Game over.`, true);
+    const deckLossWinner = player === 1 ? 2 : 1;
+    G.started = false;
+    showWinScreen(deckLossWinner, `PLAYER ${player} DECKED OUT`);
+    pushGameState();
     return;
   }
   const card = p.deck.shift();
@@ -3016,8 +3161,8 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       addLog(`P${prizeWinner} took a prize! (${remaining} remaining)`, true);
       if (remaining === 0) {
         addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
-        showToast(`Player ${prizeWinner} wins!`, false, 'ok');
         G.started = false;
+        showWinScreen(prizeWinner, 'ALL 6 PRIZES TAKEN');
         return 'win';
       }
     }
@@ -3026,8 +3171,8 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     const benchLeft = G.players[owner].bench.filter(s => s !== null);
     if (benchLeft.length === 0) {
       addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
-      showToast(`Player ${prizeWinner} wins!`, false, 'ok');
       G.started = false;
+      showWinScreen(prizeWinner, 'OPPONENT HAS NO POKÉMON LEFT');
       return 'win';
     }
 
@@ -3706,6 +3851,78 @@ function showTurnFlash(player) {
   void inner.offsetWidth;
   inner.style.animation = '';
   setTimeout(() => el.classList.remove('show'), 1300);
+}
+
+// ══════════════════════════════════════════════════
+// WIN SCREEN
+// ══════════════════════════════════════════════════
+function showWinScreen(winnerNum, reason) {
+  const p = G.players[winnerNum];
+  const deckName = p.deckData?.name || null;
+  const displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
+
+  const nameEl   = document.getElementById('win-player-name');
+  const reasonEl = document.getElementById('win-reason');
+
+  nameEl.textContent = displayName;
+  nameEl.className = `p${winnerNum}`;
+  reasonEl.textContent = reason || '';
+
+  document.getElementById('win-screen').classList.add('show');
+  spawnConfetti(winnerNum);
+}
+
+function playAgain() {
+  document.getElementById('win-screen').classList.remove('show');
+  // Clean up confetti
+  document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
+  // Detach Firebase listener and reset to setup screen
+  if (gameRef) { gameRef.off(); gameRef = null; }
+  roomCode = null; myRole = null;
+  // Reset G
+  G = {
+    started: false, turn: 1, phase: 'SETUP', turnNum: 0,
+    energyPlayedThisTurn: false, plusPowerActive: false,
+    pendingAction: null, pendingPromotion: null, pendingExtraDraws: 0,
+    players: {
+      1: { name:'Player 1', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 },
+      2: { name:'Player 2', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 }
+    },
+    log: []
+  };
+  // Show setup screen / lobby
+  document.getElementById('setup-screen').style.display = '';
+  showPanel('lobby-panel');
+  setMidline('Load decks and press Start Game');
+}
+
+function viewBoard() {
+  // Just close the overlay so they can see the final board state
+  document.getElementById('win-screen').classList.remove('show');
+  document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
+}
+
+function spawnConfetti(winnerNum) {
+  const colors = winnerNum === 1
+    ? ['#5b9cf6','#a8d0ff','#ffffff','#e8c84a']
+    : ['#f56565','#ffb3b3','#ffffff','#e8c84a'];
+  const count = 80;
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'confetti-piece';
+      el.style.left = Math.random() * 100 + 'vw';
+      el.style.top  = -10 + 'px';
+      el.style.background = colors[Math.floor(Math.random() * colors.length)];
+      el.style.width  = (6 + Math.random() * 8) + 'px';
+      el.style.height = (8 + Math.random() * 10) + 'px';
+      const dur = 1.8 + Math.random() * 2.2;
+      el.style.animationDuration = dur + 's';
+      el.style.animationDelay   = '0s';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), dur * 1000 + 100);
+    }, i * 30);
+  }
 }
 
 // ══════════════════════════════════════════════════
