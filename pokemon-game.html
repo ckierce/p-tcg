@@ -512,7 +512,8 @@ html, body {
   pointer-events: none;
 }
 
-/* Energy — horizontal row below bench cards; wraps into second row if needed */
+/* Energy — horizontal row below bench cards; wraps into second row if needed.
+   max-width is set inline at render time to match the slot's actual pixel width. */
 .energy-overlay-bench {
   position: absolute;
   top: calc(100% + 4px);
@@ -524,7 +525,6 @@ html, body {
   justify-content: center;
   align-items: center;
   gap: 3px;
-  max-width: 120px;
   z-index: 4;
   pointer-events: none;
 }
@@ -4547,8 +4547,9 @@ function renderField(player) {
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
           const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
+          const oppBenchW = slotEl.clientWidth || 64;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-            <div class="energy-overlay-bench">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
+            <div class="energy-overlay-bench" style="max-width:${oppBenchW}px">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
         }
       } else {
@@ -4597,10 +4598,13 @@ function renderSlotP1(el, card) {
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
   const imgSrc = card.images?.small || '';
 
-  const slotH = el.clientHeight || (isActive ? 200 : 72);
-  const energyMaxH = isActive ? `max-height:${slotH}px` : '';
+  const slotH = el.clientHeight || (isActive ? 200 : 90);
+  const slotW = el.clientWidth  || (isActive ? 130 : 64);
+  const energyStyle = isActive
+    ? `max-height:${slotH}px`
+    : `max-width:${slotW}px`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
-    <div class="${energyClass}" style="${energyMaxH}">${energyPips}</div>${dmg}${status}${badges}`;
+    <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
   if (wasHighlighted) el.classList.add('highlight');
 }
 
