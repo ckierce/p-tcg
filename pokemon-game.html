@@ -1850,7 +1850,7 @@ function startEnergyAttach(player, handIdx) {
   setMidline('Choose a bench Pokémon to attach energy to');
 }
 
-function playTrainer(player, handIdx) {
+async function playTrainer(player, handIdx) {
   closeActionMenu();
   const p = G.players[player];
   const opp = G.players[player === 1 ? 2 : 1];
@@ -1996,23 +1996,105 @@ function playTrainer(player, handIdx) {
   if (name === 'Energy Removal') {
     if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
     consume();
-    const removed = opp.active.attachedEnergy.splice(0, 1)[0];
-    opp.discard.push(removed);
-    addLog(`P${player} used Energy Removal — discarded 1 energy from opponent's ${opp.active.name}.`, true);
+    // If only 1 energy, remove it automatically; otherwise let player choose
+    if (opp.active.attachedEnergy.length === 1) {
+      const removed = opp.active.attachedEnergy.splice(0, 1)[0];
+      opp.discard.push(removed);
+      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
+    } else {
+      const picked = await openCardPicker({
+        title: 'Energy Removal',
+        subtitle: `Choose 1 energy to discard from ${opp.active.name}`,
+        cards: opp.active.attachedEnergy,
+        maxSelect: 1
+      });
+      if (!picked || !picked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      const idx = opp.active.attachedEnergy.indexOf(picked[0]);
+      const removed = opp.active.attachedEnergy.splice(idx, 1)[0];
+      opp.discard.push(removed);
+      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
+    }
     renderAll(); return;
   }
 
   // ── Super Energy Removal ──────────────────────────
   if (name === 'Super Energy Removal') {
-    if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
+    // Check opp has any energy on any Pokémon
+    const oppAllPokemon = [
+      ...(opp.active ? [{ label: `Active: ${opp.active.name}`, zone: 'active', idx: null }] : []),
+      ...opp.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i } : null).filter(Boolean)
+    ];
+    const oppHasEnergy = oppAllPokemon.some(entry => {
+      const card = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
+      return card?.attachedEnergy?.length > 0;
+    });
+    if (!oppHasEnergy) { showToast("Opponent has no energy!", true); return; }
     if (!p.active?.attachedEnergy?.length) { showToast("Must discard 1 of your energy first!", true); return; }
+
+    // Step 1: player discards 1 of their own energy
+    let myCostIdx = 0;
+    if (p.active.attachedEnergy.length > 1) {
+      const myCostPicked = await openCardPicker({
+        title: 'Super Energy Removal — Your Cost',
+        subtitle: `Choose 1 energy to discard from your ${p.active.name}`,
+        cards: p.active.attachedEnergy,
+        maxSelect: 1
+      });
+      if (!myCostPicked || !myCostPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      myCostIdx = p.active.attachedEnergy.indexOf(myCostPicked[0]);
+    }
     consume();
-    const myRemoved = p.active.attachedEnergy.splice(0, 1)[0];
+    const myRemoved = p.active.attachedEnergy.splice(myCostIdx, 1)[0];
     p.discard.push(myRemoved);
-    const count = Math.min(2, opp.active.attachedEnergy.length);
-    const removed = opp.active.attachedEnergy.splice(0, count);
-    opp.discard.push(...removed);
-    addLog(`P${player} used Super Energy Removal — discarded ${count} energy from opponent's ${opp.active.name}.`, true);
+    addLog(`P${player} discarded ${myRemoved.name} from their own ${p.active.name} as cost.`);
+
+    // Step 2: choose which opp Pokémon to target (if opp has energy on multiple)
+    const oppTargetsWithEnergy = oppAllPokemon.filter(entry => {
+      const card = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
+      return card?.attachedEnergy?.length > 0;
+    });
+    let targetCard = opp.active;
+    let targetLabel = opp.active?.name || 'Active';
+    if (oppTargetsWithEnergy.length > 1) {
+      const targetPicked = await openCardPicker({
+        title: 'Super Energy Removal — Target',
+        subtitle: "Choose opponent's Pokémon to remove energy from",
+        cards: oppTargetsWithEnergy.map(entry => {
+          const c = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
+          return { ...c, _serEntry: entry };
+        }),
+        maxSelect: 1
+      });
+      if (!targetPicked || !targetPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      const entry = targetPicked[0]._serEntry;
+      targetCard = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
+      targetLabel = targetCard.name;
+    } else if (oppTargetsWithEnergy.length === 1) {
+      const entry = oppTargetsWithEnergy[0];
+      targetCard = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
+      targetLabel = targetCard.name;
+    }
+
+    // Step 3: choose up to 2 energies to discard from target
+    const oppEnergy = targetCard.attachedEnergy || [];
+    let removedEnergy = [];
+    if (oppEnergy.length <= 2) {
+      removedEnergy = oppEnergy.splice(0, oppEnergy.length);
+    } else {
+      const oppEnergyPicked = await openCardPicker({
+        title: 'Super Energy Removal — Discard Energy',
+        subtitle: `Choose up to 2 energy to discard from ${targetLabel}`,
+        cards: oppEnergy,
+        maxSelect: 2
+      });
+      if (!oppEnergyPicked || !oppEnergyPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      for (const c of oppEnergyPicked) {
+        const i = targetCard.attachedEnergy.indexOf(c);
+        if (i !== -1) removedEnergy.push(...targetCard.attachedEnergy.splice(i, 1));
+      }
+    }
+    opp.discard.push(...removedEnergy);
+    addLog(`P${player} used Super Energy Removal — discarded ${removedEnergy.length} energy from ${targetLabel}.`, true);
     renderAll(); return;
   }
 
