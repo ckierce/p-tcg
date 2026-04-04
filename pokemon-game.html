@@ -144,9 +144,13 @@ html, body {
 /* ── GAME LAYOUT ──────────────────────────────────────────── */
 #game-board {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  grid-template-columns: 1fr 0px;
   grid-template-rows: 100%;
   height: 100%;
+  transition: grid-template-columns 0.2s ease;
+}
+#game-board.sidebar-open {
+  grid-template-columns: 1fr 260px;
 }
 
 /* ── FIELD ────────────────────────────────────────────────── */
@@ -665,6 +669,7 @@ html, body {
   flex-direction: column;
   background: var(--surface);
   overflow: hidden;
+  border-left: 1px solid var(--border);
 }
 
 .sidebar-tabs {
@@ -1043,10 +1048,6 @@ html, body {
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
     </div>
-    <div style="margin-top:14px;font-size:7px;color:var(--muted);text-align:center">or</div>
-    <div style="display:flex;justify-content:center;margin-top:10px">
-      <button class="lobby-btn" style="font-size:8px;" onclick="startHotseat()">🖥 HOTSEAT (same screen)</button>
-    </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="index.html">← Back to Deck Builder</a>
     </div>
@@ -1110,8 +1111,8 @@ html, body {
       <span class="top-bar-logo">P-TCG</span>
       <span id="turn-badge" class="p1">P1 TURN</span>
       <span id="phase-badge">DRAW</span>
-      <button class="top-bar-btn" onclick="openLoadModal(0)">← LOAD</button>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
+      <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
     </div>
 
     <!-- Field body -->
@@ -1425,11 +1426,7 @@ async function loadDeck(deckName) {
       document.querySelector(`.setup-player.p${p}`)?.classList.add('loaded');
     }
     // In networked mode, only P1 can enable start (once both ready via Firebase listener)
-    if (myRole === 'hotseat') {
-      const both = G.players[1].deckData && G.players[2].deckData;
-      const startBtn = document.getElementById('start-btn');
-      if (startBtn) startBtn.disabled = !both;
-    }
+    // start button enabled via Firebase listener (checkBothReady)
     // Broadcast deck readiness to opponent
     broadcastDeckReady(p, deckName);
     showToast(`${deckName} loaded for Player ${p}!`, false, 'ok');
@@ -2794,7 +2791,7 @@ function renderAll() {
   updatePerspectiveLabels();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   // Networked: push state and apply role-based visibility
-  if (myRole !== 'hotseat' && myRole !== null && G.started) {
+  if (myRole !== null && G.started) {
     pushGameState();
     applyRoleVisibility();
   }
@@ -2846,7 +2843,7 @@ function renderField(player) {
   } else {
     // Render in the top "opponent" zone
     // During SETUP in networked mode: show face-down placeholders so opponent's choices are hidden
-    const setupHide = G.phase === 'SETUP' && myRole !== 'hotseat' && myRole !== null;
+    const setupHide = G.phase === 'SETUP' && myRole !== null;
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
@@ -2951,7 +2948,7 @@ function renderHands() {
   const p2 = G.players[2];
 
   // Bottom bar always shows the local player's hand
-  // In hotseat: always P1. In networked: P1 if myRole=1, P2 if myRole=2
+  // localPlayer: P1 if myRole=1, P2 if myRole=2
   const localPlayer = (myRole === 2) ? 2 : 1;
   const localHand = G.players[localPlayer].hand;
   const container1 = document.getElementById('hand-p1');
@@ -2991,7 +2988,7 @@ function renderHands() {
 function renderSidebarP2Hand() {
   const content = document.getElementById('sidebar-content');
   // In networked mode: if I'm P2, sidebar shows P1's hand (face-down for P2 to see)
-  // If I'm P1 or hotseat, sidebar shows P2's hand as normal
+  // Sidebar shows opponent's hand
   const sidePlayer = (myRole === 2) ? 1 : 2;
   const sideHand = G.players[sidePlayer].hand;
   const sideColor = sidePlayer === 1 ? 'var(--p1color)' : 'var(--p2color)';
@@ -3003,7 +3000,7 @@ function renderSidebarP2Hand() {
   }
 
   // In networked mode, show opponent's hand face-down (card backs only)
-  const showFaceUp = (myRole === 'hotseat');
+  const showFaceUp = false; // always face-down in networked mode
   content.innerHTML = `<div style="font-size:8px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
     <div id="hand-p2">` +
     sideHand.map((card, i) => {
@@ -3105,7 +3102,7 @@ function updateTurnBadge() {
   } else {
     badge.style.color = '';
     badge.style.borderColor = '';
-    if (myRole === 'hotseat' || myRole === null) {
+    if (myRole === null) {
       badge.textContent = `P${G.turn} TURN`;
       badge.className = `turn-badge p${G.turn}`;
     } else {
@@ -3383,7 +3380,7 @@ function cancelCardPick() {
 // ══════════════════════════════════════════════════
 // MULTIPLAYER / ROOM SYSTEM
 // ══════════════════════════════════════════════════
-let myRole = null;       // 1, 2, or 'hotseat'
+let myRole = null;       // 1 or 2
 let roomCode = null;
 let gameRef = null;
 let isWriting = false;   // prevent echo loops
@@ -3401,29 +3398,12 @@ function copyRoomUrl() {
   navigator.clipboard?.writeText(url).then(() => showToast('Link copied!', false, 'ok')).catch(() => showToast('Copy the link manually', false));
 }
 
-// ── Hotseat (original behaviour) ─────────────────
-function startHotseat() {
-  myRole = 'hotseat';
-  // Show the old-style both-decks setup
-  document.getElementById('setup-screen').innerHTML = `
-    <h1>POKéMON TCG<br>GAME BOARD</h1>
-    <p style="font-size:8px;color:var(--muted);text-align:center">Load a deck for each player to begin.</p>
-    <div class="setup-players">
-      <div class="setup-player p1" onclick="openLoadModal(1)">
-        <div class="setup-player-icon">🔵</div>
-        <div class="setup-player-label">PLAYER 1</div>
-        <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
-      </div>
-      <div class="setup-player p2" onclick="openLoadModal(2)">
-        <div class="setup-player-icon">🔴</div>
-        <div class="setup-player-label">PLAYER 2</div>
-        <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
-      </div>
-    </div>
-    <button id="start-btn" onclick="startGame()" disabled>START GAME</button>
-    <div id="setup-hint" style="font-size:8px;color:var(--muted)">Both players must load a deck first</div>
-    <a class="setup-back" href="index.html">← Back to Deck Builder</a>
-  `;
+// ── Sidebar toggle ────────────────────────────────
+function toggleSidebar() {
+  const board = document.getElementById('game-board');
+  const btn = document.getElementById('sidebar-toggle-btn');
+  const isOpen = board.classList.toggle('sidebar-open');
+  btn.textContent = isOpen ? 'LOG ◂' : 'LOG ▸';
 }
 
 // ── Create room (P1) ──────────────────────────────
@@ -3461,10 +3441,10 @@ async function createRoom() {
       if (data.setup_p2 && G.phase === 'SETUP') mergeSetupSlot(2, data.setup_p2);
       if (data.state?.started) receiveGameState(data.state);
     } else {
-      // Post-start SETUP: merge P2's placement updates
+      // Post-start SETUP: only merge P2's placement — P1 owns the full state here
       if (G.phase === 'SETUP' && data.setup_p2) mergeSetupSlot(2, data.setup_p2);
-      // Game running — receive any state update (isWriting prevents our own echo)
-      if (data.state) receiveGameState(data.state);
+      // Normal gameplay: receive opponent's state updates
+      if (G.phase !== 'SETUP' && data.state) receiveGameState(data.state);
     }
   });
 }
@@ -3502,10 +3482,13 @@ async function joinRoom() {
       if (data.setup_p1 && G.phase === 'SETUP') mergeSetupSlot(1, data.setup_p1);
       if (data.state?.started) receiveGameState(data.state);
     } else {
-      // Post-start SETUP: merge P1's placement updates
-      if (G.phase === 'SETUP' && data.setup_p1) mergeSetupSlot(1, data.setup_p1);
-      // Game running — receive any state update (isWriting prevents our own echo)
-      if (data.state) receiveGameState(data.state);
+      // Post-start SETUP: merge P1's placements, and watch for phase to advance
+      if (data.setup_p1) mergeSetupSlot(1, data.setup_p1);
+      // Receive full state only once we're past SETUP (doneSetup fired on P1)
+      // or during normal gameplay
+      if (data.state && (G.phase !== 'SETUP' || data.state.phase !== 'SETUP')) {
+        receiveGameState(data.state);
+      }
     }
   });
 }
@@ -3551,7 +3534,7 @@ function mergeSetupSlot(playerNum, slotData) {
 
 // ── Push state to Firebase ────────────────────────
 async function pushGameState() {
-  if (!gameRef || myRole === 'hotseat') return;
+  if (!gameRef) return;
   isWriting = true;
   try {
     if (G.phase === 'SETUP' && !G.started) {
@@ -3635,14 +3618,13 @@ function receiveGameState(state) {
 
 // ── Action guard: only act on your turn / role ────
 function isMyTurn() {
-  if (myRole === 'hotseat') return true;
   if (G.phase === 'SETUP') return true; // both players set up simultaneously
   if (G.phase === 'PROMOTE' && G.pendingPromotion === myRole) return true;
   return G.turn === myRole;
 }
 
 function applyRoleVisibility() {
-  if (myRole === 'hotseat' || myRole === null) return;
+  if (myRole === null) return;
 
   // Hand cards in the bottom bar — only the local player's cards are interactive.
   // In P2 perspective, these cards have id="hand-card-2-N"; in P1 they're "hand-card-1-N".
@@ -3684,9 +3666,6 @@ function applyRoleVisibility() {
     }
   }
 
-  // LOAD button — lock to own player in networked mode
-  const loadBtn = document.querySelector('.top-bar-btn:not(.primary)');
-  if (loadBtn) loadBtn.setAttribute('onclick', `openLoadModal(${myRole})`);
 }
 
 // ── Check URL on load for auto-join ──────────────
