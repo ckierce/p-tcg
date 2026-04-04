@@ -1823,16 +1823,28 @@ function playTrainer(player, handIdx) {
 
   // ── Gust of Wind ─────────────────────────────────
   if (name === 'Gust of Wind') {
-    const oppBench = opp.bench.filter(s => s !== null);
+    const oppBench = opp.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
     if (!oppBench.length) { showToast("Opponent has no bench Pokémon!", true); return; }
     consume();
-    // Pull first bench pokemon to active (swap)
-    const idx = opp.bench.findIndex(s => s !== null);
-    const old = opp.active;
-    opp.active = opp.bench[idx];
-    opp.bench[idx] = old;
-    addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
-    renderAll(); return;
+    if (oppBench.length === 1) {
+      const { s, i } = oppBench[0];
+      const old = opp.active;
+      opp.active = s; opp.bench[i] = old;
+      addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
+      renderAll(); return;
+    }
+    // Multiple bench options — let player choose
+    closeActionMenu();
+    showActionMenu("Gust of Wind — choose opponent's Pokémon", oppBench.map(({ s, i }) => ({
+      label: `${s.name} (Bench ${i + 1})`,
+      fn: () => {
+        const old = opp.active;
+        opp.active = s; opp.bench[i] = old;
+        addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
+        closeActionMenu(); renderAll();
+      }
+    })));
+    return;
   }
 
   // ── Energy Removal ────────────────────────────────
@@ -2179,6 +2191,250 @@ function playTrainer(player, handIdx) {
     return;
   }
 
+  // ── Pokédex ───────────────────────────────────────
+  // Look at top 5 cards of deck, rearrange in any order
+  if (name === 'Pokédex') {
+    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
+    consume();
+    const top5 = p.deck.slice(0, Math.min(5, p.deck.length));
+    addLog(`P${player} used Pokédex — viewed top ${top5.length} cards of deck: ${top5.map(c => c.name).join(', ')}.`, true);
+    showToast(`Top of deck: ${top5.map(c => c.name).join(', ')}`);
+    renderAll(); return;
+  }
+
+  // ── Lass ──────────────────────────────────────────
+  // Both players show their hands; each player discards all Trainer cards
+  if (name === 'Lass') {
+    consume();
+    const trainersDiscarded = { 1: [], 2: [] };
+    for (const pNum of [1, 2]) {
+      const pp = G.players[pNum];
+      const trainers = pp.hand.filter(c => c.supertype === 'Trainer');
+      trainers.forEach(t => {
+        const i = pp.hand.findIndex(c => c === t);
+        if (i !== -1) { pp.discard.push(...pp.hand.splice(i, 1)); }
+      });
+      trainersDiscarded[pNum] = trainers.map(t => t.name);
+    }
+    addLog(`P${player} used Lass — P1 discarded: ${trainersDiscarded[1].join(', ') || 'none'}; P2 discarded: ${trainersDiscarded[2].join(', ') || 'none'}.`, true);
+    renderAll(); return;
+  }
+
+  // ── Maintenance ───────────────────────────────────
+  // Shuffle 2 cards from hand into deck, draw 1
+  if (name === 'Maintenance') {
+    const otherCards = p.hand.filter((_, i) => i !== handIdx);
+    if (otherCards.length < 2) { showToast('Need at least 2 other cards in hand!', true); return; }
+    (async () => {
+      const picked = await openCardPicker({
+        title: 'Maintenance',
+        subtitle: 'Choose 2 cards to shuffle back into your deck',
+        cards: otherCards,
+        maxSelect: 2
+      });
+      if (!picked || picked.length < 2) { showToast('Maintenance cancelled.'); return; }
+      p.hand.splice(handIdx, 1); p.discard.push(card); // consume Maintenance
+      const toShuffle = picked.map(i => otherCards[i]);
+      toShuffle.forEach(sc => {
+        const hi = p.hand.findIndex(c => c === sc);
+        if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1));
+      });
+      p.deck = shuffle(p.deck);
+      drawCard(player, true);
+      addLog(`P${player} used Maintenance — shuffled 2 cards back, drew 1.`, true);
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Item Finder ───────────────────────────────────
+  // Discard 2 cards to retrieve any Trainer from discard pile
+  if (name === 'Item Finder') {
+    const trainersInDiscard = p.discard.filter(c => c.supertype === 'Trainer');
+    if (!trainersInDiscard.length) { showToast('No Trainer cards in discard!', true); return; }
+    const otherCards = p.hand.filter((_, i) => i !== handIdx);
+    if (otherCards.length < 2) { showToast('Need at least 2 other cards to discard!', true); return; }
+    (async () => {
+      const discardPicked = await openCardPicker({
+        title: 'Item Finder',
+        subtitle: 'Discard 2 cards from your hand',
+        cards: otherCards,
+        maxSelect: 2
+      });
+      if (!discardPicked || discardPicked.length < 2) { showToast('Item Finder cancelled.'); return; }
+      p.hand.splice(handIdx, 1); p.discard.push(card);
+      const toDiscard = discardPicked.map(i => otherCards[i]);
+      toDiscard.forEach(dc => {
+        const hi = p.hand.findIndex(c => c === dc);
+        if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1));
+      });
+      const trainerPicked = await openCardPicker({
+        title: 'Item Finder',
+        subtitle: 'Choose a Trainer card from your discard',
+        cards: trainersInDiscard,
+        maxSelect: 1
+      });
+      if (!trainerPicked) { addLog(`P${player} used Item Finder — discarded 2 but found nothing.`, true); renderAll(); return; }
+      const found = trainersInDiscard[trainerPicked[0]];
+      const di = p.discard.findIndex(c => c === found);
+      if (di !== -1) p.hand.push(...p.discard.splice(di, 1));
+      addLog(`P${player} used Item Finder — discarded 2, retrieved ${found.name}.`, true);
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Devolution Spray ──────────────────────────────
+  // Devolve an evolved Pokémon; the evolution goes to discard
+  if (name === 'Devolution Spray') {
+    // Find evolved pokemon (Stage 1 or Stage 2) on board
+    const evolvedTargets = [];
+    if (p.active?.subtypes?.includes('Stage 1') || p.active?.subtypes?.includes('Stage 2'))
+      evolvedTargets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
+    p.bench.forEach((b, i) => {
+      if (b?.subtypes?.includes('Stage 1') || b?.subtypes?.includes('Stage 2'))
+        evolvedTargets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
+    });
+    if (!evolvedTargets.length) { showToast('No evolved Pokémon to devolve!', true); return; }
+    consume();
+    const doDevolution = (zone, idx) => {
+      const target = zone === 'active' ? p.active : p.bench[idx];
+      if (!target || !target.evolvesFrom) return;
+      // The evolved card goes to discard; the pre-evolution card needs to come from discard or hand
+      const preEvo = [...p.discard, ...p.hand].find(c => c.name === target.evolvesFrom && c.supertype === 'Pokémon');
+      p.discard.push(target);
+      if (preEvo) {
+        const src = p.hand.includes(preEvo) ? p.hand : p.discard;
+        const si = src.findIndex(c => c === preEvo);
+        const restored = src.splice(si, 1)[0];
+        restored.damage = target.damage; restored.attachedEnergy = target.attachedEnergy; restored.status = null;
+        if (zone === 'active') p.active = restored; else p.bench[idx] = restored;
+        addLog(`P${player} used Devolution Spray — ${target.name} devolved to ${restored.name}.`, true);
+      } else {
+        // No pre-evolution found — slot becomes empty
+        if (zone === 'active') p.active = null; else p.bench[idx] = null;
+        addLog(`P${player} used Devolution Spray — ${target.name} discarded (no ${target.evolvesFrom} to replace).`, true);
+      }
+      renderAll();
+    };
+    if (evolvedTargets.length === 1) { doDevolution(evolvedTargets[0].zone, evolvedTargets[0].idx); return; }
+    closeActionMenu();
+    showActionMenu('Devolution Spray — choose target', evolvedTargets.map(t => ({
+      label: t.label, fn: () => { closeActionMenu(); doDevolution(t.zone, t.idx); }
+    })));
+    return;
+  }
+
+  // ── Pokémon Trader ────────────────────────────────
+  // Trade a Pokémon in hand for a Pokémon in deck
+  if (name === 'Pokémon Trader') {
+    const pokemonInHand = p.hand.filter((c, i) => i !== handIdx && c.supertype === 'Pokémon');
+    const pokemonInDeck = p.deck.filter(c => c.supertype === 'Pokémon');
+    if (!pokemonInHand.length) { showToast('No other Pokémon in hand to trade!', true); return; }
+    if (!pokemonInDeck.length) { showToast('No Pokémon in deck!', true); return; }
+    (async () => {
+      const fromHand = await openCardPicker({
+        title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your hand to trade',
+        cards: pokemonInHand, maxSelect: 1
+      });
+      if (!fromHand) { showToast('Pokémon Trader cancelled.'); return; }
+      const fromDeck = await openCardPicker({
+        title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your deck to take',
+        cards: pokemonInDeck, maxSelect: 1
+      });
+      if (!fromDeck) { showToast('Pokémon Trader cancelled.'); return; }
+      // Consume trainer
+      p.hand.splice(handIdx, 1); p.discard.push(card);
+      // Move chosen hand pokemon to deck
+      const handPoke = pokemonInHand[fromHand[0]];
+      const hi = p.hand.findIndex(c => c === handPoke);
+      if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1));
+      // Move chosen deck pokemon to hand
+      const deckPoke = pokemonInDeck[fromDeck[0]];
+      const di = p.deck.findIndex(c => c === deckPoke);
+      if (di !== -1) p.hand.push(...p.deck.splice(di, 1));
+      p.deck = shuffle(p.deck);
+      addLog(`P${player} used Pokémon Trader — traded ${handPoke.name} for ${deckPoke.name}.`, true);
+      renderAll();
+    })();
+    return;
+  }
+
+  // ── Pokémon Breeder ───────────────────────────────
+  // Play a Stage 2 directly onto a Basic (skipping Stage 1)
+  if (name === 'Pokémon Breeder') {
+    const stage2InHand = p.hand.filter((c, i) => i !== handIdx && c.subtypes?.includes('Stage 2'));
+    if (!stage2InHand.length) { showToast('No Stage 2 Pokémon in hand!', true); return; }
+    (async () => {
+      const picked = await openCardPicker({
+        title: 'Pokémon Breeder', subtitle: 'Choose a Stage 2 to play directly',
+        cards: stage2InHand, maxSelect: 1
+      });
+      if (!picked) { showToast('Pokémon Breeder cancelled.'); return; }
+      const stage2 = stage2InHand[picked[0]];
+      // Find valid targets (Basic that this Stage 2's pre-evolution chain matches)
+      // Simplified: allow evolving any Basic → Stage 2 if the Stage 2's evolvesFrom exists on board
+      // We need to find the Stage 1 name, then the Basic
+      const targets = [];
+      [{ zone: 'active', card: p.active, idx: null },
+       ...p.bench.map((b, i) => ({ zone: 'bench', card: b, idx: i }))
+      ].forEach(({ zone, card: bc, idx }) => {
+        if (bc?.supertype === 'Pokémon') targets.push({ zone, idx, name: bc.name });
+      });
+      if (!targets.length) { showToast('No Pokémon on board to evolve!', true); return; }
+      p.hand.splice(handIdx, 1); p.discard.push(card);
+      const stage2Idx = p.hand.findIndex(c => c === stage2);
+      if (stage2Idx !== -1) p.hand.splice(stage2Idx, 1);
+      if (targets.length === 1) {
+        const t = targets[0];
+        const target = t.zone === 'active' ? p.active : p.bench[t.idx];
+        stage2.damage = target.damage || 0; stage2.attachedEnergy = target.attachedEnergy || []; stage2.status = null;
+        if (t.zone === 'active') p.active = stage2; else p.bench[t.idx] = stage2;
+        addLog(`P${player} used Pokémon Breeder — ${target.name} → ${stage2.name}!`, true);
+        renderAll(); return;
+      }
+      closeActionMenu();
+      showActionMenu('Pokémon Breeder — choose target', targets.map(t => ({
+        label: `${t.zone === 'active' ? 'Active' : `Bench ${t.idx+1}`}: ${t.name}`,
+        fn: () => {
+          const target = t.zone === 'active' ? p.active : p.bench[t.idx];
+          stage2.damage = target.damage || 0; stage2.attachedEnergy = target.attachedEnergy || []; stage2.status = null;
+          if (t.zone === 'active') p.active = stage2; else p.bench[t.idx] = stage2;
+          addLog(`P${player} used Pokémon Breeder — ${target.name} → ${stage2.name}!`, true);
+          closeActionMenu(); renderAll();
+        }
+      })));
+    })();
+    return;
+  }
+
+  // ── Pokémon Flute ─────────────────────────────────
+  // Put a Basic Pokémon from opponent's discard onto their bench
+  if (name === 'Pokémon Flute') {
+    const oppBasics = opp.discard.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+    if (!oppBasics.length) { showToast("No Basic Pokémon in opponent's discard!", true); return; }
+    if (opp.bench.every(s => s !== null)) { showToast("Opponent's bench is full!", true); return; }
+    (async () => {
+      const picked = await openCardPicker({
+        title: "Pokémon Flute", subtitle: "Choose a Basic from opponent's discard to put on their bench",
+        cards: oppBasics, maxSelect: 1
+      });
+      if (!picked) { showToast('Pokémon Flute cancelled.'); return; }
+      consume();
+      const chosen = oppBasics[picked[0]];
+      const di = opp.discard.findIndex(c => c === chosen);
+      if (di !== -1) {
+        const moved = opp.discard.splice(di, 1)[0];
+        moved.damage = 0; moved.attachedEnergy = []; moved.status = null;
+        const freeSlot = opp.bench.findIndex(s => s === null);
+        opp.bench[freeSlot] = moved;
+        addLog(`P${player} used Pokémon Flute — ${moved.name} placed on opponent's bench.`, true);
+      }
+      renderAll();
+    })();
+    return;
+  }
+
   // ── Fallback for unimplemented trainers ───────────
   consume();
   addLog(`P${player} played ${name}. (effect not yet automated)`, true);
@@ -2468,6 +2724,124 @@ function applyStatus(target, status) {
 // ══════════════════════════════════════════════════
 // ATTACK
 // ══════════════════════════════════════════════════
+// ══════════════════════════════════════════════════
+// COIN-FLIP DAMAGE PARSING
+// ══════════════════════════════════════════════════
+// Returns { baseDmg, needsFlip } — baseDmg is the final resolved damage,
+// needsFlip means we already resolved via coin flips inside this function.
+async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
+  const text = atk.text || '';
+  const dmgStr = atk.damage || '0';
+  const baseDmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
+
+  // Pattern 1: "Flip a coin for each [Energy/Fighting/etc] energy attached...
+  //             This attack does N damage times the number of heads."
+  // e.g. Stone Barrage, Kingler Crabhammer, Clefable Metronome-ish
+  const perEnergyMatch = text.match(
+    /flip a coin for each [^\n.]*energy[^\n.]*/i
+  );
+  const timesHeadsMatch = text.match(
+    /(\d+)\s*damage.*times the number of heads/i
+  ) || text.match(/times the number of heads.*?(\d+)\s*damage/i);
+
+  if (perEnergyMatch && (timesHeadsMatch || baseDmg > 0)) {
+    const perFlip = timesHeadsMatch ? parseInt(timesHeadsMatch[1]) : baseDmg;
+    const numFlips = energyCount || 1;
+    let heads = 0;
+    for (let i = 0; i < numFlips; i++) {
+      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
+      if (result) heads++;
+    }
+    addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
+    return heads * perFlip;
+  }
+
+  // Pattern 2: "Flip N coins. This attack does X damage times the number of heads."
+  // e.g. Jigglypuff Lullaby-ish, Electrode Tackle, many others
+  const flipNMatch = text.match(/flip (\d+|a) coin[s]?[^.]*times the number of heads/i);
+  const timesHeadsMatch2 = text.match(/does (\d+) damage times the number of heads/i);
+  if (flipNMatch && timesHeadsMatch2) {
+    const rawN = flipNMatch[1];
+    const numFlips = rawN === 'a' ? 1 : parseInt(rawN);
+    const perFlip = parseInt(timesHeadsMatch2[1]);
+    let heads = 0;
+    for (let i = 0; i < numFlips; i++) {
+      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
+      if (result) heads++;
+    }
+    addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
+    return heads * perFlip;
+  }
+
+  // Pattern 3: "Flip a coin. If tails, this attack does nothing." / "If tails, no damage."
+  const tailsNothingMatch = text.match(/flip a coin\. if tails[^.]*(?:does nothing|no damage|attack fails)/i);
+  if (tailsNothingMatch && baseDmg > 0) {
+    const heads = await flipCoin(`${atk.name}: Heads = ${baseDmg} damage, Tails = no damage`);
+    if (!heads) {
+      addLog(`${atk.name}: TAILS — no damage!`);
+      return 0;
+    }
+    return baseDmg;
+  }
+
+  // Pattern 4: "Flip a coin. If heads, this attack does N more/extra damage."
+  const headsMoreMatch = text.match(/if heads.*?(?:does )?(\d+) more damage/i)
+    || text.match(/if heads.*?(\d+) additional damage/i);
+  if (headsMoreMatch && baseDmg > 0) {
+    const extra = parseInt(headsMoreMatch[1]);
+    const heads = await flipCoin(`${atk.name}: Heads = ${baseDmg + extra} damage, Tails = ${baseDmg} damage`);
+    if (heads) {
+      addLog(`${atk.name}: HEADS — +${extra} bonus damage!`);
+      return baseDmg + extra;
+    }
+    return baseDmg;
+  }
+
+  // Pattern 5: "Flip a coin. If heads, this attack does N damage instead of N2."
+  const headsInsteadMatch = text.match(/if heads.*?does (\d+) damage instead/i);
+  if (headsInsteadMatch) {
+    const altDmg = parseInt(headsInsteadMatch[1]);
+    const heads = await flipCoin(`${atk.name}: Heads = ${altDmg} damage, Tails = ${baseDmg} damage`);
+    return heads ? altDmg : baseDmg;
+  }
+
+  // Pattern 6: "If tails, [Pokémon name] does N damage to itself."
+  // e.g. Rapidash, Electrode, many others
+  const selfDmgMatch = text.match(/if tails[^.]*does (\d+) damage to itself/i);
+  if (selfDmgMatch && baseDmg > 0) {
+    const selfDmg = parseInt(selfDmgMatch[1]);
+    const heads = await flipCoin(`${atk.name}: Heads = no recoil, Tails = ${selfDmg} self-damage`);
+    if (!heads) {
+      // Apply self-damage now — KO check happens in caller
+      addLog(`${atk.name}: TAILS — ${myActive?.name || 'attacker'} takes ${selfDmg} recoil!`);
+      if (myActive) myActive.damage = (myActive.damage || 0) + selfDmg;
+    }
+    return baseDmg; // full damage to opponent regardless
+  }
+
+  // Pattern 7: "Flip a number of coins equal to [something]. Does N damage × heads."
+  // e.g. Chansey Doubleslap ("flip a number of coins equal to the number of damage counters")
+  const equalToMatch = text.match(/flip a number of coins equal to[^.]+/i);
+  const timesHeadsMatch3 = text.match(/(\d+) damage.*times the number of heads/i);
+  if (equalToMatch && timesHeadsMatch3) {
+    // For Chansey-style: number of coins = damage counters on defending / 10
+    // Approximate: use opponent's current damage / 10, min 1
+    const oppActive = G.players[player === 1 ? 2 : 1].active;
+    const numFlips = Math.max(1, Math.floor((oppActive?.damage || 0) / 10));
+    const perFlip = parseInt(timesHeadsMatch3[1]);
+    let heads = 0;
+    for (let i = 0; i < numFlips; i++) {
+      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
+      if (result) heads++;
+    }
+    addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
+    return heads * perFlip;
+  }
+
+  // No coin-flip damage pattern — return base damage unchanged (no flip needed)
+  return null; // null = use normal damage pipeline
+}
+
 async function performAttack(player, atk) {
   const opp = player === 1 ? 2 : 1;
   const myActive = G.players[player].active;
@@ -2503,9 +2877,14 @@ async function performAttack(player, atk) {
     }
   }
 
-  // Apply damage
+  // Apply damage — check for coin-flip damage patterns first
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
+
+  // Resolve coin-flip damage if the attack text requires it
+  const energyCount = (myActive?.attachedEnergy || []).length;
+  const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
+  if (coinDmg !== null) dmg = coinDmg;
 
   if (dmg > 0) {
     // PlusPower bonus (card attached to attacker)
@@ -3278,19 +3657,37 @@ let CARD_DATA = {};
 })();
 
 function enrichCard(card) {
+  if (!card) return card;
   const full = CARD_DATA[card.id];
-  if (!full) return card;
+  // Always ensure array fields are arrays (Firebase can return null for empty arrays)
+  const safeSubtypes = Array.isArray(card.subtypes) ? card.subtypes :
+    (full?.subtypes || []);
+  const safeAttacks = Array.isArray(card.attacks) && card.attacks.length ? card.attacks :
+    (full?.attacks || []);
+  if (!full) {
+    return {
+      ...card,
+      subtypes: safeSubtypes,
+      attacks: safeAttacks,
+      weaknesses: Array.isArray(card.weaknesses) ? card.weaknesses : [],
+      resistances: Array.isArray(card.resistances) ? card.resistances : [],
+      retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
+      convertedRetreatCost: card.convertedRetreatCost || 0,
+      attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
+    };
+  }
   return {
     ...card,
-    subtypes: card.subtypes?.length ? card.subtypes : (full.subtypes || []),
-    evolvesFrom: full.evolvesFrom || null,
-    rules: full.rules || [],
-    attacks: card.attacks?.length ? card.attacks : (full.attacks || []),
+    subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
+    evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
+    rules: full.rules || card.rules || [],
+    attacks: safeAttacks,
     hp: card.hp || full.hp || '0',
     weaknesses: full.weaknesses || [],
     resistances: full.resistances || [],
     retreatCost: full.retreatCost || [],
     convertedRetreatCost: full.convertedRetreatCost || 0,
+    attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
   };
 }
 
