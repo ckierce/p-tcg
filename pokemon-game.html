@@ -1119,7 +1119,7 @@ html, body {
 
       <!-- OPPONENT ZONE (compact) -->
       <div id="opponent-zone">
-        <span class="opp-label">PLAYER 2</span>
+        <span class="opp-label" id="opp-label">PLAYER 2</span>
 
         <!-- Opp active -->
         <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2)">
@@ -2181,6 +2181,8 @@ function playTrainer(player, handIdx) {
 }
 
 function onActiveClick(player) {
+  // Remap slot IDs to actual players based on perspective
+  if (myRole === 2) player = player === 1 ? 2 : 1;
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player) {
     attachEnergy(player, G.pendingAction.handIdx, 'active');
     G.pendingAction = null; clearHighlights(); return;
@@ -2335,6 +2337,8 @@ function executeRetreat(player, benchIdx) {
 }
 
 function handleBenchClick(player, slotIdx) {
+  // Remap slot IDs to actual players based on perspective
+  if (myRole === 2) player = player === 1 ? 2 : 1;
   const slot = G.players[player].bench[slotIdx];
 
   // During PROMOTE phase — only the KO'd player can act, and only to pick a bench slot
@@ -2787,6 +2791,7 @@ function renderAll() {
   updateDeckCounts();
   updatePhase();
   updateTurnBadge();
+  updatePerspectiveLabels();
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   // Networked: push state and apply role-based visibility
   if (myRole !== 'hotseat' && myRole !== null && G.started) {
@@ -2795,10 +2800,33 @@ function renderAll() {
   }
 }
 
+function updatePerspectiveLabels() {
+  if (myRole !== 2) return;
+  // For P2: top zone shows P1 (opponent), bottom zone shows P2 (self)
+  const oppLabel = document.getElementById('opp-label');
+  if (oppLabel) oppLabel.textContent = 'PLAYER 1';
+  const activeLabel = document.querySelector('.active-label');
+  if (activeLabel) activeLabel.style.color = 'var(--p2color)';
+  const deckBorder = document.querySelector('.player-deck-slot');
+  if (deckBorder) deckBorder.style.borderColor = 'var(--p2color)';
+  const deckCount = document.getElementById('deck-count-p1');
+  if (deckCount) deckCount.style.color = 'var(--p2color)';
+  // Flip active border color
+  const activeP1El = document.getElementById('active-p1');
+  if (activeP1El) { activeP1El.style.borderColor = 'var(--p2color)'; activeP1El.style.boxShadow = '0 4px 16px rgba(245,101,101,.15)'; }
+}
+
 function renderField(player) {
+  // In networked mode as P2, swap the display zones:
+  // P2's cards go in the "bottom" (p1) slots, P1's cards go in the "top" (p2) slots
+  const isP2Perspective = (myRole === 2);
+  const bottomPlayer = isP2Perspective ? 2 : 1;  // who renders in bottom zone
+  const topPlayer    = isP2Perspective ? 1 : 2;  // who renders in top zone
+
   const p = G.players[player];
 
-  if (player === 1) {
+  if (player === bottomPlayer) {
+    // Render in the bottom "player" zone
     const activeEl = document.getElementById('active-p1');
     renderSlotP1(activeEl, p.active);
     for (let i = 0; i < 5; i++) {
@@ -2812,8 +2840,11 @@ function renderField(player) {
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISCARD</span>`;
     }
+    // Bottom hand label color
+    const label1 = document.getElementById('hand-label-p1');
+    if (label1) label1.style.color = isP2Perspective ? 'var(--p2color)' : 'var(--p1color)';
   } else {
-    // Opponent active
+    // Render in the top "opponent" zone
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
@@ -2986,18 +3017,20 @@ function renderSidebarP2Hand() {
 
 function renderPrizes(player) {
   const prizes = G.players[player].prizes;
+  // In P2 perspective: P2's prizes go in the bottom (prizes-p1), P1's in the top (prizes-p2)
+  const isP2Persp = (myRole === 2);
+  const bottomPlayer = isP2Persp ? 2 : 1;
 
-  if (player === 1) {
+  if (player === bottomPlayer) {
+    // Bottom zone — full prize grid (local player's prizes)
     const container = document.getElementById('prizes-p1');
     container.innerHTML = prizes.map((p, i) => {
       if (!p) return `<div class="prize-slot gone"></div>`;
-      if (p.revealed) {
-        return `<div class="prize-slot"><img src="${p.card.images?.small || ''}" alt="${p.card.name}"></div>`;
-      }
+      if (p.revealed) return `<div class="prize-slot"><img src="${p.card.images?.small || ''}" alt="${p.card.name}"></div>`;
       return `<div class="prize-slot face-down" title="Prize ${i+1}"></div>`;
     }).join('');
   } else {
-    // P2 prizes in opponent zone — small pips
+    // Top zone — small pips (opponent's prizes)
     const container = document.getElementById('prizes-p2');
     container.innerHTML = prizes.map((p) => {
       if (!p) return `<div class="opp-prize-pip gone"></div>`;
@@ -3011,17 +3044,23 @@ function renderPrizesTab() {
   const content = document.getElementById('sidebar-content');
   const p1prizes = G.players[1].prizes;
   const p2prizes = G.players[2].prizes;
+  const myPrizes  = myRole === 2 ? p2prizes : p1prizes;
+  const oppPrizes = myRole === 2 ? p1prizes : p2prizes;
+  const myLabel   = myRole === 2 ? 'YOUR PRIZES' : 'P1 PRIZES';
+  const oppLabel  = myRole === 2 ? 'OPP PRIZES'  : 'P2 PRIZES';
+  const myColor   = myRole === 2 ? 'var(--p2color)' : 'var(--p1color)';
+  const oppColor  = myRole === 2 ? 'var(--p1color)' : 'var(--p2color)';
   content.innerHTML = `
-    <div style="font-size:8px;color:var(--p1color);margin-bottom:6px">P1 PRIZES (${p1prizes.filter(p=>p).length} left)</div>
+    <div style="font-size:8px;color:${myColor};margin-bottom:6px">${myLabel} (${myPrizes.filter(p=>p).length} left)</div>
     <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px;margin-bottom:12px">
-      ${p1prizes.map(p => !p
+      ${myPrizes.map(p => !p
         ? `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;opacity:.15"></div>`
         : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted)">?</div>`
       ).join('')}
     </div>
-    <div style="font-size:8px;color:var(--p2color);margin-bottom:6px">P2 PRIZES (${p2prizes.filter(p=>p).length} left)</div>
+    <div style="font-size:8px;color:${oppColor};margin-bottom:6px">${oppLabel} (${oppPrizes.filter(p=>p).length} left)</div>
     <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px">
-      ${p2prizes.map(p => !p
+      ${oppPrizes.map(p => !p
         ? `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;opacity:.15"></div>`
         : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted)">?</div>`
       ).join('')}
@@ -3029,10 +3068,13 @@ function renderPrizesTab() {
 }
 
 function updateDeckCounts() {
+  const isP2Persp = (myRole === 2);
+  const bottomPlayer = isP2Persp ? 2 : 1;
+  const topPlayer    = isP2Persp ? 1 : 2;
   const el1 = document.getElementById('deck-count-p1');
-  if (el1) el1.innerHTML = `${G.players[1].deck.length}<span>cards</span>`;
+  if (el1) el1.innerHTML = `${G.players[bottomPlayer].deck.length}<span>cards</span>`;
   const el2 = document.getElementById('deck-count-p2');
-  if (el2) el2.innerHTML = `${G.players[2].deck.length}<br><span style="font-size:6px">deck</span>`;
+  if (el2) el2.innerHTML = `${G.players[topPlayer].deck.length}<br><span style="font-size:6px">deck</span>`;
 }
 
 function updatePhase() {
@@ -3403,6 +3445,8 @@ async function createRoom() {
         if (ws) ws.textContent = '✅ Player 2 has joined and loaded a deck!';
       }
       checkBothReady(data);
+      // During SETUP: merge opponent's slot (P2's active/bench) into our local G
+      if (data.setup_p2 && G.phase === 'SETUP') mergeSetupSlot(2, data.setup_p2);
       // Game just started — receive initial state
       if (data.state?.started) receiveGameState(data.state);
     } else {
@@ -3449,6 +3493,8 @@ async function joinRoom() {
         const el = document.getElementById('p1-ready-status');
         if (el) el.textContent = '✅ Player 1 has loaded a deck';
       }
+      // During SETUP: merge opponent's slot (P1's active/bench) into our local G
+      if (data.setup_p1 && G.phase === 'SETUP') mergeSetupSlot(1, data.setup_p1);
       if (data.state?.started) receiveGameState(data.state);
     } else {
       // Game running — receive P1's moves
@@ -3490,17 +3536,38 @@ function serializeG(g) {
   }));
 }
 
+// ── Merge opponent's setup slot without overwriting our own ──
+function mergeSetupSlot(playerNum, slotData) {
+  if (!slotData) return;
+  const p = G.players[playerNum];
+  p.active = slotData.active ? enrichCard(slotData.active) : null;
+  p.bench = (slotData.bench || [null,null,null,null,null]).map(c => c ? enrichCard(c) : null);
+  // Re-render just the field without pushing (we're receiving)
+  renderField(1);
+  renderField(2);
+}
+
 // ── Push state to Firebase ────────────────────────
 async function pushGameState() {
   if (!gameRef || myRole === 'hotseat') return;
-  // Only push if it's our turn to act (prevents echo when receiving opponent state)
   const shouldPush = G.phase === 'SETUP' ||
     G.turn === myRole ||
     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
   if (!shouldPush) return;
   isWriting = true;
   try {
-    await gameRef.update({ state: serializeG(G) });
+    if (G.phase === 'SETUP') {
+      // During setup only push our own player slot to avoid overwriting opponent
+      const myP = G.players[myRole];
+      await gameRef.update({
+        [`setup_p${myRole}`]: serializeG({
+          active: myP.active,
+          bench: myP.bench,
+        })
+      });
+    } else {
+      await gameRef.update({ state: serializeG(G) });
+    }
   } finally {
     isWriting = false;
   }
@@ -3534,6 +3601,11 @@ function receiveGameState(state) {
 
   // Hide setup screen and show board
   document.getElementById('setup-screen').style.display = 'none';
+  // Restore button text if transitioning out of SETUP
+  if (G.phase !== 'SETUP') {
+    const endBtn = document.getElementById('end-turn-btn');
+    if (endBtn) endBtn.textContent = 'END TURN';
+  }
   // Render without pushing (we're receiving, not acting)
   renderHands();
   renderField(1);
@@ -3557,32 +3629,44 @@ function isMyTurn() {
 
 function applyRoleVisibility() {
   if (myRole === 'hotseat' || myRole === null) return;
+
   // P1's hand cards — disable if not P1
   document.querySelectorAll('#hand-p1 .hand-card').forEach(el => {
     el.style.opacity = myRole === 1 ? '' : '0.35';
     el.style.pointerEvents = myRole === 1 ? '' : 'none';
   });
-  // P2 sidebar hand cards — disable if not P2
+  // Opponent hand in sidebar — always face down / non-interactive
   document.querySelectorAll('#hand-p2 .hand-card').forEach(el => {
-    el.style.opacity = myRole === 2 ? '' : '0.35';
-    el.style.pointerEvents = myRole === 2 ? '' : 'none';
+    el.style.pointerEvents = 'none';
   });
-  // END TURN button — only active player
+
+  // DONE SETUP / END TURN button
   const endBtn = document.getElementById('end-turn-btn');
   if (endBtn) {
-    const canAct = G.phase === 'SETUP' || G.turn === myRole ||
-                   (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
-    endBtn.style.opacity = canAct ? '' : '0.4';
-    endBtn.style.pointerEvents = canAct ? '' : 'none';
+    if (G.phase === 'SETUP') {
+      // Only P1 can click DONE SETUP
+      endBtn.style.opacity = myRole === 1 ? '' : '0.4';
+      endBtn.style.pointerEvents = myRole === 1 ? '' : 'none';
+      if (myRole === 2) endBtn.textContent = 'WAITING...';
+    } else {
+      const canAct = G.turn === myRole ||
+                     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
+      endBtn.style.opacity = canAct ? '' : '0.4';
+      endBtn.style.pointerEvents = canAct ? '' : 'none';
+    }
   }
-  // Bench slot clicks — block opponent's bench from being acted on
+
+  // LOAD button — lock to own player in networked mode
+  const loadBtn = document.querySelector('.top-bar-btn:not(.primary)');
+  if (loadBtn) loadBtn.setAttribute('onclick', `openLoadModal(${myRole})`);
+
+  // Bench slots — block opponent's bench from being misclicked except during PROMOTE
   for (let i = 0; i < 5; i++) {
-    const oppSlot = document.getElementById(`bench-p${myRole === 1 ? 2 : 1}-${i}`);
-    // Only block during PROMOTE if it's not your promotion to resolve
-    if (oppSlot && G.phase === 'PROMOTE' && G.pendingPromotion !== myRole) {
-      oppSlot.style.pointerEvents = 'none';
-    } else if (oppSlot) {
-      oppSlot.style.pointerEvents = '';
+    // In P2 perspective, top slots are P1's (opp), bottom slots are P2's (self)
+    // In P1 perspective, top slots are P2's (opp), bottom slots are P1's (self)
+    const oppVisualSlot = document.getElementById(`bench-p${myRole === 2 ? 1 : 2}-${i}`);
+    if (oppVisualSlot && G.phase !== 'PROMOTE') {
+      oppVisualSlot.style.pointerEvents = '';  // keep clickable — handleBenchClick guards player
     }
   }
 }
