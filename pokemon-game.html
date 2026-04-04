@@ -1760,7 +1760,7 @@ function getActionsForCard(player, card, handIdx) {
     if (hasBench) actions.push({ label: 'Attach to Bench...', fn: () => startEnergyAttach(player, handIdx) });
   }
   if (!isSetup && card.supertype === 'Trainer') {
-    actions.push({ label: 'Play Trainer', fn: () => playTrainer(player, handIdx) });
+    actions.push({ label: 'Play Trainer', fn: async () => { closeActionMenu(); await playTrainer(player, handIdx); } });
   }
   return actions;
 }
@@ -2751,7 +2751,7 @@ function showFieldActionMenu(player, zone, benchIdx) {
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost);
         actions.push({
           label: `⚔ ${atk.name} (${costStr}) — ${dmg}`,
-          fn: canAfford ? () => { performAttack(player, atk); closeActionMenu(); } : null,
+          fn: canAfford ? async () => { closeActionMenu(); await performAttack(player, atk); } : null,
           disabled: !canAfford,
           tooltip: canAfford ? null : 'Not enough energy'
         });
