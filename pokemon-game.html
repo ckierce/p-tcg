@@ -2278,25 +2278,32 @@ function getActionsForCard(player, card, handIdx) {
     const evolvesFrom = card.evolvesFrom;
     if (evolvesFrom) {
       const evolvedUids = G.evolvedThisTurn || [];
+      const prehistoric = prehistoricPowerActive();
       // Check active
       if (p.active?.name === evolvesFrom) {
         const justEvolved = evolvedUids.includes(p.active.uid);
+        const blocked = prehistoric || justEvolved;
+        const tooltip = prehistoric ? 'Aerodactyl\u2019s Prehistoric Power prevents evolution'
+                       : justEvolved ? 'Cannot evolve again this turn' : null;
         actions.push({
           label: `Evolve Active (${evolvesFrom} → ${card.name})`,
-          fn: justEvolved ? null : () => evolve(player, handIdx, 'active', null),
-          disabled: justEvolved,
-          tooltip: justEvolved ? 'Cannot evolve again this turn' : null
+          fn: blocked ? null : () => evolve(player, handIdx, 'active', null),
+          disabled: blocked,
+          tooltip
         });
       }
       // Check bench
       p.bench.forEach((b, i) => {
         if (b?.name === evolvesFrom) {
           const justEvolved = evolvedUids.includes(b.uid);
+          const blocked = prehistoric || justEvolved;
+          const tooltip = prehistoric ? 'Aerodactyl\u2019s Prehistoric Power prevents evolution'
+                         : justEvolved ? 'Cannot evolve again this turn' : null;
           actions.push({
             label: `Evolve Bench ${i+1} (${evolvesFrom} → ${card.name})`,
-            fn: justEvolved ? null : () => evolve(player, handIdx, 'bench', i),
-            disabled: justEvolved,
-            tooltip: justEvolved ? 'Cannot evolve again this turn' : null
+            fn: blocked ? null : () => evolve(player, handIdx, 'bench', i),
+            disabled: blocked,
+            tooltip
           });
         }
       });
@@ -2342,6 +2349,11 @@ function playAsActive(player, handIdx) {
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; card.status = null;
   p.active = card;
+  // Mark as played this turn — cannot evolve until next turn
+  if (G.phase !== 'SETUP') {
+    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+    G.evolvedThisTurn.push(card.uid);
+  }
   addLog(`Player ${player} played ${card.name} as their Active Pokémon.`, true);
   renderAll();
 }
@@ -2380,6 +2392,11 @@ function startBenchPlay(player, handIdx) {
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; card.status = null;
   p.bench[freeSlot] = card;
+  // Mark as played this turn — cannot evolve until next turn
+  if (G.phase !== 'SETUP') {
+    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+    G.evolvedThisTurn.push(card.uid);
+  }
   G.pendingAction = null;
   addLog(`Player ${player} played ${card.name} to the bench.`);
   renderAll();
@@ -2824,8 +2841,10 @@ async function playTrainer(player, handIdx) {
     const hasActive = !!p.active;
     const benchFull = p.bench.every(s => s !== null);
     if (hasActive && benchFull) { showToast('Bench is full!', true); return; }
+    const fossilUid = `fossil-${Math.random().toString(36).slice(2,9)}`;
     const fossil = {
       id: card.id, name: 'Mysterious Fossil',
+      uid: fossilUid,
       supertype: 'Pokémon', subtypes: ['Basic'],
       hp: '10', attacks: [], attachedEnergy: [],
       damage: 0, status: null,
@@ -2835,6 +2854,9 @@ async function playTrainer(player, handIdx) {
       canRetreat: false,
     };
     consume();
+    // Mark fossil as played this turn — cannot be evolved until next turn
+    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+    G.evolvedThisTurn.push(fossilUid);
     if (!hasActive) {
       // No active yet — play as Active
       p.active = fossil;
@@ -3907,6 +3929,20 @@ async function performAttack(player, atk) {
     addLog(`P${player} used ${atk.name}!`, true);
   }
 
+  // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
+  if (/draw a card/i.test(atk.text || '')) {
+    drawCard(player, true);
+    addLog(`${atk.name}: ${myActive?.name || 'attacker'} drew a card.`, true);
+  }
+
+  // ── Draw N cards: "Draw N cards." ──
+  const drawNMatch = (atk.text || '').match(/draw (\d+) cards?/i);
+  if (drawNMatch) {
+    const n = parseInt(drawNMatch[1]);
+    for (let i = 0; i < n; i++) drawCard(player, true);
+    addLog(`${atk.name}: drew ${n} card(s).`, true);
+  }
+
   // ── Self-heal effect: "Remove all damage counters from [Pokémon]" ──
   const healAllMatch = (atk.text || '').match(/remove all damage counters from/i);
   if (healAllMatch && myActive) {
@@ -4310,7 +4346,7 @@ function renderField(player) {
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-          <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+          <div class="energy-overlay" style="max-height:100px">${energyPips}</div>${dmg}${status}${badges}`;
       }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
@@ -4389,8 +4425,10 @@ function renderSlotP1(el, card) {
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
   const imgSrc = card.images?.small || '';
 
+  const slotH = el.clientHeight || (isActive ? 200 : 72);
+  const energyMaxH = isActive ? `max-height:${slotH}px` : '';
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
-    <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}`;
+    <div class="${energyClass}" style="${energyMaxH}">${energyPips}</div>${dmg}${status}${badges}`;
   if (wasHighlighted) el.classList.add('highlight');
 }
 
@@ -5205,6 +5243,18 @@ function isMukActive() {
     const p = G.players[pNum];
     const all = [p.active, ...p.bench].filter(Boolean);
     if (all.some(c => hasPower(c, 'Toxic Gas'))) return true;
+  }
+  return false;
+}
+
+// Aerodactyl's Prehistoric Power: no Pokémon can evolve while Aerodactyl is in play.
+// Muk's Toxic Gas suppresses this power (Muk wins), otherwise it blocks all evolution.
+function prehistoricPowerActive() {
+  if (isMukActive()) return false; // Toxic Gas suppresses Prehistoric Power
+  for (const pNum of [1, 2]) {
+    const p = G.players[pNum];
+    const all = [p.active, ...p.bench].filter(Boolean);
+    if (all.some(c => hasPower(c, 'Prehistoric Power'))) return true;
   }
   return false;
 }
