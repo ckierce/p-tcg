@@ -493,7 +493,8 @@ html, body {
 
 .zone-slot-empty { text-align: center; line-height: 1.6; }
 
-/* Energy — vertical column to the right of active cards */
+/* Energy — vertical column to the right of active cards.
+   Wraps into multiple columns when there are many icons (flex-wrap + limited height). */
 .energy-overlay {
   position: absolute;
   top: 50%;
@@ -501,13 +502,16 @@ html, body {
   left: calc(100% + 5px);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
   gap: 4px;
+  max-height: var(--active-h, 200px);
   z-index: 4;
   pointer-events: none;
 }
 
-/* Energy — horizontal row below bench cards */
+/* Energy — horizontal row below bench cards; wraps into second row if needed */
 .energy-overlay-bench {
   position: absolute;
   top: calc(100% + 4px);
@@ -515,8 +519,11 @@ html, body {
   transform: translateX(-50%);
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
   gap: 3px;
+  max-width: 120px;
   z-index: 4;
   pointer-events: none;
 }
@@ -2270,14 +2277,27 @@ function getActionsForCard(player, card, handIdx) {
       (card.subtypes?.includes('Stage 1') || card.subtypes?.includes('Stage 2'))) {
     const evolvesFrom = card.evolvesFrom;
     if (evolvesFrom) {
+      const evolvedUids = G.evolvedThisTurn || [];
       // Check active
       if (p.active?.name === evolvesFrom) {
-        actions.push({ label: `Evolve Active (${evolvesFrom} → ${card.name})`, fn: () => evolve(player, handIdx, 'active', null) });
+        const justEvolved = evolvedUids.includes(p.active.uid);
+        actions.push({
+          label: `Evolve Active (${evolvesFrom} → ${card.name})`,
+          fn: justEvolved ? null : () => evolve(player, handIdx, 'active', null),
+          disabled: justEvolved,
+          tooltip: justEvolved ? 'Cannot evolve again this turn' : null
+        });
       }
       // Check bench
       p.bench.forEach((b, i) => {
         if (b?.name === evolvesFrom) {
-          actions.push({ label: `Evolve Bench ${i+1} (${evolvesFrom} → ${card.name})`, fn: () => evolve(player, handIdx, 'bench', i) });
+          const justEvolved = evolvedUids.includes(b.uid);
+          actions.push({
+            label: `Evolve Bench ${i+1} (${evolvesFrom} → ${card.name})`,
+            fn: justEvolved ? null : () => evolve(player, handIdx, 'bench', i),
+            disabled: justEvolved,
+            tooltip: justEvolved ? 'Cannot evolve again this turn' : null
+          });
         }
       });
     }
@@ -2344,6 +2364,10 @@ function evolve(player, handIdx, zone, benchIdx) {
     p.bench[benchIdx] = evoCard;
   }
 
+  // Track that this card was just evolved — cannot be evolved again this turn
+  if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+  G.evolvedThisTurn.push(evoCard.uid);
+
   addLog(`Player ${player} evolved ${target.name} into ${evoCard.name}!`, true);
   renderAll();
 }
@@ -2389,11 +2413,16 @@ function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = fa
     p.hand.splice(handIdx, 0, energy); return;
   }
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
+  const isDCE = /double colorless/i.test(energy.name);
   targetCard.attachedEnergy.push(energy);
+  if (isDCE) {
+    // Double Colorless Energy provides 2 Colorless tokens — add a second copy
+    targetCard.attachedEnergy.push({ ...energy, uid: energy.uid + '_b' });
+  }
   if (!isRainDance) G.energyPlayedThisTurn = true;
   G.pendingAction = null;
   clearHighlights();
-  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}.`);
+  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}${isDCE ? ' (2 energy)' : ''}.`);
   renderAll();
 }
 
@@ -3747,6 +3776,41 @@ async function performAttack(player, atk) {
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
 
+  // ── Extra-energy bonus damage: "does N more damage for each [Type] Energy beyond the first" ──
+  // Covers Water Gun (Lapras), Surf (Lapras), many Jungle/Fossil attacks
+  const extraEnergyMatch = (atk.text || '').match(
+    /does? (\d+) (?:more|extra|additional) damage for each (?:extra )?(\w+) energy[^.]*beyond the first/i
+  );
+  if (extraEnergyMatch) {
+    const bonusPerEnergy = parseInt(extraEnergyMatch[1]);
+    const requiredType   = extraEnergyMatch[2];
+    const typeEnergies   = (myActive?.attachedEnergy || []).filter(e =>
+      new RegExp(requiredType, 'i').test(e.name)
+    );
+    const extras = Math.max(0, typeEnergies.length - 1);
+    if (extras > 0) {
+      dmg += extras * bonusPerEnergy;
+      addLog(`${atk.name}: +${extras * bonusPerEnergy} bonus damage (${extras} extra ${requiredType} Energy).`);
+    }
+  }
+
+  // ── Extra-energy bonus (no "beyond first" variant): "does N more damage for each [Type] Energy" ──
+  // e.g. some attacks that scale purely with energy count
+  const extraEnergySimple = !extraEnergyMatch && (atk.text || '').match(
+    /does? (\d+) (?:more|extra|additional) damage for each (\w+) energy attached/i
+  );
+  if (extraEnergySimple) {
+    const bonusPerEnergy = parseInt(extraEnergySimple[1]);
+    const requiredType   = extraEnergySimple[2];
+    const typeEnergies   = (myActive?.attachedEnergy || []).filter(e =>
+      new RegExp(requiredType, 'i').test(e.name)
+    );
+    if (typeEnergies.length > 0) {
+      dmg += typeEnergies.length * bonusPerEnergy;
+      addLog(`${atk.name}: +${typeEnergies.length * bonusPerEnergy} bonus damage (${typeEnergies.length} ${requiredType} Energy).`);
+    }
+  }
+
   // ── Bench splash damage: "Does N damage to each Pokémon on each player's Bench" ──
   // e.g. Selfdestruct, Explosion — runs before active damage so KO/endTurn sequencing is clean
   const benchSplashMatch = (atk.text || '').match(/does (\d+) damage to each pok[eé]mon on each player[''s]* bench/i);
@@ -4121,6 +4185,7 @@ function endTurn() {
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
+  G.evolvedThisTurn = [];
   G.plusPowerActive = 0;
   G.pendingAction = null;
   clearHighlights();
