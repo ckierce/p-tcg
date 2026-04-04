@@ -6309,42 +6309,45 @@ async function aiChooseAndAttack() {
 }
 
 // ── Hook into endTurn to trigger AI ─────────────────
-const _originalEndTurn = endTurn;
-function endTurn() {
-  _originalEndTurn();
-  // After turn flips to P2, trigger AI
-  if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-    aiThinking = false;
-    setTimeout(() => aiTakeTurn(), 900);
-  }
+{
+  const _orig = endTurn;
+  endTurn = function() {
+    _orig();
+    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+      aiThinking = false;
+      setTimeout(() => aiTakeTurn(), 900);
+    }
+  };
 }
 
 // ── Hook into resolvePromotion to handle AI promotion ─
-const _originalResolvePromotion = resolvePromotion;
-function resolvePromotion(player, benchIdx) {
-  _originalResolvePromotion(player, benchIdx);
-  // If AI just KO'd P1's active and it's now P2's turn, trigger AI
-  if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-    aiThinking = false;
-    setTimeout(() => aiTakeTurn(), 900);
-  }
+{
+  const _orig = resolvePromotion;
+  resolvePromotion = function(player, benchIdx) {
+    _orig(player, benchIdx);
+    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+      aiThinking = false;
+      setTimeout(() => aiTakeTurn(), 900);
+    }
+  };
 }
 
 // ── AI auto-handles its own promotion ───────────────
 // Intercept checkKO to detect when AI needs to pick a new active
-const _originalCheckKO = checkKO;
-function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
-  const result = _originalCheckKO(attackingPlayer, defendingPlayer, card, isSelf);
-  if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
-    setTimeout(() => aiDoPromotion(), 700);
-  }
-  return result;
+{
+  const _orig = checkKO;
+  checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
+    const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
+    if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
+      setTimeout(() => aiDoPromotion(), 700);
+    }
+    return result;
+  };
 }
 
 function aiDoPromotion() {
   if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
   const p2 = G.players[2];
-  // Pick bench slot with most HP remaining
   let bestIdx = -1, bestScore = -1;
   for (let i = 0; i < 5; i++) {
     if (!p2.bench[i]) continue;
@@ -6353,28 +6356,31 @@ function aiDoPromotion() {
     const score = hp - dmg;
     if (score > bestScore) { bestScore = score; bestIdx = i; }
   }
-  if (bestIdx === -1) return; // no bench available
+  if (bestIdx === -1) return;
   resolvePromotion(2, bestIdx);
 }
 
 // ── Hook into doneSetup to trigger AI setup completion ─
-const _originalDoneSetup = doneSetup;
-function doneSetup() {
-  // When human clicks DONE SETUP, AI must also have an active
-  if (vsComputer && !G.players[2].active) {
-    aiDoSetup();
-  }
-  _originalDoneSetup();
+{
+  const _orig = doneSetup;
+  doneSetup = function() {
+    if (vsComputer && !G.players[2].active) {
+      aiDoSetup();
+    }
+    _orig();
+  };
 }
 
 // ── Watch loadDeck to detect P1 deck load in VS CPU mode ─
-const _originalLoadDeck = loadDeck;
-async function loadDeck(deckName) {
-  await _originalLoadDeck(deckName);
-  // If in vs-computer-panel, update status
-  if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
-    checkVsCpuReady();
-  }
+// Patch loadDeck to detect VS CPU deck load completion
+{
+  const _origLoad = loadDeck;
+  loadDeck = async function(deckName) {
+    await _origLoad(deckName);
+    if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
+      checkVsCpuReady();
+    }
+  };
 }
 
 // ══════════════════════════════════════════════════
