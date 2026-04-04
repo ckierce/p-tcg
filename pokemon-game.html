@@ -1182,6 +1182,8 @@ html, body {
   position: fixed; inset: 0; z-index: 960;
   align-items: center; justify-content: center;
   pointer-events: none;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
 }
 #move-flash.show { display: flex; }
 #move-flash-inner {
@@ -1194,6 +1196,8 @@ html, body {
   gap: 10px;
   animation: moveFlashAnim 3.5s ease-out forwards;
   max-width: 460px;
+  background: var(--surface);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
 }
 @keyframes moveFlashAnim {
   0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
@@ -1203,12 +1207,12 @@ html, body {
   100% { opacity: 0; transform: scale(0.97) translateY(6px); }
 }
 #move-flash.p1 #move-flash-inner {
-  background: rgba(91,156,246,0.12);
   border: 2px solid var(--p1color);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(91,156,246,0.2);
 }
 #move-flash.p2 #move-flash-inner {
-  background: rgba(245,101,101,0.12);
   border: 2px solid var(--p2color);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(245,101,101,0.2);
 }
 #move-flash-who {
   font-size: 8px;
