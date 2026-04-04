@@ -2622,34 +2622,37 @@ function endTurn() {
     return;
   }
   const prev = G.turn;
-  const prevActive = G.players[prev].active;
 
-  // Apply between-turn status effects to the player whose turn just ended
-  if (prevActive) {
-    // Poison: 10 damage (or 20 for toxic — stored as 'poisoned-toxic')
-    if (prevActive.status === 'poisoned' || prevActive.status === 'poisoned-toxic') {
-      const dmg = prevActive.status === 'poisoned-toxic' ? 20 : 10;
-      prevActive.damage = (prevActive.damage || 0) + dmg;
-      addLog(`${prevActive.name} took ${dmg} Poison damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      const opp = prev === 1 ? 2 : 1;
-      const poisonKo = checkKO(opp, prev, prevActive, false); // opp=attacker gets prize, prev=owner loses pokemon
-      if (poisonKo === 'win') { renderAll(); return; }
-      if (poisonKo === 'promote') { renderAll(); return; }
+  // Apply between-turn status effects to ALL active Pokémon (both players)
+  // Poison and Burn tick once per turn boundary regardless of whose turn it was
+  for (const pNum of [1, 2]) {
+    const active = G.players[pNum].active;
+    const oppNum = pNum === 1 ? 2 : 1;
+    if (!active) continue;
+
+    if (active.status === 'poisoned' || active.status === 'poisoned-toxic') {
+      const dmg = active.status === 'poisoned-toxic' ? 20 : 10;
+      active.damage = (active.damage || 0) + dmg;
+      addLog(`${active.name} took ${dmg} Poison damage! (${active.damage}/${active.hp} HP)`);
+      const koResult = checkKO(oppNum, pNum, active, false);
+      if (koResult === 'win') { renderAll(); return; }
+      if (koResult === 'promote') { renderAll(); return; }
     }
-    // Burn: 20 damage
-    if (prevActive.status === 'burned') {
-      prevActive.damage = (prevActive.damage || 0) + 20;
-      addLog(`${prevActive.name} took 20 Burn damage! (${prevActive.damage}/${prevActive.hp} HP)`);
-      const opp = prev === 1 ? 2 : 1;
-      const burnKo = checkKO(opp, prev, prevActive, false); // opp=attacker gets prize, prev=owner loses pokemon
-      if (burnKo === 'win') { renderAll(); return; }
-      if (burnKo === 'promote') { renderAll(); return; }
+
+    if (active.status === 'burned') {
+      active.damage = (active.damage || 0) + 20;
+      addLog(`${active.name} took 20 Burn damage! (${active.damage}/${active.hp} HP)`);
+      const koResult = checkKO(oppNum, pNum, active, false);
+      if (koResult === 'win') { renderAll(); return; }
+      if (koResult === 'promote') { renderAll(); return; }
     }
-    // Paralysis wears off after one turn
-    if (prevActive.status === 'paralyzed') {
-      prevActive.status = null;
-      addLog(`${prevActive.name} is no longer Paralyzed.`);
-    }
+  }
+
+  // Paralysis wears off on the player whose turn just ended
+  const prevActive = G.players[prev].active;
+  if (prevActive?.status === 'paralyzed') {
+    prevActive.status = null;
+    addLog(`${prevActive.name} is no longer Paralyzed.`);
   }
 
   // Discard Defender from the new active player's pokemon (end of their opponent's turn)
