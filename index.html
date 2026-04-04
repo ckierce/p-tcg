@@ -121,9 +121,173 @@ select:focus { border-color: var(--accent); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+/* ── MOBILE NAV BAR ─────────────────────────────────────────────────────── */
+.mobile-tabs {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: rgba(15,14,23,0.97);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  z-index: 150;
+  padding: 0;
+}
+.mobile-tabs-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 56px;
+}
+.mobile-tab-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: color 0.15s;
+  padding: 8px 0;
+  position: relative;
+}
+.mobile-tab-btn.active { color: var(--accent); }
+.mobile-tab-btn .tab-icon { font-size: 18px; line-height: 1; }
+.mobile-tab-badge {
+  position: absolute;
+  top: 6px; right: calc(50% - 20px);
+  background: var(--accent2);
+  color: #fff;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  min-width: 16px;
+  text-align: center;
+  display: none;
+}
+.mobile-tab-badge.visible { display: block; }
+
 @media (max-width: 800px) {
-  .layout { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
-  .deck-panel { max-height: 40vh; }
+  /* Header collapses cleanly */
+  header {
+    padding: 12px 16px 10px;
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+  header h1 {
+    font-size: 9px;
+    line-height: 1.6;
+    flex-shrink: 0;
+  }
+  .header-right {
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .deck-summary {
+    display: none; /* shown in mobile tab badge instead */
+  }
+  /* Hide desktop buttons that become redundant or move to panel */
+  .header-right .btn-ghost:not([href]) { display: none; }
+  .header-right .btn-primary { font-size: 6px; padding: 8px 10px; white-space: nowrap; }
+  .header-right a.btn { font-size: 6px; padding: 8px 10px; white-space: nowrap; }
+
+  /* Full-height stacked layout with tab switching */
+  .layout {
+    display: block;
+    height: calc(100vh - 57px); /* header height */
+    position: relative;
+    overflow: hidden;
+  }
+  .browser {
+    position: absolute;
+    inset: 0;
+    bottom: 56px; /* mobile tab bar height */
+    border-right: none;
+    padding: 16px 12px;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .deck-panel {
+    position: absolute;
+    inset: 0;
+    bottom: 56px;
+    max-height: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(20px);
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  /* Active panel states */
+  .browser.mobile-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-20px);
+  }
+  .deck-panel.mobile-visible {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateX(0);
+  }
+
+  /* Controls on mobile */
+  .controls { gap: 8px; }
+  .search-wrap { min-width: 0; }
+  select { font-size: 13px; padding: 9px 10px; max-width: 110px; }
+
+  /* Set tabs – scrollable row */
+  .set-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .set-tabs::-webkit-scrollbar { display: none; }
+  .set-tab { white-space: nowrap; flex-shrink: 0; padding: 8px 12px; font-size: 7px; }
+
+  /* Card grid – 2 cols on phones */
+  :root { --card-w: 140px; }
+  .card-grid-inner {
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+  }
+
+  /* Deck panel on mobile */
+  .deck-header { padding: 14px 14px 12px; }
+  .deck-stats { gap: 6px; }
+  .stat-box .stat-val { font-size: 18px; }
+  .stat-box .stat-lbl { font-size: 9px; }
+
+  /* Bigger touch targets for qty buttons */
+  .qty-btn { width: 30px; height: 30px; font-size: 18px; }
+  .deck-card-row { padding: 7px 0; gap: 8px; }
+  .deck-card-img { width: 36px; height: 50px; }
+
+  /* Deck actions */
+  .deck-actions { padding: 10px 14px 14px; gap: 8px; }
+  .deck-actions .btn { padding: 12px 10px; font-size: 7px; }
+
+  /* Show mobile nav */
+  .mobile-tabs { display: block; }
+
+  /* Toast above tab bar */
+  .toast { bottom: 70px; }
+
+  /* Modal tweaks */
+  .modal { padding: 20px 16px; }
+  .modal h2 { font-size: 9px; }
+  .saved-deck-item { padding: 10px; gap: 8px; }
+
+  /* Section headers */
+  .grid-section-header { font-size: 8px; padding: 12px 0 8px; }
+  .grid-type-header { font-size: 11px; padding: 8px 0 6px; }
 }
 </style>
 </head>
@@ -207,6 +371,21 @@ select:focus { border-color: var(--accent); }
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-tabs" id="mobile-tabs" aria-label="Mobile navigation">
+  <div class="mobile-tabs-inner">
+    <button class="mobile-tab-btn active" id="mob-browse-btn" onclick="mobileSwitchTab('browse')">
+      <span class="tab-icon">🃏</span>
+      BROWSE
+    </button>
+    <button class="mobile-tab-btn" id="mob-deck-btn" onclick="mobileSwitchTab('deck')">
+      <span class="tab-icon">📋</span>
+      DECK
+      <span class="mobile-tab-badge" id="mob-deck-badge"></span>
+    </button>
+  </div>
+</nav>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
@@ -609,6 +788,65 @@ document.querySelectorAll('.set-tab').forEach(tab => {
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
 });
+
+// ─── MOBILE TAB SWITCHING ────────────────────────────────────────────────────
+let mobileActiveTab = 'browse';
+
+function mobileSwitchTab(tab) {
+  mobileActiveTab = tab;
+  const browser = document.querySelector('.browser');
+  const deckPanel = document.querySelector('.deck-panel');
+  const browseBtn = document.getElementById('mob-browse-btn');
+  const deckBtn = document.getElementById('mob-deck-btn');
+
+  if (tab === 'browse') {
+    browser.classList.remove('mobile-hidden');
+    deckPanel.classList.remove('mobile-visible');
+    browseBtn.classList.add('active');
+    deckBtn.classList.remove('active');
+  } else {
+    browser.classList.add('mobile-hidden');
+    deckPanel.classList.add('mobile-visible');
+    deckBtn.classList.add('active');
+    browseBtn.classList.remove('active');
+  }
+}
+
+function updateMobileBadge() {
+  const total = deckTotal();
+  const badge = document.getElementById('mob-deck-badge');
+  if (badge) {
+    if (total > 0) {
+      badge.textContent = total;
+      badge.classList.add('visible');
+    } else {
+      badge.classList.remove('visible');
+    }
+  }
+}
+
+// Wrap updateHeader to also update mobile badge
+const _baseUpdateHeader = updateHeader;
+window.updateHeader = function() {
+  _baseUpdateHeader();
+  updateMobileBadge();
+};
+
+// Flash deck tab on mobile when card is added
+const _baseAddCard = addCard;
+window.addCard = function(id) {
+  const prevTotal = deckTotal();
+  _baseAddCard(id);
+  if (window.innerWidth <= 800 && deckTotal() > prevTotal) {
+    const btn = document.getElementById('mob-deck-btn');
+    if (btn) {
+      btn.style.color = 'var(--accent)';
+      setTimeout(() => {
+        if (!btn.classList.contains('active')) btn.style.color = '';
+      }, 500);
+    }
+  }
+};
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
 fetchAllCards();
