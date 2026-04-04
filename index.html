@@ -113,9 +113,49 @@ select:focus { border-color: var(--accent); }
 .no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
 .card-grid { display: block; }
 .card-grid-inner { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr)); gap: 14px; margin-bottom: 8px; }
-.grid-section-header { font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--accent); letter-spacing: 1px; padding: 18px 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-.grid-type-header { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 0 8px; display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.grid-section-header {
+  font-family: 'Press Start 2P', monospace; font-size: 9px; color: var(--accent);
+  letter-spacing: 1px; padding: 18px 0 10px; border-bottom: 1px solid var(--border);
+  margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+  cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.grid-section-header:hover { color: #ffd54f; }
+.grid-type-header {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  padding: 10px 0 8px; display: flex; align-items: center; gap: 4px; margin-top: 4px;
+  cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.grid-type-header:hover { color: var(--text); }
 .grid-section-count { font-family: 'DM Sans', sans-serif; font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.collapse-arrow {
+  margin-left: auto; font-size: 10px; color: var(--muted);
+  transition: transform 0.2s; display: inline-block; flex-shrink: 0;
+}
+.collapsible-group { overflow: hidden; }
+.collapsible-group.collapsed { display: none; }
+.section-collapsed .collapse-arrow { transform: rotate(-90deg); }
+/* ── VIEW TOGGLE ─────────────────────────────────────────────────────────── */
+.view-toggle {
+  display: flex; gap: 2px; background: var(--surface2); border-radius: 7px; padding: 3px;
+  flex-shrink: 0;
+}
+.view-btn {
+  width: 28px; height: 26px; border: none; border-radius: 5px; background: transparent;
+  color: var(--muted); cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; transition: all 0.15s;
+}
+.view-btn.active { background: var(--surface); color: var(--accent); }
+.view-btn:hover:not(.active) { color: var(--text); }
+/* ── DESKTOP LIST VIEW ───────────────────────────────────────────────────── */
+.desktop-list .card-list-inner { gap: 4px; }
+.desktop-list .card-list-item { padding: 7px 10px; }
+.desktop-list .cli-thumb { width: 30px; height: 42px; }
+.desktop-list .cli-name { font-size: 13px; }
+.desktop-list .cli-add { width: 30px; height: 30px; font-size: 20px; border-radius: 6px; }
+.desktop-list .cli-more { display: none; }
+/* desktop list: tighter, no ⋯ button needed */
+.desktop-list .card-list-item { cursor: default; }
+.desktop-list-inner { gap: 5px; }
 /* scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -475,6 +515,7 @@ select:focus { border-color: var(--accent); }
 
   /* Show mobile nav */
   .mobile-tabs { display: block; }
+  #view-toggle { display: none !important; }
 
   /* Toast above tab bar */
   .toast { bottom: 70px; }
@@ -524,7 +565,13 @@ select:focus { border-color: var(--accent); }
         <option value="Energy">Energy</option>
       </select>
     </div>
-    <div class="results-info" id="results-info"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div class="results-info" id="results-info" style="margin-bottom:0"></div>
+      <div class="view-toggle" id="view-toggle" title="Toggle view">
+        <button class="view-btn active" id="vbtn-grid" onclick="setViewMode('grid')" title="Grid view">⊞</button>
+        <button class="view-btn" id="vbtn-list" onclick="setViewMode('list')" title="List view">☰</button>
+      </div>
+    </div>
     <div class="card-grid" id="card-grid">
       <div class="loading">
         <span class="spinner">LOADING...</span>
@@ -644,6 +691,21 @@ let allCards = [];
 let filteredCards = [];
 let deck = {};
 let activeSet = '';
+let viewMode = 'grid'; // 'grid' | 'list'
+const collapsedSections = new Set(); // tracks which section keys are collapsed
+
+function setViewMode(mode) {
+  viewMode = mode;
+  document.getElementById('vbtn-grid').classList.toggle('active', mode === 'grid');
+  document.getElementById('vbtn-list').classList.toggle('active', mode === 'list');
+  renderGrid();
+}
+
+function toggleSection(key) {
+  if (collapsedSections.has(key)) collapsedSections.delete(key);
+  else collapsedSections.add(key);
+  renderGrid();
+}
 
 // ─── FETCH ──────────────────────────────────────────────────────────────────
 async function fetchAllCards() {
@@ -679,7 +741,17 @@ function filterCards() {
     const matchType = !typeF || c.supertype === typeF;
     return matchSet && matchQ && matchType;
   });
-  filteredCards.sort((a, b) => a.name.localeCompare(b.name));
+  filteredCards.sort((a, b) => {
+    // Pokémon: sort by card number (national dex order within each set)
+    if (a.supertype === 'Pokémon' && b.supertype === 'Pokémon') {
+      const numA = parseInt(a.number, 10);
+      const numB = parseInt(b.number, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      if (!isNaN(numA)) return -1;
+      if (!isNaN(numB)) return 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
   document.getElementById('results-info').textContent = `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''}`;
   renderGrid();
 }
@@ -719,7 +791,7 @@ function cardHTML(c) {
       <div class="card-meta">
         <span class="card-type">
           <span class="type-dot" style="background:${typeColor(c.types)}"></span>
-          ${isEnergy ? 'Energy' : c.supertype === 'Trainer' ? 'Trainer' : cardEnergyType(c)}
+          ${c.supertype === 'Energy' ? 'Energy' : c.supertype === 'Trainer' ? 'Trainer' : cardEnergyType(c)}
         </span>
         <span class="card-set-badge">${SET_NAMES[c.set.id] || c.set.id}</span>
       </div>
@@ -733,11 +805,25 @@ function renderGrid() {
     grid.innerHTML = `<div class="error-msg" style="grid-column:1/-1;padding:40px">No cards match your search.</div>`;
     return;
   }
+
   const mobile = isMobileLayout();
-  const cardFn = mobile ? cardListItemHTML : cardHTML;
-  const wrapFn = mobile
-    ? (cards) => `<div class="card-list-inner">` + cards.map(cardFn).join('') + `</div>`
-    : (cards) => `<div class="card-grid-inner">` + cards.map(cardFn).join('') + `</div>`;
+  // On mobile always use list; on desktop use current viewMode
+  const useList = mobile || viewMode === 'list';
+  // Hide/show the view toggle on mobile (it's desktop-only)
+  const toggle = document.getElementById('view-toggle');
+  if (toggle) toggle.style.display = mobile ? 'none' : '';
+
+  const cardFn = useList ? cardListItemHTML : cardHTML;
+
+  function wrapCards(cards, collapseKey) {
+    if (collapsedSections.has(collapseKey)) return '';
+    if (useList) {
+      // In desktop list mode, clicking the row itself adds the card
+      const cls = mobile ? 'card-list-inner' : 'card-list-inner desktop-list-inner';
+      return `<div class="${cls}">` + cards.map(cardFn).join('') + `</div>`;
+    }
+    return `<div class="card-grid-inner">` + cards.map(cardFn).join('') + `</div>`;
+  }
 
   const pokemon = filteredCards.filter(c => c.supertype === 'Pokémon');
   const trainers = filteredCards.filter(c => c.supertype === 'Trainer');
@@ -745,42 +831,59 @@ function renderGrid() {
   let html = '';
 
   if (pokemon.length) {
-    html += sectionHeader('Pokémon', pokemon.length);
-    const byType = {};
-    pokemon.forEach(c => {
-      const t = cardEnergyType(c);
-      if (!byType[t]) byType[t] = [];
-      byType[t].push(c);
-    });
-    for (const t of TYPE_ORDER) {
-      if (!byType[t]) continue;
-      html += typeGroupHeader(t, typeColor([t]), byType[t].length);
-      html += wrapFn(byType[t]);
+    html += sectionHeader('Pokémon', pokemon.length, 'sec-pokemon');
+    if (!collapsedSections.has('sec-pokemon')) {
+      const byType = {};
+      pokemon.forEach(c => {
+        const t = cardEnergyType(c);
+        if (!byType[t]) byType[t] = [];
+        byType[t].push(c);
+      });
+      for (const t of TYPE_ORDER) {
+        if (!byType[t]) continue;
+        const tkey = 'type-' + t;
+        html += typeGroupHeader(t, typeColor([t]), byType[t].length, tkey);
+        html += wrapCards(byType[t], tkey);
+      }
+      Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)).forEach(t => {
+        const tkey = 'type-' + t;
+        html += typeGroupHeader(t, typeColor([t]), byType[t].length, tkey);
+        html += wrapCards(byType[t], tkey);
+      });
     }
-    Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)).forEach(t => {
-      html += typeGroupHeader(t, typeColor([t]), byType[t].length);
-      html += wrapFn(byType[t]);
-    });
   }
   if (trainers.length) {
-    html += sectionHeader('Trainers', trainers.length);
-    html += wrapFn(trainers);
+    html += sectionHeader('Trainers', trainers.length, 'sec-trainers');
+    html += wrapCards(trainers, 'sec-trainers');
   }
   if (energies.length) {
-    html += sectionHeader('Energy', energies.length);
-    html += wrapFn(energies);
+    html += sectionHeader('Energy', energies.length, 'sec-energy');
+    html += wrapCards(energies, 'sec-energy');
   }
+
   grid.innerHTML = html;
+
+  // In desktop list mode, wrap the list inners with the desktop-list class
+  if (!mobile && useList) {
+    grid.querySelectorAll('.card-list-inner').forEach(el => el.classList.add('desktop-list'));
+    grid.querySelectorAll('.cli-more').forEach(el => el.style.display = 'none');
+  }
 }
 
-function sectionHeader(label, count) {
-  return `<div class="grid-section-header">${label} <span class="grid-section-count">${count}</span></div>`;
+function sectionHeader(label, count, key) {
+  const collapsed = collapsedSections.has(key);
+  return `<div class="grid-section-header${collapsed ? ' section-collapsed' : ''}" onclick="toggleSection('${key}')">
+    ${label} <span class="grid-section-count">${count}</span>
+    <span class="collapse-arrow">▼</span>
+  </div>`;
 }
 
-function typeGroupHeader(type, color, count) {
-  return `<div class="grid-type-header">
+function typeGroupHeader(type, color, count, key) {
+  const collapsed = collapsedSections.has(key);
+  return `<div class="grid-type-header${collapsed ? ' section-collapsed' : ''}" onclick="toggleSection('${key}')">
     <span class="type-dot" style="background:${color};width:10px;height:10px;display:inline-block;border-radius:50%;margin-right:6px;vertical-align:middle"></span>
     ${TYPE_LABELS[type] || type} <span class="grid-section-count">${count}</span>
+    <span class="collapse-arrow" style="font-size:9px">▼</span>
   </div>`;
 }
 
