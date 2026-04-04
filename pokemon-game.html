@@ -1192,13 +1192,14 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: moveFlashAnim 2s ease-out forwards;
+  animation: moveFlashAnim 3.5s ease-out forwards;
   max-width: 460px;
 }
 @keyframes moveFlashAnim {
   0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
-  15%  { opacity: 1; transform: scale(1.04) translateY(0); }
-  60%  { opacity: 1; transform: scale(1); }
+  8%   { opacity: 1; transform: scale(1.04) translateY(0); }
+  15%  { opacity: 1; transform: scale(1); }
+  80%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(0.97) translateY(6px); }
 }
 #move-flash.p1 #move-flash-inner {
@@ -5251,17 +5252,24 @@ function hidePromoteBanner() {
 }
 
 function showTurnFlash(player) {
-  const el = document.getElementById('turn-flash');
-  const inner = document.getElementById('turn-flash-inner');
-  inner.textContent = `PLAYER ${player}'S TURN`;
-  inner.className = `p${player}`;
-  el.classList.add('show');
-  // Reset animation
-  void inner.offsetWidth;
-  inner.style.animation = 'none';
-  void inner.offsetWidth;
-  inner.style.animation = '';
-  setTimeout(() => el.classList.remove('show'), 1300);
+  const moveFlashEl = document.getElementById('move-flash');
+  const remaining = moveFlashEl?._moveFlashUntil ? moveFlashEl._moveFlashUntil - Date.now() : 0;
+  const delay = remaining > 0 ? remaining + 100 : 0;
+
+  setTimeout(() => {
+    const el = document.getElementById('turn-flash');
+    const inner = document.getElementById('turn-flash-inner');
+    const label = (vsComputer && player === 1) ? 'YOUR TURN'
+                : (vsComputer && player === 2) ? '🤖 COMPUTER\'S TURN'
+                : `PLAYER ${player}'S TURN`;
+    inner.textContent = label;
+    inner.className = `p${player}`;
+    el.classList.add('show');
+    inner.style.animation = 'none';
+    void inner.offsetWidth;
+    inner.style.animation = '';
+    setTimeout(() => el.classList.remove('show'), 1300);
+  }, delay);
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName) {
@@ -5290,7 +5298,9 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName)
   inner.style.animation = '';
 
   clearTimeout(el._flashTimer);
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), 2100);
+  const MOVE_FLASH_DURATION = 3500;
+  el._moveFlashUntil = Date.now() + MOVE_FLASH_DURATION;
+  el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
 }
 
 // ══════════════════════════════════════════════════
