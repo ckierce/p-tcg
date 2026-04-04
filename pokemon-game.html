@@ -3897,7 +3897,14 @@ async function performAttack(player, atk) {
 }
 
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
-  const hp = parseInt(card.hp) || 0;
+  // Resolve HP: prefer card.hp, fall back to CARD_DATA lookup, then enrichCard full data
+  let hp = parseInt(card.hp) || 0;
+  if (hp === 0 && card.id) {
+    const full = CARD_DATA[card.id];
+    hp = parseInt(full?.hp) || 0;
+    if (hp > 0) console.warn(`checkKO: card.hp missing for ${card.name}, used CARD_DATA fallback (${hp})`);
+  }
+  if (hp === 0) console.warn(`checkKO: could not resolve HP for ${card.name} (id: ${card.id}) — KO check skipped`);
   if (hp > 0 && (card.damage || 0) >= hp) {
     addLog(`${card.name} is knocked out!`, true);
     const owner = isSelf ? attackingPlayer : defendingPlayer;
@@ -4703,7 +4710,7 @@ function enrichCard(card) {
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
     attacks: mergedAttacks,
-    hp: card.hp || full.hp || '0',
+    hp: (card.hp && card.hp !== '0') ? card.hp : (full.hp || card.hp || '0'),
     weaknesses: full.weaknesses || [],
     resistances: full.resistances || [],
     retreatCost: full.retreatCost || [],
