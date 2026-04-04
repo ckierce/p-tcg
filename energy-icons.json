@@ -1,11 +1,11 @@
 {
-  "grass": "https://images.pokemontcg.io/base1/99_hires.png",
-  "fire": "https://images.pokemontcg.io/base1/98_hires.png",
-  "water": "https://images.pokemontcg.io/base1/102_hires.png",
-  "lightning": "https://images.pokemontcg.io/base1/100_hires.png",
-  "psychic": "https://images.pokemontcg.io/base1/101_hires.png",
-  "fighting": "https://images.pokemontcg.io/base1/97_hires.png",
-  "colorless": "https://images.pokemontcg.io/base1/96_hires.png",
-  "darkness": "https://images.pokemontcg.io/neo4/105_hires.png",
-  "metal": "https://images.pokemontcg.io/neo4/103_hires.png"
+  "grass":     "assets/energy/grass.png",
+  "fire":      "assets/energy/fire.png",
+  "water":     "assets/energy/water.png",
+  "lightning": "assets/energy/lightning.png",
+  "psychic":   "assets/energy/psychic.png",
+  "fighting":  "assets/energy/fighting.png",
+  "colorless": "assets/energy/colorless.png",
+  "darkness":  "assets/energy/darkness.png",
+  "metal":     "assets/energy/metal.png"
 }
