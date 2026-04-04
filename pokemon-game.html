@@ -3463,13 +3463,8 @@ async function createRoom() {
     } else {
       // Post-start SETUP: merge P2's placement updates
       if (G.phase === 'SETUP' && data.setup_p2) mergeSetupSlot(2, data.setup_p2);
-      // Game running — receive opponent's moves
-      if (data.state && data.state.turn !== myRole) {
-        receiveGameState(data.state);
-      }
-      if (data.state?.phase === 'PROMOTE' && data.state.pendingPromotion !== myRole) {
-        receiveGameState(data.state);
-      }
+      // Game running — receive any state update (isWriting prevents our own echo)
+      if (data.state) receiveGameState(data.state);
     }
   });
 }
@@ -3509,13 +3504,8 @@ async function joinRoom() {
     } else {
       // Post-start SETUP: merge P1's placement updates
       if (G.phase === 'SETUP' && data.setup_p1) mergeSetupSlot(1, data.setup_p1);
-      // Game running — receive P1's moves
-      if (data.state && data.state.turn !== myRole) {
-        receiveGameState(data.state);
-      }
-      if (data.state?.phase === 'PROMOTE' && data.state.pendingPromotion !== myRole) {
-        receiveGameState(data.state);
-      }
+      // Game running — receive any state update (isWriting prevents our own echo)
+      if (data.state) receiveGameState(data.state);
     }
   });
 }
@@ -3562,10 +3552,6 @@ function mergeSetupSlot(playerNum, slotData) {
 // ── Push state to Firebase ────────────────────────
 async function pushGameState() {
   if (!gameRef || myRole === 'hotseat') return;
-  const shouldPush = G.phase === 'SETUP' ||
-    G.turn === myRole ||
-    (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
-  if (!shouldPush) return;
   isWriting = true;
   try {
     if (G.phase === 'SETUP' && !G.started) {
@@ -3578,8 +3564,7 @@ async function pushGameState() {
         })
       });
     } else if (G.phase === 'SETUP' && G.started) {
-      // Post-start SETUP (placing Pokémon): only P1 owns and pushes full state
-      // P2 just pushes their own slot so P1 can see it
+      // Post-start SETUP: P1 owns and pushes full state; P2 pushes own slot only
       if (myRole === 1) {
         await gameRef.update({ state: serializeG(G) });
       } else {
@@ -3592,7 +3577,7 @@ async function pushGameState() {
         });
       }
     } else {
-      // Normal game: acting player pushes full state
+      // Normal gameplay: always push full state after any action
       await gameRef.update({ state: serializeG(G) });
     }
   } finally {
@@ -3603,8 +3588,6 @@ async function pushGameState() {
 // ── Receive state from Firebase ───────────────────
 function receiveGameState(state) {
   if (!state) return;
-  // Echo guard: skip state we wrote ourselves (when it's our turn, non-SETUP)
-  if (G.started && state.turn === myRole && state.phase !== 'SETUP') return;
 
   const enrichCards = (arr) => (arr || []).map(c => c ? enrichCard(c) : null);
   const enrichPlayer = (p) => ({
