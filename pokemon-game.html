@@ -493,12 +493,12 @@ html, body {
 
 .zone-slot-empty { text-align: center; line-height: 1.6; }
 
-/* Energy column — vertical strip to the right of the card */
+/* Energy — vertical column to the right of active cards */
 .energy-overlay {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  left: calc(100% + 4px);   /* sits just outside the right edge */
+  left: calc(100% + 5px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -506,6 +506,21 @@ html, body {
   z-index: 4;
   pointer-events: none;
 }
+
+/* Energy — horizontal row below bench cards */
+.energy-overlay-bench {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  z-index: 4;
+  pointer-events: none;
+}
+
 .energy-pip {
   width: 14px;
   height: 14px;
@@ -3883,7 +3898,7 @@ function renderField(player) {
             `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
           ).join('');
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-            <div class="energy-overlay">${benchEnergyPips}</div>${dmg}${status}${badges}`;
+            <div class="energy-overlay-bench">${benchEnergyPips}</div>${dmg}${status}${badges}`;
           slotEl.classList.remove('empty');
         }
       } else {
@@ -3917,6 +3932,8 @@ function renderSlotP1(el, card) {
   el.classList.add('occupied');
   if (card.status) el.classList.add(`status-${card.status.replace('-toxic','')}`);
 
+  const isActive = el.id.includes('active');
+  const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
   const energyPips = (card.attachedEnergy || []).map(e => {
     const col = energyColor(e.name);
     return `<div class="energy-pip" style="background:${col}"></div>`;
@@ -3928,11 +3945,9 @@ function renderSlotP1(el, card) {
     card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
   ].join('');
   const imgSrc = card.images?.small || '';
-  const largeSrc = card.images?.large || imgSrc;
 
   // HP bar for active slot
   let hpBarHtml = '';
-  const isActive = el.id.includes('active');
   if (isActive && card.hp) {
     const maxHp = parseInt(card.hp) || 100;
     const curHp = Math.max(0, maxHp - (card.damage || 0));
@@ -3942,10 +3957,10 @@ function renderSlotP1(el, card) {
     const statLabel = `<div class="active-stat-label">${card.name.substring(0,10)} · ${curHp}/${maxHp}</div>`;
     el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
       ${statLabel}
-      <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
+      <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}${hpBarHtml}`;
   } else {
     el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
-      <div class="energy-overlay">${energyPips}</div>${dmg}${status}${badges}`;
+      <div class="${energyClass}">${energyPips}</div>${dmg}${status}${badges}`;
   }
   if (wasHighlighted) el.classList.add('highlight');
 }
