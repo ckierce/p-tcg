@@ -1032,6 +1032,40 @@ html, body {
 #turn-flash-inner.p1 { border-color: var(--p1color); color: var(--p1color); }
 #turn-flash-inner.p2 { border-color: var(--p2color); color: var(--p2color); }
 
+/* ── PROMOTE BANNER ───────────────────────────────────────── */
+#promote-banner {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 940;
+  padding: 14px 20px;
+  background: rgba(0,0,0,.92);
+  border-bottom: 3px solid var(--warn);
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+  animation: promotePulse 1.4s ease-in-out infinite;
+}
+#promote-banner.show { display: flex; }
+@keyframes promotePulse {
+  0%, 100% { border-bottom-color: var(--warn); box-shadow: 0 2px 20px rgba(237,137,54,.3); }
+  50%       { border-bottom-color: #f6ad55;    box-shadow: 0 2px 40px rgba(237,137,54,.7); }
+}
+#promote-banner-text {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--warn);
+  letter-spacing: 2px;
+  line-height: 1.8;
+}
+#promote-banner-sub {
+  font-family: var(--font);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
 /* ── WIN SCREEN ───────────────────────────────────────────── */
 #win-screen {
   display: none;
@@ -1387,6 +1421,13 @@ html, body {
 
 <!-- Turn change flash -->
 <div id="turn-flash"><div id="turn-flash-inner"></div></div>
+
+<div id="promote-banner">
+  <div>
+    <div id="promote-banner-text">⚠ CHOOSE YOUR NEXT POKÉMON</div>
+    <div id="promote-banner-sub">Click a highlighted bench slot to promote to Active</div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════ -->
 <!-- WIN SCREEN                                     -->
@@ -3154,10 +3195,15 @@ async function performAttack(player, atk) {
   // e.g. Selfdestruct, Explosion — excludes "If tails, X does N damage to itself" (Pattern 6)
   const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
   const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
+  let attackerSelfKOd = false;
   if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
     const selfDmg = parseInt(selfDmgTextMatch[1]);
     myActive.damage = (myActive.damage || 0) + selfDmg;
     addLog(`${myActive.name} took ${selfDmg} recoil damage! (${myActive.damage}/${myActive.hp} HP)`);
+    const myHp = parseInt(myActive.hp) || 0;
+    if (myHp > 0 && myActive.damage >= myHp) {
+      attackerSelfKOd = true;
+    }
   }
 
   if (dmg > 0) {
@@ -3293,19 +3339,33 @@ async function performAttack(player, atk) {
   }
 
   // Check if attacker KO'd itself (e.g. Selfdestruct, Explosion recoil)
-  if (myActive) {
-    const myHp = parseInt(myActive.hp) || 0;
-    if (myHp > 0 && (myActive.damage || 0) >= myHp) {
-      addLog(`${myActive.name} was knocked out by its own attack!`, true);
-      G.players[player].discard.push(myActive);
-      G.players[player].active = null;
-      // Check if opponent wins because attacker has no Pokémon left
-      const myBenchLeft = G.players[player].bench.filter(s => s !== null);
-      if (myBenchLeft.length === 0) {
-        G.started = false;
-        showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
-        renderAll(); return;
+  if (attackerSelfKOd && myActive) {
+    addLog(`${myActive.name} was knocked out by its own attack!`, true);
+    G.players[player].discard.push(myActive);
+    G.players[player].active = null;
+    const myBenchLeft = G.players[player].bench.filter(s => s !== null);
+    if (myBenchLeft.length === 0) {
+      G.started = false;
+      showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
+      renderAll(); return;
+    } else if (myBenchLeft.length === 1) {
+      const idx = G.players[player].bench.findIndex(s => s !== null);
+      G.players[player].active = G.players[player].bench[idx];
+      G.players[player].bench[idx] = null;
+      addLog(`${G.players[player].active.name} was automatically moved to Active!`, true);
+      // Fall through to renderAll/endTurn below
+    } else {
+      G.phase = 'PROMOTE';
+      G.pendingPromotion = player;
+      for (let i = 0; i < 5; i++) {
+        if (G.players[player].bench[i]) {
+          document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
+        }
       }
+      setMidline(`Player ${player}: choose a bench Pokémon to promote to Active!`);
+      showPromoteBanner(player);
+      addLog(`Player ${player} must choose a new Active Pokémon.`, true);
+      renderAll(); return; // endTurn fires inside resolvePromotion
     }
   }
 
@@ -3338,6 +3398,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
           if (G.players[owner].bench[i]) document.getElementById(`bench-p${owner}-${i}`)?.classList.add('highlight');
         }
         setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
+        showPromoteBanner(owner);
         return 'promote';
       }
       return 'ko';
@@ -3387,7 +3448,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       }
     }
     setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
-    showToast(`P${owner}: select a bench Pokémon to promote!`, false);
+    showPromoteBanner(owner);
     addLog(`Player ${owner} must choose a new Active Pokémon.`, true);
     return 'promote';
   }
@@ -3401,12 +3462,12 @@ function resolvePromotion(player, benchIdx) {
   if (!chosen) return;
   p.active = chosen;
   p.bench[benchIdx] = null;
-  G.phase = 'MAIN'; // restore phase before endTurn
+  G.phase = 'MAIN';
   G.pendingPromotion = null;
   addLog(`Player ${player} promoted ${chosen.name} to Active!`, true);
+  hidePromoteBanner();
   clearHighlights();
   renderAll();
-  // Now it's safe to end the attacker's turn
   endTurn();
 }
 
@@ -4038,6 +4099,26 @@ function enrichCard(card) {
 // ══════════════════════════════════════════════════
 // TURN CHANGE FLASH
 // ══════════════════════════════════════════════════
+function showPromoteBanner(playerNum) {
+  const banner = document.getElementById('promote-banner');
+  const text = document.getElementById('promote-banner-text');
+  const sub = document.getElementById('promote-banner-sub');
+  const isMe = myRole === null || myRole === playerNum;
+  text.textContent = isMe
+    ? `⚠ CHOOSE YOUR NEXT POKÉMON`
+    : `⚠ PLAYER ${playerNum} IS CHOOSING THEIR NEXT POKÉMON`;
+  sub.textContent = isMe
+    ? 'Click a highlighted bench slot to promote to Active'
+    : 'Waiting for opponent...';
+  text.style.color = playerNum === 1 ? 'var(--p1color)' : 'var(--p2color)';
+  banner.style.borderBottomColor = playerNum === 1 ? 'var(--p1color)' : 'var(--p2color)';
+  banner.classList.add('show');
+}
+
+function hidePromoteBanner() {
+  document.getElementById('promote-banner').classList.remove('show');
+}
+
 function showTurnFlash(player) {
   const el = document.getElementById('turn-flash');
   const inner = document.getElementById('turn-flash-inner');
@@ -4428,6 +4509,12 @@ function receiveGameState(state) {
   if (G.phase !== 'SETUP') {
     const endBtn = document.getElementById('end-turn-btn');
     if (endBtn) endBtn.textContent = 'END TURN';
+  }
+  // Show/hide promote banner based on incoming phase
+  if (G.phase === 'PROMOTE' && G.pendingPromotion) {
+    showPromoteBanner(G.pendingPromotion);
+  } else {
+    hidePromoteBanner();
   }
   // Render without pushing (we're receiving, not acting)
   renderHands();
