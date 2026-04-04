@@ -2585,21 +2585,36 @@ function handleEndTurnBtn() {
   }
 }
 
-function doneSetup() {
+async function doneSetup() {
   if (!G.players[1].active) { showToast('Player 1 must place an Active Pokémon first!', true); return; }
   if (!G.players[2].active) { showToast('Player 2 must place an Active Pokémon first!', true); return; }
+
+  // Coin flip to decide who goes first — heads = P1, tails = P2
+  const heads = await flipCoin('Coin flip! Heads = Player 1 goes first, Tails = Player 2 goes first');
+  const firstPlayer = heads ? 1 : 2;
+
   G.phase = 'DRAW';
-  G.turn = 1;
+  G.turn = firstPlayer;
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
-  // P1 draws first card + any extra draws owed due to P2 mulligans
-  const extras = G.pendingExtraDraws?.[1] || 0;
-  for (let i = 0; i <= extras; i++) drawCard(1, true);
-  addLog('Setup complete! Player 1 goes first.', true);
+
+  // First player draws their opening card + any extra draws owed from opponent mulligans
+  const extras = G.pendingExtraDraws?.[firstPlayer] || 0;
+  for (let i = 0; i <= extras; i++) drawCard(firstPlayer, true);
+
+  const winner = vsComputer
+    ? (firstPlayer === 1 ? 'You go first!' : '🤖 Computer goes first!')
+    : `Player ${firstPlayer} goes first!`;
+  addLog(`Setup complete! ${winner}`, true);
   renderAll();
-  showTurnFlash(1);
-  showToast('Game on! P1 goes first.', false, 'ok');
+  showTurnFlash(firstPlayer);
+  showToast(winner, false, 'ok');
+
+  // If AI won the flip, kick off its turn
+  if (vsComputer && firstPlayer === 2) {
+    setTimeout(() => aiTakeTurn(), 1200);
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -2880,6 +2895,9 @@ async function playTrainer(player, handIdx) {
   const card = p.hand[handIdx];
   const name = card.name;
   const rules = card.rules?.[0] || '';
+
+  // Flash trainer card name for the opponent
+  showTrainerFlash(player, name);
 
   // Helper: remove card from hand and discard it
   const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
@@ -5628,6 +5646,36 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName)
   el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
 }
 
+function showTrainerFlash(player, cardName) {
+  // Only show for the opponent's cards (not your own)
+  const isOpponent = myRole !== null && player !== myRole;
+  if (!isOpponent) return;
+
+  const el = document.getElementById('move-flash');
+  const whoEl = document.getElementById('move-flash-who');
+  const attackerEl = document.getElementById('move-flash-attacker');
+  const moveEl = document.getElementById('move-flash-move');
+  const dmgEl = document.getElementById('move-flash-dmg');
+
+  const label = vsComputer ? '🤖 COMPUTER PLAYS' : `PLAYER ${player} PLAYS`;
+  whoEl.textContent = label;
+  attackerEl.textContent = 'TRAINER';
+  moveEl.textContent = cardName.toUpperCase();
+  dmgEl.textContent = '';
+
+  el.className = `show p${player}`;
+
+  const inner = document.getElementById('move-flash-inner');
+  inner.style.animation = 'none';
+  void inner.offsetWidth;
+  inner.style.animation = '';
+
+  clearTimeout(el._flashTimer);
+  const TRAINER_FLASH_DURATION = 2200;
+  el._moveFlashUntil = Date.now() + TRAINER_FLASH_DURATION;
+  el._flashTimer = setTimeout(() => el.classList.remove('show'), TRAINER_FLASH_DURATION);
+}
+
 // ══════════════════════════════════════════════════
 // WIN SCREEN
 // ══════════════════════════════════════════════════
@@ -7073,11 +7121,11 @@ function aiDoPromotion() {
 // ── Hook into doneSetup to trigger AI setup completion ─
 {
   const _orig = doneSetup;
-  doneSetup = function() {
+  doneSetup = async function() {
     if (vsComputer && !G.players[2].active) {
       aiDoSetup();
     }
-    _orig();
+    await _orig();
   };
 }
 
