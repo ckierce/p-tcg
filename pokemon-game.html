@@ -3589,8 +3589,7 @@ async function pushGameState() {
 // ── Receive state from Firebase ───────────────────
 function receiveGameState(state) {
   if (!state) return;
-  // Don't apply state that we ourselves just wrote (echo guard)
-  // If the state says it's our turn and we already have a running game, skip
+  // Echo guard: skip state we wrote ourselves (when it's our turn, non-SETUP)
   if (G.started && state.turn === myRole && state.phase !== 'SETUP') return;
 
   const enrichCards = (arr) => (arr || []).map(c => c ? enrichCard(c) : null);
@@ -3604,6 +3603,11 @@ function receiveGameState(state) {
     discard: enrichCards(p.discard),
   });
 
+  const wasStarted = G.started;
+
+  // Preserve our own hand/deck/prizes if this is the initial game-start receive.
+  // P1 dealt cards locally; P2 needs their own hand/deck from the state since
+  // P1's startGame() set them. Only preserve local state if we're already mid-game.
   G = {
     ...state,
     players: {
@@ -3643,12 +3647,16 @@ function isMyTurn() {
 function applyRoleVisibility() {
   if (myRole === 'hotseat' || myRole === null) return;
 
-  // P1's hand cards — disable if not P1
+  // Hand cards in the bottom bar — only the local player's cards are interactive.
+  // In P2 perspective, these cards have id="hand-card-2-N"; in P1 they're "hand-card-1-N".
+  // We check the id prefix rather than the container so we don't accidentally grey our own cards.
   document.querySelectorAll('#hand-p1 .hand-card').forEach(el => {
-    el.style.opacity = myRole === 1 ? '' : '0.35';
-    el.style.pointerEvents = myRole === 1 ? '' : 'none';
+    const isMyCard = el.id.startsWith(`hand-card-${myRole}-`);
+    el.style.opacity = isMyCard ? '' : '0.35';
+    el.style.pointerEvents = isMyCard ? '' : 'none';
   });
-  // Opponent hand in sidebar — always face down / non-interactive
+
+  // Opponent hand in sidebar — always non-interactive (face down)
   document.querySelectorAll('#hand-p2 .hand-card').forEach(el => {
     el.style.pointerEvents = 'none';
   });
@@ -3657,31 +3665,31 @@ function applyRoleVisibility() {
   const endBtn = document.getElementById('end-turn-btn');
   if (endBtn) {
     if (G.phase === 'SETUP') {
-      // Only P1 can click DONE SETUP
-      endBtn.style.opacity = myRole === 1 ? '' : '0.4';
-      endBtn.style.pointerEvents = myRole === 1 ? '' : 'none';
-      if (myRole === 2) endBtn.textContent = 'WAITING...';
+      if (myRole === 1) {
+        // P1 can click DONE SETUP (subject to both having actives)
+        endBtn.textContent = 'DONE SETUP';
+        endBtn.style.opacity = '';
+        endBtn.style.pointerEvents = '';
+      } else {
+        // P2 sees dimmed button — they place their own Pokémon but P1 advances
+        endBtn.textContent = 'WAITING FOR P1';
+        endBtn.style.opacity = '0.4';
+        endBtn.style.pointerEvents = 'none';
+      }
     } else {
       const canAct = G.turn === myRole ||
                      (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
       endBtn.style.opacity = canAct ? '' : '0.4';
       endBtn.style.pointerEvents = canAct ? '' : 'none';
+      if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...') {
+        endBtn.textContent = 'END TURN';
+      }
     }
   }
 
   // LOAD button — lock to own player in networked mode
   const loadBtn = document.querySelector('.top-bar-btn:not(.primary)');
   if (loadBtn) loadBtn.setAttribute('onclick', `openLoadModal(${myRole})`);
-
-  // Bench slots — block opponent's bench from being misclicked except during PROMOTE
-  for (let i = 0; i < 5; i++) {
-    // In P2 perspective, top slots are P1's (opp), bottom slots are P2's (self)
-    // In P1 perspective, top slots are P2's (opp), bottom slots are P1's (self)
-    const oppVisualSlot = document.getElementById(`bench-p${myRole === 2 ? 1 : 2}-${i}`);
-    if (oppVisualSlot && G.phase !== 'PROMOTE') {
-      oppVisualSlot.style.pointerEvents = '';  // keep clickable — handleBenchClick guards player
-    }
-  }
 }
 
 // ── Check URL on load for auto-join ──────────────
