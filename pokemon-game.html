@@ -2983,27 +2983,23 @@ async function playTrainer(player, handIdx) {
   if (name === 'Switch') {
     if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
     const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    // If only one bench option, swap immediately
-    if (benchSlots.length === 1) {
+    const doSwitch = (benchIdx, benchPoke) => {
       consume();
       const old = p.active;
-      p.active = benchSlots[0].s;
-      p.bench[benchSlots[0].i] = old;
+      if (old.status) {
+        addLog(`${old.name}'s ${old.status} condition cleared by Switch.`);
+        old.status = null;
+      }
+      p.active = benchPoke;
+      p.bench[benchIdx] = old;
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
-      renderAll(); return;
-    }
-    // Multiple bench options — let player choose; consume only on confirm
+      closeActionMenu(); renderAll();
+    };
+    if (benchSlots.length === 1) { doSwitch(benchSlots[0].i, benchSlots[0].s); return; }
     closeActionMenu();
     showActionMenu('Switch — choose a Pokémon', benchSlots.map(({ s, i }) => ({
       label: `Bench ${i+1}: ${s.name}`,
-      fn: () => {
-        consume();
-        const old = p.active;
-        p.active = s;
-        p.bench[i] = old;
-        addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
-        closeActionMenu(); renderAll();
-      }
+      fn: () => doSwitch(i, s)
     })), null);
     return;
   }
@@ -3935,6 +3931,11 @@ function executeRetreat(player, benchIdx) {
   if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
 
   const old = p.active;
+  // Clear all special conditions when a Pokémon retreats to the bench (TCG rule)
+  if (old.status) {
+    addLog(`${old.name}'s ${old.status} condition cleared on retreat.`);
+    old.status = null;
+  }
   p.active = p.bench[benchIdx];
   p.bench[benchIdx] = old;
   G.pendingAction = null;
