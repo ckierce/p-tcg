@@ -4151,7 +4151,7 @@ function mergeSetupSlot(playerNum, slotData) {
   if (!slotData) return;
   const p = G.players[playerNum];
   p.active = slotData.active ? enrichCard(slotData.active) : null;
-  p.bench = (slotData.bench || [null,null,null,null,null]).map(c => c ? enrichCard(c) : null);
+  p.bench = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
   // Re-render just the field without pushing (we're receiving)
   renderField(1);
   renderField(2);
@@ -4204,7 +4204,7 @@ function receiveGameState(state) {
     deck: enrichCards(p.deck),
     hand: enrichCards(p.hand),
     active: p.active ? enrichCard(p.active) : null,
-    bench: (p.bench || []).map(c => c ? enrichCard(c) : null),
+    bench: Array.from({ length: 5 }, (_, i) => { const c = (p.bench || [])[i]; return c ? enrichCard(c) : null; }),
     prizes: (p.prizes || []).map(pr => pr ? { ...pr, card: enrichCard(pr.card) } : null),
     discard: enrichCards(p.discard),
   });
