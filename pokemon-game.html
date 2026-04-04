@@ -493,23 +493,30 @@ html, body {
 
 .zone-slot-empty { text-align: center; line-height: 1.6; }
 
-/* Energy overlay */
+/* Energy column — vertical strip to the right of the card */
 .energy-overlay {
-  position: absolute; bottom: -2px; left: 0; right: 0;
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 2px;
-  padding: 2px;
-  background: rgba(0,0,0,0.55);
-  border-radius: 0 0 4px 4px;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: calc(100% + 4px);   /* sits just outside the right edge */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 4;
+  pointer-events: none;
 }
 .energy-pip {
-  width: clamp(8px, 0.9vh, 12px);
-  height: clamp(8px, 0.9vh, 12px);
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  border: 1px solid rgba(255,255,255,.3);
+  border: 2px solid rgba(255,255,255,.35);
+  box-shadow: 0 1px 4px rgba(0,0,0,.6);
+  flex-shrink: 0;
 }
 
 .damage-overlay {
-  position: absolute; bottom: 4px; right: 4px;
+  position: absolute; bottom: 4px; left: 4px;
   background: rgba(180,30,30,.95);
   color: #fff;
   font-size: clamp(8px, 0.9vh, 11px);
@@ -3872,7 +3879,11 @@ function renderField(player) {
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+${card.plusPower}</div>` : '',
           ].join('');
-          slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">${dmg}${status}${badges}`;
+          const benchEnergyPips = (card.attachedEnergy || []).map(e =>
+            `<div class="energy-pip" style="background:${energyColor(e.name)}"></div>`
+          ).join('');
+          slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
+            <div class="energy-overlay">${benchEnergyPips}</div>${dmg}${status}${badges}`;
           slotEl.classList.remove('empty');
         }
       } else {
