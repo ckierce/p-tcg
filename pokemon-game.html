@@ -2000,9 +2000,10 @@ html, body {
   #lass-divider { display: none; }
   #lass-dismiss { font-size: 8px; padding: 10px 24px; min-height: 44px; }
 
-  /* ── Energy overlays: move to below cards on mobile so they don't go off-screen ── */
+  /* ── Energy overlays: rearrange for mobile ── */
+
+  /* Active card: energy goes below (left: 50% trick won't work off-screen on right) */
   .energy-overlay {
-    /* Override: stack below active card instead of beside it */
     top: calc(100% + 4px);
     left: 50%;
     transform: translateX(-50%);
@@ -2010,12 +2011,23 @@ html, body {
     flex-wrap: wrap;
     justify-content: center;
     max-height: none;
-    max-width: 90px; /* ~3 icons wide */
+    max-width: 90px;
     gap: 3px;
   }
+
+  /* Bench cards: energy goes to the RIGHT of the card, column layout,
+     max 3 per column then wraps to a new column beside it */
   .energy-overlay-bench {
-    max-width: 56px !important; /* force at least 2 icons wide for narrow bench slots */
-    gap: 2px;
+    top: 0 !important;
+    left: calc(100% + 3px) !important;
+    transform: none !important;
+    flex-direction: column !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+    max-height: var(--card-h-sm) !important; /* cap at card height → forces column wrap */
+    max-width: none !important;
+    gap: 2px !important;
   }
 
   /* ── Toast ── */
@@ -4291,9 +4303,10 @@ async function performAttack(player, atk) {
   }
 
   // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
-  // Matches: "During your opponent's next turn, [name]'s [attack] does double damage."
-  const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double damage/i)
-    || (atk.text || '').match(/does double damage.*next turn/i);
+  // Covers: "does double damage", "does double the damage", "attack does double"
+  const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
+    || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
+    || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i);
   if (doubleNextMatch && myActive && dmg === 0) {
     myActive.nextAttackDouble = true;
     addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
@@ -5077,8 +5090,11 @@ function renderField(player) {
           const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
           const oppBenchW = slotEl.clientWidth || 64;
+          const oppBenchH = slotEl.clientHeight || 90;
+          const isMobileOpp = window.innerWidth <= 600;
+          const oppBenchEnergyStyle = isMobileOpp ? `max-height:${oppBenchH}px` : `max-width:${oppBenchW}px`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-            <div class="energy-overlay-bench" style="max-width:${oppBenchW}px">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
+            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
         }
       } else {
@@ -5129,9 +5145,12 @@ function renderSlotP1(el, card) {
 
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
+  const isMobile = window.innerWidth <= 600;
   const energyStyle = isActive
     ? `max-height:${slotH}px`
-    : `max-width:${slotW}px`;
+    : isMobile
+      ? `max-height:${slotH}px`   // mobile bench: column right-of-card, capped at card height
+      : `max-width:${slotW}px`;   // desktop bench: row below card, capped at card width
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
   if (wasHighlighted) el.classList.add('highlight');
