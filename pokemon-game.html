@@ -3910,7 +3910,19 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         });
       });
     }
-    actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
+    const activeStatus = card.status;
+    const retreatBlocked = activeStatus === 'paralyzed' || activeStatus === 'asleep';
+    const retreatConfused = activeStatus === 'confused';
+    const retreatLabel = retreatBlocked
+      ? `Retreat — blocked (${activeStatus})`
+      : retreatConfused
+        ? 'Retreat (flip coin — confused)'
+        : 'Retreat';
+    actions.push({
+      label: retreatLabel,
+      disabled: retreatBlocked,
+      fn: retreatBlocked ? null : () => { attemptRetreat(player); closeActionMenu(); }
+    });
 
     // ── Pokémon Power actions ──
     if (!isMukActive()) {
@@ -3962,6 +3974,32 @@ function attemptRetreat(player) {
   if (!p.active) return;
   if (p.active.canRetreat === false) { showToast(`${p.active.name} cannot retreat!`, true); return; }
 
+  // Paralyzed and Asleep Pokémon cannot retreat (TCG rule)
+  if (p.active.status === 'paralyzed') {
+    showToast(`${p.active.name} is Paralyzed and cannot retreat!`, true); return;
+  }
+  if (p.active.status === 'asleep') {
+    showToast(`${p.active.name} is Asleep and cannot retreat!`, true); return;
+  }
+  // Confused Pokémon must flip a coin to retreat — heads OK, tails fail
+  if (p.active.status === 'confused') {
+    (async () => {
+      const heads = await flipCoin(`${p.active.name} is Confused! Heads = can retreat, Tails = cannot retreat`);
+      if (!heads) {
+        addLog(`${p.active.name} is Confused — TAILS! Cannot retreat this turn.`, true);
+        showToast(`${p.active.name} is too Confused to retreat!`, true);
+        return;
+      }
+      addLog(`${p.active.name} is Confused — HEADS! Retreating...`);
+      doRetreat(player, p);
+    })();
+    return;
+  }
+  doRetreat(player, p);
+}
+
+function doRetreat(player, p) {
+
   const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
   if (!benchSlots.length) { showToast('No bench Pokémon to retreat to!', true); return; }
 
@@ -3988,6 +4026,14 @@ function attemptRetreat(player) {
 
 function executeRetreat(player, benchIdx) {
   const p = G.players[player];
+
+  // Final guard — should not happen if attemptRetreat was used correctly,
+  // but prevents energy loss if status blocks retreat
+  if (p.active?.status === 'paralyzed' || p.active?.status === 'asleep') {
+    showToast(`${p.active.name} cannot retreat!`, true);
+    G.pendingAction = null; clearHighlights(); return;
+  }
+
   const retreatCost = p.active.convertedRetreatCost || 0;
 
   const discarded = p.active.attachedEnergy.splice(0, retreatCost);
