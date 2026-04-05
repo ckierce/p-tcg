@@ -1811,15 +1811,39 @@ html, body {
   /* ── Field body: remove large horizontal padding, side panels collapse ── */
   #field-body { padding: 6px 4px; gap: 4px; }
 
-  /* Side panels: prizes left, deck/discard right — shrink to icon-size */
-  #player-prizes-panel { left: 2px; gap: 2px; }
-  #player-prizes-panel .panel-label { display: none; }
-  .prize-grid {
-    grid-template-columns: repeat(2, clamp(28px, 6vw, 40px));
-    grid-template-rows: repeat(3, clamp(20px, 4.5vw, 28px));
-    gap: 2px;
+  /* Side panels: prizes left, deck/discard right — pip style, top-anchored */
+  #player-prizes-panel {
+    left: 2px;
+    gap: 3px;
+    top: 50%;           /* anchored at midline, grows downward */
+    bottom: auto;       /* don't stretch to bottom */
+    justify-content: flex-start;
+    padding-top: 4px;
   }
-  #player-aux { right: 2px; gap: 4px; }
+  #player-prizes-panel .panel-label { display: none; }
+
+  /* Prize pips — same style as opp prizes */
+  .prize-grid {
+    grid-template-columns: repeat(2, 13px);
+    grid-template-rows: repeat(3, 18px);
+    gap: 3px;
+  }
+  .prize-slot {
+    width: 13px;
+    height: 18px;
+    border-radius: 2px;
+  }
+  .prize-slot img { object-fit: cover; }
+  .prize-slot.face-down::after { font-size: 7px; }
+
+  #player-aux {
+    right: 2px;
+    gap: 4px;
+    top: 50%;           /* anchored at midline, grows downward */
+    bottom: auto;
+    justify-content: flex-start;
+    padding-top: 4px;
+  }
   .player-deck-slot {
     width: clamp(36px, 9vw, 52px);
     height: clamp(50px, 12.5vw, 72px);
