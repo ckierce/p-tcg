@@ -515,18 +515,20 @@ html, body {
   pointer-events: none;
 }
 
-/* Energy — horizontal row below bench cards; wraps into second row if needed.
-   max-width is set inline at render time to match the slot's actual pixel width. */
+/* Energy — vertical column to the RIGHT of bench cards (same as active).
+   max-height is set inline at render time to match the slot's actual pixel height.
+   flex-wrap creates a second column when the first fills up. */
 .energy-overlay-bench {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: 0;
+  left: calc(100% + 4px);
+  transform: none;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
+  align-content: flex-start;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 3px;
   z-index: 4;
   pointer-events: none;
@@ -688,20 +690,20 @@ html, body {
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* ── PLAYER SIDE PANELS ───────────────────────────────────── */
-/* Prizes — fixed to left edge, bottom half only (below midline) */
+/* Prizes — fixed to left edge, sits just below midline and grows downward */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  bottom: 0;         /* sits above the hand bar; field-body handles the offset */
-  top: 50%;          /* never goes above midline */
+  top: 50%;           /* anchored at midline */
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;   /* grow down from midline, not centered */
+  padding-top: 6px;
   align-items: center;
   gap: 4px;
   z-index: 10;
-  pointer-events: none; /* label only; prize grid re-enables below */
+  pointer-events: none;
 }
 #player-prizes-panel .prize-grid { pointer-events: auto; }
 #player-prizes-panel .panel-label {
@@ -711,15 +713,16 @@ html, body {
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, bottom half only */
+/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;          /* never goes above midline */
+  top: 50%;           /* anchored at midline */
   bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;   /* grow down from midline, not centered */
+  padding-top: 6px;
   gap: 6px;
   align-items: center;
   z-index: 10;
@@ -2040,29 +2043,7 @@ html, body {
     gap: 3px;
   }
 
-  /* Bench cards: energy column to the right, in-flow space created by
-     reducing slot flex-shrink so they compress when energy is present.
-     The slot itself has overflow:visible so the absolute overlay bleeds right. */
-  .bench-row {
-    gap: 3px; /* tighter gap so energy columns have room */
-  }
-  .zone-slot:not(#active-p1) {
-    flex-shrink: 1;    /* allow bench slots to compress */
-    min-width: 36px;   /* don't go too small */
-  }
-  .energy-overlay-bench {
-    top: 0 !important;
-    left: calc(100% + 2px) !important;
-    transform: none !important;
-    flex-direction: column !important;
-    flex-wrap: wrap !important;
-    justify-content: flex-start !important;
-    align-content: flex-start !important;
-    align-items: flex-start !important;
-    max-height: var(--card-h-sm) !important;
-    max-width: none !important;
-    gap: 2px !important;
-  }
+  /* Bench energy — desktop CSS now handles right-side column layout universally */
 
   /* ── Toast ── */
   #toast { font-size: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
@@ -4327,11 +4308,11 @@ async function performAttack(player, atk) {
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
 
   // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
-  // Detect and SET the flag now (when dmg === 0, i.e. this is the buff turn).
-  // The actual DOUBLING happens after coin-flip resolution below.
+  // Detect by text pattern OR by known attack names that have this effect.
   const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
     || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
-    || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i);
+    || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i)
+    || /^swords dance$/i.test(atk.name || '');  // name-based fallback
   if (doubleNextMatch && myActive && dmg === 0) {
     myActive.nextAttackDouble = true;
     addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
@@ -5127,18 +5108,25 @@ function renderField(player) {
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
           const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
-          const oppBenchW = slotEl.clientWidth || 64;
-          const oppBenchH = slotEl.clientHeight || 90;
-          const isMobileOppBench = window.innerWidth <= 600;
-          const oppBenchEnergyStyle = isMobileOppBench
-            ? `max-height:${oppBenchH}px;max-width:none`
-            : `max-width:${oppBenchW}px`;
+          const oppBenchH = slotEl.clientHeight || 56;
+          const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
             <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
+          // Push next bench card right to avoid overlap
+          const oppEnergyCount = (card.attachedEnergy || []).length;
+          if (oppEnergyCount > 0) {
+            const ICON_PX = 22;
+            const iconsPerCol = Math.max(1, Math.floor(oppBenchH / ICON_PX));
+            const cols = Math.ceil(oppEnergyCount / iconsPerCol);
+            slotEl.style.marginRight = (cols * ICON_PX + 2) + 'px';
+          } else {
+            slotEl.style.marginRight = '';
+          }
         }
       } else {
         slotEl.innerHTML = '';
+        slotEl.style.marginRight = '';
         slotEl.classList.add('empty');
       }
       if (wasHighlighted) slotEl.classList.add('highlight');
@@ -5185,20 +5173,17 @@ function renderSlotP1(el, card) {
 
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
-  const isMobileBench = !isActive && window.innerWidth <= 600;
-  const energyStyle = (isActive || isMobileBench)
-    ? `max-height:${slotH}px;max-width:none`
-    : `max-width:${slotW}px`;
+  // Both active and bench now use max-height — bench energy goes right, columns downward
+  const energyStyle = `max-height:${slotH}px;max-width:none`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
 
-  // On mobile bench slots: reserve right margin equal to the energy column width
-  // so the next bench card is pushed right and energy icons don't overlap it.
-  if (isMobileBench) {
+  // Reserve right margin for energy columns so the next bench card is pushed right
+  if (!isActive) {
     const energyCount = (card.attachedEnergy || []).length;
     if (energyCount > 0) {
-      const ICON_PX = 20;  // 18px icon + 2px gap
-      const iconsPerCol = Math.floor(slotH / ICON_PX) || 3;
+      const ICON_PX = isActive ? 30 : 22;  // icon + gap
+      const iconsPerCol = Math.max(1, Math.floor(slotH / ICON_PX));
       const cols = Math.ceil(energyCount / iconsPerCol);
       el.style.marginRight = (cols * ICON_PX + 2) + 'px';
     } else {
