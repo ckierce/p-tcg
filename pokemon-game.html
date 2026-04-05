@@ -4302,18 +4302,9 @@ async function performAttack(player, atk) {
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
 
-  // ── Swords Dance / "next attack does double damage" ──────────
-  // If attacker has nextAttackDouble set (from prior Swords Dance), double base damage
-  // and consume the flag before any other modifiers apply.
-  const swordsDanceActive = myActive?.nextAttackDouble && dmg > 0;
-  if (swordsDanceActive) {
-    dmg *= 2;
-    myActive.nextAttackDouble = false;
-    addLog(`${myActive.name}'s Swords Dance doubles ${atk.name}'s damage!`, true);
-  }
-
   // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
-  // Covers: "does double damage", "does double the damage", "attack does double"
+  // Detect and SET the flag now (when dmg === 0, i.e. this is the buff turn).
+  // The actual DOUBLING happens after coin-flip resolution below.
   const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
     || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
     || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i);
@@ -4328,6 +4319,19 @@ async function performAttack(player, atk) {
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
+
+  // ── Apply Swords Dance doubling AFTER coin flip ──────────────
+  // Must happen after coinDmg so the doubled value reflects the actual resolved damage
+  // (e.g. Slash flips tails → 0 damage even with Swords Dance; heads → 60 instead of 30)
+  if (myActive?.nextAttackDouble && dmg > 0) {
+    dmg *= 2;
+    myActive.nextAttackDouble = false;
+    addLog(`${myActive.name}'s Swords Dance doubles ${atk.name}'s damage to ${dmg}!`, true);
+  } else if (myActive?.nextAttackDouble && dmg === 0 && coinDmg !== null) {
+    // Coin flip returned 0 (tails) — consume the flag anyway so it doesn't linger
+    myActive.nextAttackDouble = false;
+    addLog(`${myActive.name}'s Swords Dance buff wasted — ${atk.name} did no damage (tails).`);
+  }
 
   // ── Extra-energy bonus damage: "does N more damage for each [Type] Energy beyond the first" ──
   // Covers Water Gun (Lapras), Surf (Lapras), many Jungle/Fossil attacks
@@ -5163,6 +5167,23 @@ function renderSlotP1(el, card) {
     : `max-width:${slotW}px`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
+
+  // On mobile bench slots: reserve right margin equal to the energy column width
+  // so the next bench card is pushed right and energy icons don't overlap it.
+  if (isMobileBench) {
+    const energyCount = (card.attachedEnergy || []).length;
+    if (energyCount > 0) {
+      const ICON_PX = 20;  // 18px icon + 2px gap
+      const iconsPerCol = Math.floor(slotH / ICON_PX) || 3;
+      const cols = Math.ceil(energyCount / iconsPerCol);
+      el.style.marginRight = (cols * ICON_PX + 2) + 'px';
+    } else {
+      el.style.marginRight = '';
+    }
+  } else {
+    el.style.marginRight = '';
+  }
+
   if (wasHighlighted) el.classList.add('highlight');
 }
 
@@ -5623,6 +5644,7 @@ function enrichCard(card) {
       defenderFull:     card.defenderFull      ?? false,
       defenderThreshold:card.defenderThreshold ?? 0,
       plusPower:        card.plusPower         ?? 0,
+      nextAttackDouble: card.nextAttackDouble  ?? false,
     };
   }
   return {
@@ -5646,6 +5668,7 @@ function enrichCard(card) {
     defenderFull:     card.defenderFull      ?? false,
     defenderThreshold:card.defenderThreshold ?? 0,
     plusPower:        card.plusPower         ?? 0,
+    nextAttackDouble: card.nextAttackDouble  ?? false,
   };
 }
 
