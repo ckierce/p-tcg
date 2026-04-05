@@ -255,6 +255,8 @@ html, body {
   gap: 8px;
   flex: 1;
   justify-content: flex-start;
+  overflow: hidden; /* contain bench overflow — bench itself scrolls */
+  min-width: 0;
 }
 
 /* Right group: prizes + deck/disc + hand — pushed right */
@@ -299,7 +301,11 @@ html, body {
   display: flex;
   gap: 5px;
   align-items: center;
+  overflow: visible;
+  min-width: 0;
+  flex: 1;
 }
+.opp-bench::-webkit-scrollbar { display: none; }
 
 .opp-bench-slot {
   width: 64px;
@@ -314,8 +320,9 @@ html, body {
   color: var(--muted);
   overflow: visible;
   position: relative;
-  flex-shrink: 0;
-  transition: margin-right .15s ease;
+  flex-shrink: 1;
+  min-width: 24px;
+  transition: margin-right .15s ease, width .15s ease;
 }
 .opp-bench-slot img {
   width: 100%; height: 100%;
@@ -453,7 +460,7 @@ html, body {
   width: 100%;
 }
 
-/* Bench row — centered, overflow visible for energy columns */
+/* Bench row — centered; slots shrink to accommodate energy columns */
 .bench-row {
   display: flex;
   gap: 7px;
@@ -461,7 +468,9 @@ html, body {
   justify-content: center;
   flex-shrink: 0;
   width: 100%;
+  overflow: visible;
 }
+.bench-row::-webkit-scrollbar { display: none; }
 
 .bench-label {
   font-size: 7px;
@@ -488,9 +497,12 @@ html, body {
   color: var(--muted);
   overflow: visible;
   position: relative;
-  transition: border-color .1s, margin-right .15s ease;
-  flex-shrink: 0;
+  transition: border-color .1s, margin-right .15s ease, width .15s ease;
+  flex-shrink: 1;
+  min-width: 28px;
 }
+/* Active slot stays fixed-size — only bench slots shrink */
+#active-p1 { flex-shrink: 0; }
 .zone-slot:hover { border-color: var(--border2); }
 .zone-slot.highlight,
 .opp-bench-slot.highlight { border-color: var(--accent) !important; box-shadow: 0 0 6px rgba(232,200,74,.3); opacity: 1 !important; }
@@ -2829,6 +2841,7 @@ function playAsActive(player, handIdx) {
     G.evolvedThisTurn.push(card.uid);
   }
   addLog(`Player ${player} played ${card.name} as their Active Pokémon.`, true);
+  showActionFlash(player, 'PLAYS', card.name, 'AS ACTIVE');
   renderAll();
 }
 
@@ -2858,6 +2871,7 @@ function evolve(player, handIdx, zone, benchIdx) {
   G.evolvedThisTurn.push(evoCard.uid);
 
   addLog(`Player ${player} evolved ${target.name} into ${evoCard.name}!`, true);
+  showActionFlash(player, 'EVOLVES', evoCard.name, `from ${target.name}`);
   renderAll();
 }
 
@@ -2876,6 +2890,7 @@ function startBenchPlay(player, handIdx) {
   }
   G.pendingAction = null;
   addLog(`Player ${player} played ${card.name} to the bench.`);
+  showActionFlash(player, 'BENCHES', card.name, '');
   renderAll();
 }
 
@@ -2891,6 +2906,7 @@ function playToBench(player, slotIdx) {
   G.pendingAction = null;
   clearHighlights();
   addLog(`Player ${player} played ${card.name} to the bench.`);
+  showActionFlash(player, 'BENCHES', card.name, '');
   renderAll();
 }
 
@@ -2917,6 +2933,7 @@ function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = fa
   G.pendingAction = null;
   clearHighlights();
   addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}${isDCE ? ' (2 energy)' : ''}.`);
+  showActionFlash(player, 'ATTACHES', energy.name, `→ ${targetCard.name}`);
   renderAll();
 }
 
@@ -3987,6 +4004,7 @@ function executeRetreat(player, benchIdx) {
   p.bench[benchIdx] = old;
   G.pendingAction = null;
   clearHighlights();
+  showActionFlash(player, 'RETREATS', old.name, `→ ${p.active.name}`);
   addLog(`Player ${player} retreated ${old.name} → sent out ${p.active.name}.`);
   renderAll();
 }
@@ -4522,6 +4540,45 @@ async function performAttack(player, atk) {
 
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
     const koResult = checkKO(player, opp, oppActive, false);
+
+    // ── Strikes Back (Machamp) ────────────────────────────────────
+    // Fires whenever Machamp takes damage, even if KO'd.
+    // Not usable if Machamp is Asleep, Confused, or Paralyzed.
+    if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
+        oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
+      const strikesHeads = await flipCoin(`Strikes Back! (${oppActive.name}) — Heads = 10 damage to ${myActive?.name || 'attacker'}`);
+      if (strikesHeads && myActive) {
+        // Apply W/R from attacker's weaknesses/resistances
+        const defenderTypes = oppActive.types || [];
+        const attackerWeaknesses = myActive.weaknesses || [];
+        const attackerResistances = myActive.resistances || [];
+        let strikeDmg = 10;
+        for (const w of attackerWeaknesses) {
+          if (defenderTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
+            strikeDmg *= 2;
+            addLog(`Strikes Back: Weakness! ${strikeDmg} damage to ${myActive.name}.`);
+            break;
+          }
+        }
+        for (const r of attackerResistances) {
+          if (defenderTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
+            strikeDmg = Math.max(0, strikeDmg - 30);
+            addLog(`Strikes Back: Resistance! ${strikeDmg} damage to ${myActive.name}.`);
+            break;
+          }
+        }
+        if (strikeDmg > 0) {
+          myActive.damage = (myActive.damage || 0) + strikeDmg;
+          addLog(`Strikes Back! ${myActive.name} takes ${strikeDmg} damage! (${myActive.damage}/${myActive.hp} HP)`, true);
+          const strikeKo = checkKO(opp, player, myActive, false);
+          if (strikeKo === 'win') { renderAll(); return; }
+          if (strikeKo === 'promote') { renderAll(); return; }
+        }
+      } else if (!strikesHeads) {
+        addLog(`Strikes Back: TAILS — no counter-damage.`);
+      }
+    }
+
     if (koResult === 'win') { renderAll(); return; }
     if (koResult === 'promote') { renderAll(); return; }
   } else {
@@ -4872,6 +4929,7 @@ function resolvePromotion(player, benchIdx) {
   G.phase = 'MAIN';
   G.pendingPromotion = null;
   addLog(`Player ${player} promoted ${chosen.name} to Active!`, true);
+  showActionFlash(player, 'PROMOTES', chosen.name, 'TO ACTIVE');
   hidePromoteBanner();
   clearHighlights();
   renderAll();
@@ -5108,9 +5166,12 @@ function renderField(player) {
             benchPower ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${benchPowerSup ? 'opacity:.4;text-decoration:line-through' : ''}">${benchPower.name.substring(0,8)}</div>` : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
-          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
+          const oppBenchW = slotEl.clientWidth || 64;
           const oppBenchH = slotEl.clientHeight || 56;
+          const oppIconSize = Math.min(18, Math.max(10, Math.round(oppBenchW * 0.28)));
+          const oppIconPlusgap = oppIconSize + 3;
+          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, oppIconSize)).join('');
           const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
             <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
@@ -5118,10 +5179,9 @@ function renderField(player) {
           // Push next bench card right to avoid overlap
           const oppEnergyCount = (card.attachedEnergy || []).length;
           if (oppEnergyCount > 0) {
-            const ICON_PX = 22;
-            const iconsPerCol = Math.max(1, Math.floor(oppBenchH / ICON_PX));
+            const iconsPerCol = Math.max(1, Math.floor(oppBenchH / oppIconPlusgap));
             const cols = Math.ceil(oppEnergyCount / iconsPerCol);
-            slotEl.style.marginRight = (cols * ICON_PX + 2) + 'px';
+            slotEl.style.marginRight = (cols * oppIconPlusgap + 2) + 'px';
           } else {
             slotEl.style.marginRight = '';
           }
@@ -5161,7 +5221,6 @@ function renderSlotP1(el, card) {
 
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
-  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, isActive ? 26 : 18)).join('');
   const dmg = damageCounters(card.damage, isActive);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
   const power = getPower(card);
@@ -5176,7 +5235,14 @@ function renderSlotP1(el, card) {
 
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
-  // Both active and bench now use max-height — bench energy goes right, columns downward
+
+  // Scale icon size proportionally to slot width — caps at 26px (active) / 18px (bench)
+  const iconSize = isActive
+    ? Math.min(26, Math.max(14, Math.round(slotW * 0.20)))
+    : Math.min(18, Math.max(10, Math.round(slotW * 0.28)));
+  const iconPlusgap = iconSize + 3;
+
+  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, iconSize)).join('');
   const energyStyle = `max-height:${slotH}px;max-width:none`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
@@ -5185,10 +5251,9 @@ function renderSlotP1(el, card) {
   if (!isActive) {
     const energyCount = (card.attachedEnergy || []).length;
     if (energyCount > 0) {
-      const ICON_PX = isActive ? 30 : 22;  // icon + gap
-      const iconsPerCol = Math.max(1, Math.floor(slotH / ICON_PX));
+      const iconsPerCol = Math.max(1, Math.floor(slotH / iconPlusgap));
       const cols = Math.ceil(energyCount / iconsPerCol);
-      el.style.marginRight = (cols * ICON_PX + 2) + 'px';
+      el.style.marginRight = (cols * iconPlusgap + 2) + 'px';
     } else {
       el.style.marginRight = '';
     }
@@ -5761,8 +5826,11 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName,
   el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
 }
 
-function showTrainerFlash(player, cardName) {
-  // Only show for the opponent's cards (not your own)
+// General opponent action flash — reuses the move-flash overlay
+// verb: top small label e.g. "PLAYS", "RETREATS", "EVOLVES"
+// subject: large center text e.g. card name or pokemon name
+// detail: optional small bottom line
+function showActionFlash(player, verb, subject, detail) {
   const isOpponent = myRole !== null && player !== myRole;
   if (!isOpponent) return;
 
@@ -5772,11 +5840,11 @@ function showTrainerFlash(player, cardName) {
   const moveEl = document.getElementById('move-flash-move');
   const dmgEl = document.getElementById('move-flash-dmg');
 
-  const label = vsComputer ? '🤖 COMPUTER PLAYS' : `PLAYER ${player} PLAYS`;
-  whoEl.textContent = label;
-  attackerEl.textContent = 'TRAINER';
-  moveEl.textContent = cardName.toUpperCase();
-  dmgEl.textContent = '';
+  const who = vsComputer ? '🤖 COMPUTER' : `PLAYER ${player}`;
+  whoEl.textContent = `${who} ${verb}`;
+  attackerEl.textContent = '';
+  moveEl.textContent = (subject || '').toUpperCase();
+  dmgEl.textContent = detail || '';
 
   el.className = `show p${player}`;
 
@@ -5786,9 +5854,13 @@ function showTrainerFlash(player, cardName) {
   inner.style.animation = '';
 
   clearTimeout(el._flashTimer);
-  const TRAINER_FLASH_DURATION = 2200;
-  el._moveFlashUntil = Date.now() + TRAINER_FLASH_DURATION;
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), TRAINER_FLASH_DURATION);
+  const DURATION = 2000;
+  el._moveFlashUntil = Date.now() + DURATION;
+  el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+}
+
+function showTrainerFlash(player, cardName) {
+  showActionFlash(player, 'PLAYS', cardName, 'TRAINER');
 }
 
 // ══════════════════════════════════════════════════
