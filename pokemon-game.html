@@ -2000,32 +2000,42 @@ html, body {
   #lass-divider { display: none; }
   #lass-dismiss { font-size: 8px; padding: 10px 24px; min-height: 44px; }
 
-  /* ── Energy overlays: rearrange for mobile ── */
+  /* ── Energy overlays on mobile ── */
 
-  /* Active card: energy goes below (left: 50% trick won't work off-screen on right) */
+  /* Active card: restore right-side column layout (same as desktop) */
   .energy-overlay {
-    top: calc(100% + 4px);
-    left: 50%;
-    transform: translateX(-50%);
-    flex-direction: row;
+    top: 50%;
+    left: calc(100% + 4px);
+    transform: translateY(-50%);
+    flex-direction: column;
     flex-wrap: wrap;
-    justify-content: center;
-    max-height: none;
-    max-width: 90px;
+    justify-content: flex-start;
+    align-content: flex-start;
+    max-height: var(--active-h);
+    max-width: none;
     gap: 3px;
   }
 
-  /* Bench cards: energy goes to the RIGHT of the card, column layout,
-     max 3 per column then wraps to a new column beside it */
+  /* Bench cards: energy column to the right, in-flow space created by
+     reducing slot flex-shrink so they compress when energy is present.
+     The slot itself has overflow:visible so the absolute overlay bleeds right. */
+  .bench-row {
+    gap: 3px; /* tighter gap so energy columns have room */
+  }
+  .zone-slot:not(#active-p1) {
+    flex-shrink: 1;    /* allow bench slots to compress */
+    min-width: 36px;   /* don't go too small */
+  }
   .energy-overlay-bench {
     top: 0 !important;
-    left: calc(100% + 3px) !important;
+    left: calc(100% + 2px) !important;
     transform: none !important;
     flex-direction: column !important;
     flex-wrap: wrap !important;
     justify-content: flex-start !important;
+    align-content: flex-start !important;
     align-items: flex-start !important;
-    max-height: var(--card-h-sm) !important; /* cap at card height → forces column wrap */
+    max-height: var(--card-h-sm) !important;
     max-width: none !important;
     gap: 2px !important;
   }
@@ -5091,8 +5101,10 @@ function renderField(player) {
           const benchDmg = damageCounters(card.damage);
           const oppBenchW = slotEl.clientWidth || 64;
           const oppBenchH = slotEl.clientHeight || 90;
-          const isMobileOpp = window.innerWidth <= 600;
-          const oppBenchEnergyStyle = isMobileOpp ? `max-height:${oppBenchH}px` : `max-width:${oppBenchW}px`;
+          const isMobileOppBench = window.innerWidth <= 600;
+          const oppBenchEnergyStyle = isMobileOppBench
+            ? `max-height:${oppBenchH}px;max-width:none`
+            : `max-width:${oppBenchW}px`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
             <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
@@ -5145,12 +5157,10 @@ function renderSlotP1(el, card) {
 
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
-  const isMobile = window.innerWidth <= 600;
-  const energyStyle = isActive
-    ? `max-height:${slotH}px`
-    : isMobile
-      ? `max-height:${slotH}px`   // mobile bench: column right-of-card, capped at card height
-      : `max-width:${slotW}px`;   // desktop bench: row below card, capped at card width
+  const isMobileBench = !isActive && window.innerWidth <= 600;
+  const energyStyle = (isActive || isMobileBench)
+    ? `max-height:${slotH}px;max-width:none`
+    : `max-width:${slotW}px`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
   if (wasHighlighted) el.classList.add('highlight');
