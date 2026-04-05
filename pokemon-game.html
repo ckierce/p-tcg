@@ -227,8 +227,8 @@ html, body {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
-  /* Side panels use position:absolute — need relative + no scrolling clipping them */
-  padding: 10px 100px; /* horizontal padding keeps center column clear of side panels */
+  /* Side panels are position:absolute — padding reserves their width so bench never underlaps */
+  padding: 10px calc(var(--card-w-sm) + 14px);
   gap: 8px;
   min-height: 0;
   position: relative;
@@ -315,6 +315,7 @@ html, body {
   overflow: visible;
   position: relative;
   flex-shrink: 0;
+  transition: margin-right .15s ease;
 }
 .opp-bench-slot img {
   width: 100%; height: 100%;
@@ -441,6 +442,7 @@ html, body {
   gap: 8px;
   flex-shrink: 0;
   width: 100%;
+  max-width: 100%; /* content constrained by field-body padding */
 }
 
 #player-field-col {
@@ -451,7 +453,7 @@ html, body {
   width: 100%;
 }
 
-/* Bench row — centered */
+/* Bench row — centered, overflow visible for energy columns */
 .bench-row {
   display: flex;
   gap: 7px;
@@ -486,7 +488,7 @@ html, body {
   color: var(--muted);
   overflow: visible;
   position: relative;
-  transition: border-color .1s;
+  transition: border-color .1s, margin-right .15s ease;
   flex-shrink: 0;
 }
 .zone-slot:hover { border-color: var(--border2); }
@@ -1811,8 +1813,8 @@ html, body {
   #phase-badge { display: none; }
   .top-bar-btn { font-size: 7px; padding: 7px 10px; min-height: 36px; }
 
-  /* ── Field body: remove large horizontal padding, side panels collapse ── */
-  #field-body { padding: 6px 4px; gap: 4px; }
+  /* ── Field body: padding reserves space for absolute side panels ── */
+  #field-body { padding: 6px 46px; gap: 4px; }
 
   /* Side panels: prizes left, deck/discard right — pip style, top-anchored */
   #player-prizes-panel {
@@ -5150,6 +5152,7 @@ function renderSlotP1(el, card) {
   if (!card) {
     el.classList.remove('occupied');
     el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
+    el.style.marginRight = ''; // clear any energy-pushed margin
     if (wasHighlighted) el.classList.add('highlight');
     return;
   }
