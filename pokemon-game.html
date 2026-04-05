@@ -2000,6 +2000,24 @@ html, body {
   #lass-divider { display: none; }
   #lass-dismiss { font-size: 8px; padding: 10px 24px; min-height: 44px; }
 
+  /* ── Energy overlays: move to below cards on mobile so they don't go off-screen ── */
+  .energy-overlay {
+    /* Override: stack below active card instead of beside it */
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-height: none;
+    max-width: 90px; /* ~3 icons wide */
+    gap: 3px;
+  }
+  .energy-overlay-bench {
+    max-width: 56px !important; /* force at least 2 icons wide for narrow bench slots */
+    gap: 2px;
+  }
+
   /* ── Toast ── */
   #toast { font-size: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
 
@@ -4262,8 +4280,26 @@ async function performAttack(player, atk) {
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
 
-  // Show move flash for opponent attacks
-  showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?');
+  // ── Swords Dance / "next attack does double damage" ──────────
+  // If attacker has nextAttackDouble set (from prior Swords Dance), double base damage
+  // and consume the flag before any other modifiers apply.
+  const swordsDanceActive = myActive?.nextAttackDouble && dmg > 0;
+  if (swordsDanceActive) {
+    dmg *= 2;
+    myActive.nextAttackDouble = false;
+    addLog(`${myActive.name}'s Swords Dance doubles ${atk.name}'s damage!`, true);
+  }
+
+  // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
+  // Matches: "During your opponent's next turn, [name]'s [attack] does double damage."
+  const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double damage/i)
+    || (atk.text || '').match(/does double damage.*next turn/i);
+  if (doubleNextMatch && myActive && dmg === 0) {
+    myActive.nextAttackDouble = true;
+    addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
+  }
+
+  // (move flash fires after weakness/resistance is resolved, below)
 
   // Resolve coin-flip damage if the attack text requires it
   const energyCount = (myActive?.attachedEnergy || []).length;
@@ -4357,8 +4393,8 @@ async function performAttack(player, atk) {
     } else if (oppBench.length === 1) {
       const target = oppBench[0].s;
       target.damage = (target.damage || 0) + benchDmg;
+      showMoveFlash(player, myActive?.name || '?', atk.name, benchDmg, target.name, '(bench)');
       addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
-      // Bench KO — no prize, just discard (same as splash damage)
       const tHp = parseInt(target.hp) || 0;
       if (tHp > 0 && target.damage >= tHp) {
         addLog(`${target.name} was knocked out!`, true);
@@ -4366,7 +4402,6 @@ async function performAttack(player, atk) {
         G.players[opp].bench[oppBench[0].i] = null;
       }
     } else {
-      // Let player pick which bench slot to hit
       const picked = await openCardPicker({
         title: atk.name,
         subtitle: "Choose an opponent's Benched Pokémon to deal damage to",
@@ -4376,6 +4411,7 @@ async function performAttack(player, atk) {
       if (picked && picked.length) {
         const { s: target, i: slotIdx } = oppBench[picked[0]];
         target.damage = (target.damage || 0) + benchDmg;
+        showMoveFlash(player, myActive?.name || '?', atk.name, benchDmg, target.name, '(bench)');
         addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
         const tHp = parseInt(target.hp) || 0;
         if (tHp > 0 && target.damage >= tHp) {
@@ -4385,8 +4421,6 @@ async function performAttack(player, atk) {
         }
       }
     }
-    // Bench-targeting attacks don't also hit the active — skip the normal dmg block
-    // by zeroing dmg (it was already 0 for pure bench attacks, but be explicit)
     dmg = 0;
   }
 
@@ -4440,6 +4474,18 @@ async function performAttack(player, atk) {
 
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
+
+    // Flash shows final post-W/R damage with appropriate label
+    const wrSuffix = (() => {
+      const atkTypes = myActive?.types || [];
+      const wasWeak = (oppActive.weaknesses || []).some(w => atkTypes.some(t => t.toLowerCase() === w.type.toLowerCase()));
+      const wasResist = (oppActive.resistances || []).some(r => atkTypes.some(t => t.toLowerCase() === r.type.toLowerCase()));
+      if (wasWeak) return '⚡ WEAKNESS';
+      if (wasResist) return '🛡 RESISTANCE';
+      return '';
+    })();
+    showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?', wrSuffix);
+
     addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
     const koResult = checkKO(player, opp, oppActive, false);
     if (koResult === 'win') { renderAll(); return; }
@@ -4870,6 +4916,8 @@ function endTurn() {
     active.attackReduction = 0;
     active.disabledAttack = null;
     active.defenderReduction = 0;
+    // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
+    // so we do NOT clear it here — it clears itself when the attack fires.
   }
   G.plusPowerActive = 0;
   G.pendingAction = null;
@@ -5616,7 +5664,7 @@ function showTurnFlash(player) {
   }, delay);
 }
 
-function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName) {
+function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
   // Only show for the opponent's moves (not your own)
   const isOpponent = myRole !== null && attackingPlayer !== myRole;
   if (!isOpponent) return;
@@ -5631,7 +5679,9 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName)
   whoEl.textContent = label;
   attackerEl.textContent = attackerName.toUpperCase();
   moveEl.textContent = moveName.toUpperCase();
-  dmgEl.textContent = dmg > 0 ? `${dmg} damage → ${targetName}` : `→ ${targetName}`;
+  dmgEl.textContent = dmg > 0
+    ? `${dmg} damage → ${targetName}${suffix ? '  ' + suffix : ''}`
+    : (suffix ? suffix : `→ ${targetName}`);
 
   el.className = `show p${attackingPlayer}`;
 
