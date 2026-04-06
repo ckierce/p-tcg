@@ -815,13 +815,11 @@ function renderGrid() {
   const energies = filteredCards.filter(c => c.supertype === 'Energy');
   let html = '';
 
-  const SET_ORDER = ['base1', 'base2', 'base3'];
   function pokeSort(arr) {
     return arr.slice().sort((a, b) => {
-      const si = SET_ORDER.indexOf(a.set && a.set.id) - SET_ORDER.indexOf(b.set && b.set.id);
-      if (si !== 0) return si;
-      const na = parseInt(a.number, 10), nb = parseInt(b.number, 10);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      const na = (a.nationalPokedexNumbers && a.nationalPokedexNumbers[0]) ?? Infinity;
+      const nb = (b.nationalPokedexNumbers && b.nationalPokedexNumbers[0]) ?? Infinity;
+      if (na !== nb) return na - nb;
       return a.name.localeCompare(b.name);
     });
   }
