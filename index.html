@@ -431,8 +431,11 @@ select:focus { border-color: var(--accent); }
   .deck-summary {
     display: none; /* shown in mobile tab badge instead */
   }
-  /* Hide desktop buttons that become redundant or move to panel */
-  .header-right .btn-ghost:not([href]) { display: none; }
+
+  /* ── FIX: Hide desktop-only ghost buttons, but keep MY DECKS visible ── */
+  .btn-ghost.hide-mobile { display: none; }
+  .btn-ghost#mydecks-btn { font-size: 6px; padding: 8px 10px; white-space: nowrap; }
+
   .header-right .btn-primary { font-size: 6px; padding: 8px 10px; white-space: nowrap; }
   .header-right a.btn { font-size: 6px; padding: 8px 10px; white-space: nowrap; }
 
@@ -539,7 +542,7 @@ select:focus { border-color: var(--accent); }
     <div class="deck-summary" id="deck-summary">
       <strong>0 / 60</strong> cards
     </div>
-    <button class="btn btn-ghost" onclick="openDecksModal()">MY DECKS</button>
+    <button class="btn btn-ghost" id="mydecks-btn" onclick="openDecksModal()">MY DECKS</button>
     <button class="btn btn-primary" onclick="saveDeck()">SAVE DECK</button>
     <a href="pokemon-game.html" class="btn btn-ghost" style="text-decoration:none">▶ PLAY</a>
   </div>
@@ -673,26 +676,21 @@ const db = firebase.database();
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
 const MAX_COPIES = 4;
 const MAX_DECK = 60;
-// Special energy cards that have a 4-copy limit (like any non-basic card)
-const SPECIAL_ENERGY_NAMES = ['double colorless energy', 'full heal energy', 'potion energy', 'rainbow energy'];
 function isSpecialEnergy(card) {
   if (card.supertype !== 'Energy') return false;
-  // Subtypes: Basic Energy has subtype 'Basic', special energies don't
   if (card.subtypes && card.subtypes.includes('Basic')) return false;
-  const name = card.name.toLowerCase();
-  // Any non-basic energy or explicitly named special energy gets the 4-copy cap
-  return true; // catches Double Colorless Energy and any other non-basic
+  return true;
 }
 function getMaxCopies(card) {
   if (card.supertype !== 'Energy') return MAX_COPIES;
-  return isSpecialEnergy(card) ? MAX_COPIES : Infinity; // basic energy = unlimited
+  return isSpecialEnergy(card) ? MAX_COPIES : Infinity;
 }
 let allCards = [];
 let filteredCards = [];
 let deck = {};
 let activeSet = '';
-let viewMode = 'grid'; // 'grid' | 'list'
-const collapsedSections = new Set(); // tracks which section keys are collapsed
+let viewMode = 'grid';
+const collapsedSections = new Set();
 
 function setViewMode(mode) {
   viewMode = mode;
@@ -741,7 +739,7 @@ function filterCards() {
     const matchType = !typeF || c.supertype === typeF;
     return matchSet && matchQ && matchType;
   });
-  filteredCards.sort((a, b) => a.name.localeCompare(b.name)); // trainers/energy stay alpha
+  filteredCards.sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('results-info').textContent = `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''}`;
   renderGrid();
 }
@@ -797,9 +795,7 @@ function renderGrid() {
   }
 
   const mobile = isMobileLayout();
-  // On mobile always use list; on desktop use current viewMode
   const useList = mobile || viewMode === 'list';
-  // Hide/show the view toggle on mobile (it's desktop-only)
   const toggle = document.getElementById('view-toggle');
   if (toggle) toggle.style.display = mobile ? 'none' : '';
 
@@ -808,7 +804,6 @@ function renderGrid() {
   function wrapCards(cards, collapseKey) {
     if (collapsedSections.has(collapseKey)) return '';
     if (useList) {
-      // In desktop list mode, clicking the row itself adds the card
       const cls = mobile ? 'card-list-inner' : 'card-list-inner desktop-list-inner';
       return `<div class="${cls}">` + cards.map(cardFn).join('') + `</div>`;
     }
@@ -820,7 +815,6 @@ function renderGrid() {
   const energies = filteredCards.filter(c => c.supertype === 'Energy');
   let html = '';
 
-  // Sort helper: set order then card number within set
   const SET_ORDER = ['base1', 'base2', 'base3'];
   function pokeSort(arr) {
     return arr.slice().sort((a, b) => {
@@ -841,7 +835,6 @@ function renderGrid() {
         if (!byType[t]) byType[t] = [];
         byType[t].push(c);
       });
-      // Sort each type bucket by card number
       Object.keys(byType).forEach(t => { byType[t] = pokeSort(byType[t]); });
       for (const t of TYPE_ORDER) {
         if (!byType[t]) continue;
@@ -867,7 +860,6 @@ function renderGrid() {
 
   grid.innerHTML = html;
 
-  // In desktop list mode, wrap the list inners with the desktop-list class
   if (!mobile && useList) {
     grid.querySelectorAll('.card-list-inner').forEach(el => el.classList.add('desktop-list'));
     grid.querySelectorAll('.cli-more').forEach(el => el.style.display = 'none');
@@ -898,7 +890,6 @@ function isMobileLayout() {
 
 function cardLevel(c) {
   if (c.supertype !== 'Pokémon') return null;
-  // Try to pull level from the card data
   if (c.level) return `Lv. ${c.level}`;
   return null;
 }
@@ -961,7 +952,6 @@ function openActionSheet(cardId) {
   document.getElementById('as-title').textContent = card.name;
   document.getElementById('as-sub').textContent = [level, typeLabel, SET_NAMES[card.set.id] || card.set.id].filter(Boolean).join(' · ');
 
-  // Build action items
   const itemsEl = document.getElementById('as-items');
   let html = '';
   if (!atMax && deckTotal() < MAX_DECK) {
@@ -996,17 +986,11 @@ function closeActionSheet() {
 }
 
 function asAddCard() {
-  if (actionSheetCardId) {
-    addCard(actionSheetCardId);
-    closeActionSheet();
-  }
+  if (actionSheetCardId) { addCard(actionSheetCardId); closeActionSheet(); }
 }
 
 function asRemoveCard() {
-  if (actionSheetCardId) {
-    changeQty(actionSheetCardId, -1);
-    closeActionSheet();
-  }
+  if (actionSheetCardId) { changeQty(actionSheetCardId, -1); closeActionSheet(); }
 }
 
 function asViewCard() {
@@ -1156,7 +1140,6 @@ async function saveDeck() {
         name: card.name,
         supertype: card.supertype,
         img: card.images?.small || '',
-        // ── PATCH: extra fields needed by pokemon-game.html ──
         subtypes: card.subtypes || [],
         hp: card.hp || '',
         attacks: card.attacks || [],
@@ -1253,7 +1236,6 @@ function showToast(msg, isError = false) {
   toastTimer = setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), 2200);
 }
 
-// Set tab clicks
 document.querySelectorAll('.set-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.set-tab').forEach(t => t.classList.remove('active'));
@@ -1263,7 +1245,6 @@ document.querySelectorAll('.set-tab').forEach(tab => {
   });
 });
 
-// Close modal on overlay click
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
 });
@@ -1304,14 +1285,12 @@ function updateMobileBadge() {
   }
 }
 
-// Wrap updateHeader to also update mobile badge
 const _baseUpdateHeader = updateHeader;
 window.updateHeader = function() {
   _baseUpdateHeader();
   updateMobileBadge();
 };
 
-// Flash deck tab on mobile when card is added
 const _baseAddCard = addCard;
 window.addCard = function(id) {
   const prevTotal = deckTotal();
