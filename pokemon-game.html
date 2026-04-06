@@ -2963,13 +2963,6 @@ async function playTrainer(player, handIdx) {
   // Flash trainer card name for the opponent
   showTrainerFlash(player, name);
 
-  // Headache (Psyduck) block — opponent can't play Trainer cards this turn
-  if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
-    showToast(`Headache prevents playing Trainer cards this turn!`, true);
-    addLog(`P${player} tried to play ${name} but is blocked by Headache!`, true);
-    return;
-  }
-
   // Helper: remove card from hand and discard it
   const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
 
@@ -3908,15 +3901,10 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const dmg = atk.damage || '0';
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
         const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
-        const isLeekSlapUsed = card.leekSlapUsed && /can't use this attack again as long as/i.test(atk.text || '');
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed;
-        const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
-                         isDisabled ? `${costStr} · DISABLED` :
-                         canAfford ? `${costStr} · ${dmg} dmg` :
-                         `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`;
+        const blocked = !canAfford || isDisabled;
         actions.push({
           label: `⚔ ${atk.name}`,
-          sub: subLabel,
+          sub: isDisabled ? `${costStr} · DISABLED` : canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
           fn: blocked ? null : async () => { closeActionMenu(); await performAttack(player, atk); },
           disabled: blocked,
         });
@@ -4053,15 +4041,6 @@ function executeRetreat(player, benchIdx) {
   if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
 
   const old = p.active;
-  // Clear per-active move-effects flags on retreating pokemon
-  if (old) {
-    old.leekSlapUsed = false;
-    old.immuneToAttack = false;
-    old.swordsDanceActive = false;
-    old.destinyBond = false;
-    old.pounceActive = false;
-    if (typeof clearLastAttack === 'function') clearLastAttack(player);
-  }
   // Clear all special conditions when a Pokémon retreats to the bench (TCG rule)
   if (old.status) {
     addLog(`${old.name}'s ${old.status} condition cleared on retreat.`);
@@ -4080,15 +4059,6 @@ function handleBenchClick(player, slotIdx, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   const slot = G.players[player].bench[slotIdx];
-
-  // Force-switch handler (Whirlwind, Ram, Terror Strike — defending player chooses)
-  if (window._forceSwitchHandler && window._forceSwitchHandler.opp === player && slot) {
-    const handler = window._forceSwitchHandler;
-    if (handler.benchSlots.some(x => x.i === slotIdx)) {
-      handler.resolve(slotIdx);
-      return;
-    }
-  }
 
   // During PROMOTE phase — only the KO'd player can act, and only to pick a bench slot
   if (G.phase === 'PROMOTE') {
@@ -4399,12 +4369,6 @@ async function performAttack(player, atk) {
     }
   }
 
-  // ── Pre-attack checks (Dream Eater, Leek Slap, Smokescreen, Tail Wag/Leer immunity) ──
-  if (typeof preAttackChecks === 'function') {
-    const preResult = await preAttackChecks(player, atk, myActive, oppActive);
-    if (preResult === 'block') { renderAll(); endTurn(); return; }
-  }
-
   // Apply damage — check for coin-flip damage patterns first
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
@@ -4426,11 +4390,6 @@ async function performAttack(player, atk) {
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
-
-  // ── Pre-damage modifications (scaling attacks: Karate Chop, Flail, Rage, Super Fang, etc.) ──
-  if (typeof preDamageModify === 'function') {
-    dmg = preDamageModify(player, atk, dmg, myActive, oppActive);
-  }
 
   // ── Apply Swords Dance doubling AFTER coin flip ──────────────
   // Must happen after coinDmg so the doubled value reflects the actual resolved damage
@@ -4500,14 +4459,6 @@ async function performAttack(player, atk) {
           pObj.bench[i] = null;
         }
       }
-    }
-  }
-
-  // ── RAM (Rhydon): force opponent switch BEFORE applying self-damage / checking KO ──
-  if (/rhydon does 20 damage to itself.*switch/i.test(atk.text || '') || /switch.*even if rhydon is knocked out/i.test(atk.text || '')) {
-    const ramOppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (ramOppBench.length && typeof forceOpponentSwitch === 'function') {
-      await forceOpponentSwitch(opp, false, atk.name);
     }
   }
 
@@ -4589,24 +4540,20 @@ async function performAttack(player, atk) {
     const attackerTypes = myActive?.types || [];
     const weaknesses = oppActive.weaknesses || [];
     const resistances = oppActive.resistances || [];
-    if (!atk._skipWR) {
-      for (const w of weaknesses) {
-        if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
-          dmg *= 2;
-          addLog(`Weakness! Damage doubled to ${dmg}.`);
-          break;
-        }
+    for (const w of weaknesses) {
+      if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
+        dmg *= 2;
+        addLog(`Weakness! Damage doubled to ${dmg}.`);
+        break;
       }
-      // Resistance — subtract 30, min 0
-      for (const r of resistances) {
-        if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
-          dmg = Math.max(0, dmg - 30);
-          addLog(`Resistance! Damage reduced to ${dmg}.`);
-          break;
-        }
+    }
+    // Resistance — subtract 30, min 0
+    for (const r of resistances) {
+      if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
+        dmg = Math.max(0, dmg - 30);
+        addLog(`Resistance! Damage reduced to ${dmg}.`);
+        break;
       }
-    } else {
-      addLog(`${atk.name}: Weakness and Resistance ignored!`);
     }
     // Defender reduction — on the target, after weakness/resistance
     if (oppActive.defenderFull) {
@@ -4623,17 +4570,8 @@ async function performAttack(player, atk) {
       addLog(`Defender reduces damage to ${dmg}.`);
     }
 
-    // Pounce (Persian) — reduce damage if defender used Pounce last turn
-    if (oppActive.pounceActive && dmg > 0) {
-      dmg = Math.max(0, dmg - 10);
-      addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
-    }
-
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
-
-    // Record last attack for Mirror Move
-    if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, dmg);
 
     // Flash shows final post-W/R damage with appropriate label
     const wrSuffix = (() => {
@@ -4691,9 +4629,7 @@ async function performAttack(player, atk) {
     if (koResult === 'promote') { renderAll(); return; }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
-    if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, 0);
   }
-  const _dmgDealt = dmg;
 
   // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
   if (/draw a card/i.test(atk.text || '')) {
@@ -4936,13 +4872,6 @@ async function performAttack(player, atk) {
     }
   }
 
-  // ── Apply special move effects (Lure, Whirlwind, Conversion, Destiny Bond, etc.) ──
-  if (typeof applyMoveEffects === 'function' && G.started) {
-    const currentOpp = G.players[opp].active;
-    const effectBlocked = await applyMoveEffects(player, atk, typeof _dmgDealt !== 'undefined' ? _dmgDealt : 0, myActive, currentOpp);
-    if (effectBlocked === true) return;
-  }
-
   // Attack always ends the turn
   renderAll();
   endTurn();
@@ -4961,12 +4890,6 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     addLog(`${card.name} is knocked out!`, true);
     const owner = isSelf ? attackingPlayer : defendingPlayer;
     const prizeWinner = isSelf ? defendingPlayer : attackingPlayer;
-
-    // Destiny Bond — if the KO'd card had it, KO the attacker too
-    if (!isSelf && card.destinyBond && typeof checkDestinyBond === 'function') {
-      checkDestinyBond(card, attackingPlayer);
-    }
-
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
 
@@ -5051,8 +4974,6 @@ function resolvePromotion(player, benchIdx) {
   p.bench[benchIdx] = null;
   G.phase = 'MAIN';
   G.pendingPromotion = null;
-  // Clear Mirror Move tracking — new active didn't see last attack
-  if (typeof clearLastAttack === 'function') clearLastAttack(player);
   addLog(`Player ${player} promoted ${chosen.name} to Active!`, true);
   showActionFlash(player, 'PROMOTES', chosen.name, 'TO ACTIVE');
   hidePromoteBanner();
@@ -5119,9 +5040,6 @@ function endTurn() {
   }
   G.turn = prev === 1 ? 2 : 1;  // ← flip turn
   G.turnNum++;
-
-  // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
-  if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
@@ -5264,7 +5182,6 @@ function renderField(player) {
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
           oppPower1 ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${oppPowerSup1 ? 'opacity:.4;text-decoration:line-through' : ''}">${oppPower1.name.substring(0,8)}</div>` : '',
-          typeof conversionBadges === 'function' ? conversionBadges(card) : '',
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
@@ -5293,7 +5210,6 @@ function renderField(player) {
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
             benchPower ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${benchPowerSup ? 'opacity:.4;text-decoration:line-through' : ''}">${benchPower.name.substring(0,8)}</div>` : '',
-            typeof conversionBadges === 'function' ? conversionBadges(card) : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
           const benchDmg = damageCounters(card.damage);
@@ -5359,7 +5275,6 @@ function renderSlotP1(el, card) {
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
     card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
     power ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${powerSuppressed ? 'opacity:.4;text-decoration:line-through' : ''}">${power.name.substring(0,8)}</div>` : '',
-    typeof conversionBadges === 'function' ? conversionBadges(card) : '',
   ].filter(Boolean);
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
   const imgSrc = card.images?.small || '';
@@ -7802,6 +7717,5 @@ window.addEventListener('beforeunload', () => {
   if (gameRef) { gameRef.remove().catch(() => {}); }
 });
 </script>
-<script src="move-effects.js"></script>
 </body>
 </html>
