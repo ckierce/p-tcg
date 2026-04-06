@@ -2,10 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pokémon TCG — Game Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -227,8 +224,8 @@ html, body {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
-  /* Side panels are position:absolute — padding reserves their width so bench never underlaps */
-  padding: 10px calc(var(--card-w-sm) + 14px);
+  /* Side panels use position:absolute — need relative + no scrolling clipping them */
+  padding: 10px 100px; /* horizontal padding keeps center column clear of side panels */
   gap: 8px;
   min-height: 0;
   position: relative;
@@ -255,8 +252,6 @@ html, body {
   gap: 8px;
   flex: 1;
   justify-content: flex-start;
-  overflow: hidden; /* contain bench overflow — bench itself scrolls */
-  min-width: 0;
 }
 
 /* Right group: prizes + deck/disc + hand — pushed right */
@@ -301,11 +296,7 @@ html, body {
   display: flex;
   gap: 5px;
   align-items: center;
-  overflow: visible;
-  min-width: 0;
-  flex: 1;
 }
-.opp-bench::-webkit-scrollbar { display: none; }
 
 .opp-bench-slot {
   width: 64px;
@@ -320,9 +311,7 @@ html, body {
   color: var(--muted);
   overflow: visible;
   position: relative;
-  flex-shrink: 1;
-  min-width: 24px;
-  transition: margin-right .15s ease, width .15s ease;
+  flex-shrink: 0;
 }
 .opp-bench-slot img {
   width: 100%; height: 100%;
@@ -449,7 +438,6 @@ html, body {
   gap: 8px;
   flex-shrink: 0;
   width: 100%;
-  max-width: 100%; /* content constrained by field-body padding */
 }
 
 #player-field-col {
@@ -460,7 +448,7 @@ html, body {
   width: 100%;
 }
 
-/* Bench row — centered; slots shrink to accommodate energy columns */
+/* Bench row — centered */
 .bench-row {
   display: flex;
   gap: 7px;
@@ -468,9 +456,7 @@ html, body {
   justify-content: center;
   flex-shrink: 0;
   width: 100%;
-  overflow: visible;
 }
-.bench-row::-webkit-scrollbar { display: none; }
 
 .bench-label {
   font-size: 7px;
@@ -497,12 +483,9 @@ html, body {
   color: var(--muted);
   overflow: visible;
   position: relative;
-  transition: border-color .1s, margin-right .15s ease, width .15s ease;
-  flex-shrink: 1;
-  min-width: 28px;
+  transition: border-color .1s;
+  flex-shrink: 0;
 }
-/* Active slot stays fixed-size — only bench slots shrink */
-#active-p1 { flex-shrink: 0; }
 .zone-slot:hover { border-color: var(--border2); }
 .zone-slot.highlight,
 .opp-bench-slot.highlight { border-color: var(--accent) !important; box-shadow: 0 0 6px rgba(232,200,74,.3); opacity: 1 !important; }
@@ -529,20 +512,18 @@ html, body {
   pointer-events: none;
 }
 
-/* Energy — vertical column to the RIGHT of bench cards (same as active).
-   max-height is set inline at render time to match the slot's actual pixel height.
-   flex-wrap creates a second column when the first fills up. */
+/* Energy — horizontal row below bench cards; wraps into second row if needed.
+   max-width is set inline at render time to match the slot's actual pixel width. */
 .energy-overlay-bench {
   position: absolute;
-  top: 0;
-  left: calc(100% + 4px);
-  transform: none;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex-wrap: wrap;
-  align-content: flex-start;
-  align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: center;
+  align-items: center;
   gap: 3px;
   z-index: 4;
   pointer-events: none;
@@ -704,20 +685,20 @@ html, body {
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge, sits just below midline and grows downward */
+/* ── PLAYER SIDE PANELS ───────────────────────────────────── */
+/* Prizes — fixed to left edge, bottom half only (below midline) */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  top: 50%;           /* anchored at midline */
-  bottom: 0;
+  bottom: 0;         /* sits above the hand bar; field-body handles the offset */
+  top: 50%;          /* never goes above midline */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
+  justify-content: center;
   align-items: center;
   gap: 4px;
   z-index: 10;
-  pointer-events: none;
+  pointer-events: none; /* label only; prize grid re-enables below */
 }
 #player-prizes-panel .prize-grid { pointer-events: auto; }
 #player-prizes-panel .panel-label {
@@ -727,16 +708,15 @@ html, body {
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
+/* Deck + discard — fixed to right edge, bottom half only */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;           /* anchored at midline */
+  top: 50%;          /* never goes above midline */
   bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
+  justify-content: center;
   gap: 6px;
   align-items: center;
   z-index: 10;
@@ -812,11 +792,10 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 8px 14px 10px;
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  max-height: 40vh;
   width: 100%;
 }
 
@@ -830,13 +809,10 @@ html, body {
 
 #hand-p1 {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   align-items: flex-end;
   justify-content: center;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  max-height: 220px;
+  overflow-x: auto;
   width: 100%;
   padding-bottom: 2px;
 }
@@ -926,7 +902,6 @@ html, body {
 #sidebar-content {
   flex: 1;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 10px;
 }
 #sidebar-content::-webkit-scrollbar { width: 4px; }
@@ -1196,67 +1171,6 @@ html, body {
   background: rgba(245,101,101,0.15);
   border: 2px solid var(--p2color);
   color: var(--p2color);
-}
-
-/* ── MOVE FLASH OVERLAY ──────────────────────────── */
-#move-flash {
-  display: none;
-  position: fixed; inset: 0; z-index: 960;
-  align-items: center; justify-content: center;
-  pointer-events: none;
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(2px);
-}
-#move-flash.show { display: flex; }
-#move-flash-inner {
-  font-family: var(--font);
-  text-align: center;
-  padding: 28px 48px;
-  border-radius: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  animation: moveFlashAnim 3.5s ease-out forwards;
-  max-width: 460px;
-  background: var(--surface);
-  box-shadow: 0 8px 40px rgba(0,0,0,0.7);
-}
-@keyframes moveFlashAnim {
-  0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
-  8%   { opacity: 1; transform: scale(1.04) translateY(0); }
-  15%  { opacity: 1; transform: scale(1); }
-  80%  { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(0.97) translateY(6px); }
-}
-#move-flash.p1 #move-flash-inner {
-  border: 2px solid var(--p1color);
-  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(91,156,246,0.2);
-}
-#move-flash.p2 #move-flash-inner {
-  border: 2px solid var(--p2color);
-  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(245,101,101,0.2);
-}
-#move-flash-who {
-  font-size: 8px;
-  letter-spacing: 2px;
-  color: var(--muted);
-}
-#move-flash-attacker {
-  font-size: 11px;
-  letter-spacing: 1px;
-}
-#move-flash.p1 #move-flash-attacker { color: var(--p1color); }
-#move-flash.p2 #move-flash-attacker { color: var(--p2color); }
-#move-flash-move {
-  font-size: 22px;
-  letter-spacing: 2px;
-  color: var(--accent);
-  line-height: 1.3;
-}
-#move-flash-dmg {
-  font-size: 13px;
-  letter-spacing: 1px;
-  color: var(--text);
 }
 
 /* ── COIN FLIP OVERLAY ───────────────────────────── */
@@ -1763,318 +1677,6 @@ html, body {
   0%   { opacity: 1; transform: translateY(0) rotate(0deg); }
   100% { opacity: 0; transform: translateY(100vh) rotate(720deg); }
 }
-/* ══════════════════════════════════════════════════
-   MOBILE OPTIMIZATIONS  (max-width: 600px)
-   ══════════════════════════════════════════════════ */
-
-/* ── Global touch sizing ── */
-@media (max-width: 600px) {
-  :root {
-    --active-w:  clamp(80px,  22vw, 120px);
-    --active-h:  clamp(112px, 31vw, 168px);
-    --card-w-sm: clamp(44px,  12vw,  72px);
-    --card-h-sm: clamp(62px,  17vw, 100px);
-  }
-
-  html, body { overflow: hidden; touch-action: manipulation; }
-
-  /* Prevent double-tap zoom on all interactive elements */
-  button, .hand-card, .zone-slot, .opp-bench-slot, .opp-active-slot,
-  .setup-player, .lobby-btn, .action-btn, .modal-deck-item {
-    touch-action: manipulation;
-  }
-
-  /* ── Setup screen ── */
-  #setup-screen { gap: 16px; padding: 16px; }
-  #setup-screen h1 { font-size: 11px; }
-  .setup-players { flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .setup-player { width: 140px; padding: 16px 12px; }
-  .lobby-btn { font-size: 8px; padding: 12px 14px; }
-
-  /* ── Game board: sidebar becomes full-overlay drawer ── */
-  #game-board {
-    grid-template-columns: 1fr !important;
-    position: relative;
-  }
-  #sidebar {
-    position: fixed;
-    top: 0; right: 0; bottom: 0;
-    width: min(320px, 88vw);
-    transform: translateX(100%);
-    transition: transform 0.25s ease;
-    z-index: 890;
-    border-left: 1px solid var(--border2);
-    box-shadow: -8px 0 32px rgba(0,0,0,.6);
-  }
-  #game-board.sidebar-open #sidebar {
-    transform: translateX(0);
-  }
-  /* Dim backdrop behind sidebar on mobile */
-  #sidebar-backdrop {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.5);
-    z-index: 889;
-  }
-  #game-board.sidebar-open #sidebar-backdrop { display: block; }
-
-  /* ── Top bar ── */
-  #top-bar { padding: 6px 10px; gap: 6px; }
-  .top-bar-logo { font-size: 7px; }
-  #turn-badge { font-size: 7px; padding: 5px 7px; }
-  #phase-badge { display: none; }
-  .top-bar-btn { font-size: 7px; padding: 7px 10px; min-height: 36px; }
-
-  /* ── Field body: padding reserves space for absolute side panels ── */
-  #field-body { padding: 6px 46px; gap: 4px; }
-
-  /* Side panels: prizes left, deck/discard right — pip style, top-anchored */
-  #player-prizes-panel {
-    left: 2px;
-    gap: 3px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;       /* don't stretch to bottom */
-    justify-content: flex-start;
-    padding-top: 4px;
-  }
-  #player-prizes-panel .panel-label { display: none; }
-
-  /* Prize pips — same style as opp prizes */
-  .prize-grid {
-    grid-template-columns: repeat(2, 13px);
-    grid-template-rows: repeat(3, 18px);
-    gap: 3px;
-  }
-  .prize-slot {
-    width: 13px;
-    height: 18px;
-    border-radius: 2px;
-  }
-  .prize-slot img { object-fit: cover; }
-  .prize-slot.face-down::after { font-size: 7px; }
-
-  #player-aux {
-    right: 2px;
-    gap: 4px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;
-    justify-content: flex-start;
-    padding-top: 4px;
-  }
-  .player-deck-slot {
-    width: clamp(36px, 9vw, 52px);
-    height: clamp(50px, 12.5vw, 72px);
-  }
-  .player-discard-slot {
-    width: clamp(36px, 9vw, 52px);
-    height: clamp(50px, 12.5vw, 72px);
-  }
-  #deck-count-p1 { font-size: 9px; }
-
-  /* ── Opponent zone: bench row on top, active (full size) below, prizes left, deck/disc right ── */
-  #opponent-zone {
-    display: grid;
-    grid-template-areas:
-      "prizes bench aux"
-      "prizes active aux";
-    grid-template-columns: 44px 1fr 44px;
-    grid-template-rows: auto auto;
-    align-items: center;
-    justify-items: center;
-    padding: 6px 4px 6px;
-    gap: 4px;
-    position: relative;
-  }
-  /* Bench — horizontal row, top area */
-  #opp-left {
-    grid-area: bench;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 3px;
-    flex: none;
-    width: 100%;
-  }
-  .opp-label { display: none; }
-  .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
-  .opp-bench-slot { width: 40px; height: 56px; }
-
-  /* Active — full player-active size, bottom area */
-  .opp-active-slot {
-    grid-area: active;
-    width: var(--active-w);
-    height: var(--active-h);
-    flex-shrink: 0;
-  }
-
-  /* opp-right uses display:contents so its children sit in their own grid areas */
-  #opp-right { display: contents; }
-
-  /* Prizes — left column */
-  .opp-prizes {
-    grid-area: prizes;
-    grid-template-columns: repeat(2, 13px);
-    grid-template-rows: repeat(3, 18px);
-    gap: 3px;
-    align-self: center;
-  }
-  .opp-prize-pip { width: 13px; height: 18px; }
-
-  /* Deck + discard — right column, stacked */
-  .opp-aux-row {
-    grid-area: aux;
-    flex-direction: column;
-    gap: 4px;
-    align-self: center;
-    align-items: center;
-  }
-  .opp-deck-slot { width: 36px; height: 50px; }
-  .opp-discard   { width: 36px; height: 50px; }
-
-  /* Hand count hidden — too little space */
-  .opp-hand-count { display: none; }
-
-  /* ── Midline ── */
-  #midline { padding: 1px 0; }
-  #midline-info { font-size: 6px; white-space: normal; text-align: center; max-width: 180px; }
-
-  /* ── Player zone ── */
-  #player-zone { gap: 4px; }
-  #player-field-col { gap: 4px; }
-  .bench-row { gap: 4px; }
-  .bench-label { display: none; }
-
-  /* ── Hand area: 3 rows max, scrollable ── */
-  #bottom-bar { padding: 6px 8px 8px; gap: 4px; max-height: 35vh; }
-  .hand-label { font-size: 7px; }
-  #hand-p1 { gap: 4px; max-height: 28vh; }
-  .hand-card { width: 52px; }
-  .hand-card:hover { transform: none; } /* no hover on touch */
-  .hand-card:active { transform: translateY(-4px); border-color: var(--border2); }
-  .hand-card-name { font-size: 4px; }
-  .hand-card-sub { font-size: 4px; }
-
-  /* ── Action menu: bottom sheet on mobile ── */
-  #action-menu {
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    top: auto !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    border-radius: 14px 14px 0 0;
-    border-bottom: none;
-    padding: 16px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
-    max-height: 70vh;
-    overflow-y: auto;
-    box-shadow: 0 -8px 40px rgba(0,0,0,.7);
-  }
-  #action-menu-title { font-size: 9px; padding-bottom: 10px; margin-bottom: 8px; }
-  .action-btn {
-    font-size: 8px;
-    padding: 13px 12px;
-    margin-bottom: 6px;
-    min-height: 44px;
-  }
-  .action-btn-sub { font-size: 7px; margin-top: 3px; }
-
-  /* ── Modals ── */
-  .modal-box {
-    width: 92vw !important;
-    max-height: 85vh;
-    border-radius: 12px;
-    padding: 16px;
-  }
-  #card-picker-modal .modal-box { width: 96vw !important; }
-  #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
-  .picker-card img { width: 100%; aspect-ratio: 5/7; object-fit: cover; border-radius: 4px; }
-  .picker-card-name { font-size: 5px; }
-  .modal-title { font-size: 9px; }
-  .modal-close-btn { font-size: 8px; padding: 10px 16px; min-height: 44px; }
-  .modal-deck-item { padding: 12px 10px; min-height: 52px; }
-  .d-name { font-size: 8px; }
-  .d-count { font-size: 7px; }
-
-  /* ── Overlays: scale up for readability ── */
-  #move-flash-move { font-size: 16px; }
-  #move-flash-attacker { font-size: 9px; }
-  #move-flash-dmg { font-size: 11px; }
-  #move-flash-who { font-size: 7px; }
-  #move-flash-inner { padding: 20px 24px; }
-
-  #turn-flash-inner { font-size: 14px; padding: 16px 32px; }
-
-  #coin-label { font-size: 8px; }
-  #coin-result { font-size: 14px; }
-
-  /* ── Win screen ── */
-  #win-box { padding: 28px 20px; }
-  #win-trophy { font-size: 36px; }
-  #win-headline { font-size: 8px; }
-  #win-player-name { font-size: 14px; }
-  #win-reason { font-size: 6px; }
-  .win-btn { font-size: 7px; padding: 10px 16px; min-height: 44px; }
-
-  /* ── Promote banner ── */
-  #promote-banner { font-size: 8px; padding: 10px 14px; }
-
-  /* ── Card detail ── */
-  #card-detail-img { max-width: 70vw; }
-
-  /* ── Sidebar tabs ── */
-  .sidebar-tab { font-size: 7px; padding: 12px 4px; min-height: 44px; }
-  .log-entry { font-size: 7px; }
-
-  /* ── Pokedex modal ── */
-  #pokedex-box { padding: 14px; gap: 10px; }
-  #pokedex-title { font-size: 9px; }
-  .dex-card-img { width: 72px; }
-  .dex-btn { font-size: 7px; padding: 10px 16px; min-height: 44px; }
-
-  /* ── VS CPU panel ── */
-  #cpu-difficulty-row { flex-wrap: wrap; gap: 6px; }
-  #start-cpu-btn { font-size: 9px; padding: 12px 24px; }
-
-  /* ── Lass modal ── */
-  #lass-modal-inner { flex-direction: column !important; }
-  #lass-divider { display: none; }
-  #lass-dismiss { font-size: 8px; padding: 10px 24px; min-height: 44px; }
-
-  /* ── Energy overlays on mobile ── */
-
-  /* Active card: restore right-side column layout (same as desktop) */
-  .energy-overlay {
-    top: 50%;
-    left: calc(100% + 4px);
-    transform: translateY(-50%);
-    flex-direction: column;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    align-content: flex-start;
-    max-height: var(--active-h);
-    max-width: none;
-    gap: 3px;
-  }
-
-  /* Bench energy — desktop CSS now handles right-side column layout universally */
-
-  /* ── Toast ── */
-  #toast { font-size: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 80px); }
-
-  /* ── Disable backdrop-filter on mobile for perf ── */
-  #action-menu { backdrop-filter: none; }
-  #move-flash { backdrop-filter: none; }
-}
-
-/* Landscape phone: give field body a bit more vertical room */
-@media (max-width: 600px) and (orientation: landscape) {
-  #bottom-bar { max-height: 28vh; }
-  #hand-p1 { max-height: 22vh; }
-  .hand-card { width: 42px; }
-  #player-prizes-panel { display: none; }
-  #player-aux { display: none; }
-}
 </style>
 </head>
 <body>
@@ -2088,10 +1690,9 @@ html, body {
   <!-- LOBBY -->
   <div id="lobby-panel">
     <p style="font-size:8px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
-    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <div style="display:flex;gap:12px;justify-content:center">
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
-      <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="index.html">← Back to Deck Builder</a>
@@ -2114,32 +1715,6 @@ html, body {
     </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
     <div id="setup-hint" style="font-size:7px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
-  </div>
-
-  <!-- VS COMPUTER PANEL -->
-  <div id="vs-computer-panel" style="display:none;text-align:center;">
-    <p style="font-size:8px;color:var(--ok);margin-bottom:16px">VS COMPUTER — YOU ARE P1</p>
-    <div style="font-size:8px;color:var(--muted);margin-bottom:16px">Load your deck, then start the game</div>
-    <div class="setup-players" style="justify-content:center;gap:20px">
-      <div class="setup-player p1" onclick="openLoadModal(1)">
-        <div class="setup-player-icon">🔵</div>
-        <div class="setup-player-label">YOUR DECK (P1)</div>
-        <div class="setup-player-status" id="p1-vs-cpu-status">No deck loaded</div>
-      </div>
-      <div class="setup-player p2" onclick="openLoadModal(2)" style="cursor:pointer;">
-        <div class="setup-player-icon">🤖</div>
-        <div class="setup-player-label">AI DECK (P2)</div>
-        <div class="setup-player-status" id="p2-cpu-status">Click to choose deck</div>
-      </div>
-    </div>
-    <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size:11px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
-    <div id="cpu-difficulty-row" style="margin-top:12px;display:flex;gap:10px;justify-content:center;align-items:center">
-      <span style="font-size:7px;color:var(--muted)">AI DIFFICULTY:</span>
-      <button class="lobby-btn" id="diff-easy" onclick="setAiDiff('easy')" style="padding:6px 14px;font-size:7px;border-color:var(--ok);color:var(--ok)">EASY</button>
-      <button class="lobby-btn" id="diff-normal" onclick="setAiDiff('normal')" style="padding:6px 14px;font-size:7px">NORMAL</button>
-      <button class="lobby-btn" id="diff-hard" onclick="setAiDiff('hard')" style="padding:6px 14px;font-size:7px">HARD</button>
-    </div>
-    <div style="margin-top:12px"><button class="lobby-btn" style="font-size:7px;color:var(--muted)" onclick="showLobby()">← BACK</button></div>
   </div>
 
   <!-- P2 JOIN PANEL -->
@@ -2282,7 +1857,6 @@ html, body {
   </div><!-- /field -->
 
   <!-- ── SIDEBAR ── -->
-  <div id="sidebar-backdrop" onclick="toggleSidebar()"></div>
   <div id="sidebar">
     <div class="sidebar-tabs">
       <button class="sidebar-tab active" id="tab-log" onclick="showTab('log')">LOG</button>
@@ -2400,16 +1974,6 @@ html, body {
 <!-- Turn change overlay -->
 <div id="turn-overlay">
   <div id="turn-overlay-inner"></div>
-</div>
-
-<!-- Move flash overlay -->
-<div id="move-flash">
-  <div id="move-flash-inner">
-    <div id="move-flash-who"></div>
-    <div id="move-flash-attacker"></div>
-    <div id="move-flash-move"></div>
-    <div id="move-flash-dmg"></div>
-  </div>
 </div>
 
 <!-- Coin flip overlay -->
@@ -2644,36 +2208,21 @@ function handleEndTurnBtn() {
   }
 }
 
-async function doneSetup() {
+function doneSetup() {
   if (!G.players[1].active) { showToast('Player 1 must place an Active Pokémon first!', true); return; }
   if (!G.players[2].active) { showToast('Player 2 must place an Active Pokémon first!', true); return; }
-
-  // Coin flip to decide who goes first — heads = P1, tails = P2
-  const heads = await flipCoin('Coin flip! Heads = Player 1 goes first, Tails = Player 2 goes first');
-  const firstPlayer = heads ? 1 : 2;
-
   G.phase = 'DRAW';
-  G.turn = firstPlayer;
+  G.turn = 1;
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
-
-  // First player draws their opening card + any extra draws owed from opponent mulligans
-  const extras = G.pendingExtraDraws?.[firstPlayer] || 0;
-  for (let i = 0; i <= extras; i++) drawCard(firstPlayer, true);
-
-  const winner = vsComputer
-    ? (firstPlayer === 1 ? 'You go first!' : '🤖 Computer goes first!')
-    : `Player ${firstPlayer} goes first!`;
-  addLog(`Setup complete! ${winner}`, true);
+  // P1 draws first card + any extra draws owed due to P2 mulligans
+  const extras = G.pendingExtraDraws?.[1] || 0;
+  for (let i = 0; i <= extras; i++) drawCard(1, true);
+  addLog('Setup complete! Player 1 goes first.', true);
   renderAll();
-  showTurnFlash(firstPlayer);
-  showToast(winner, false, 'ok');
-
-  // If AI won the flip, kick off its turn
-  if (vsComputer && firstPlayer === 2) {
-    setTimeout(() => aiTakeTurn(), 1200);
-  }
+  showTurnFlash(1);
+  showToast('Game on! P1 goes first.', false, 'ok');
 }
 
 // ══════════════════════════════════════════════════
@@ -2841,7 +2390,6 @@ function playAsActive(player, handIdx) {
     G.evolvedThisTurn.push(card.uid);
   }
   addLog(`Player ${player} played ${card.name} as their Active Pokémon.`, true);
-  showActionFlash(player, 'PLAYS', card.name, 'AS ACTIVE');
   renderAll();
 }
 
@@ -2856,6 +2404,9 @@ function evolve(player, handIdx, zone, benchIdx) {
   evoCard.damage = target.damage || 0;
   evoCard.attachedEnergy = target.attachedEnergy || [];
   evoCard.status = null; // evolving cures status conditions
+  // Clear one-time-use attack flags from evolved-from card
+  target.leekSlapUsed = false;
+  target.swordsDanceActive = false;
 
   // Send the pre-evolution card to discard (this includes Mysterious Fossil)
   p.discard.push(target);
@@ -2871,7 +2422,6 @@ function evolve(player, handIdx, zone, benchIdx) {
   G.evolvedThisTurn.push(evoCard.uid);
 
   addLog(`Player ${player} evolved ${target.name} into ${evoCard.name}!`, true);
-  showActionFlash(player, 'EVOLVES', evoCard.name, `from ${target.name}`);
   renderAll();
 }
 
@@ -2890,7 +2440,6 @@ function startBenchPlay(player, handIdx) {
   }
   G.pendingAction = null;
   addLog(`Player ${player} played ${card.name} to the bench.`);
-  showActionFlash(player, 'BENCHES', card.name, '');
   renderAll();
 }
 
@@ -2906,7 +2455,6 @@ function playToBench(player, slotIdx) {
   G.pendingAction = null;
   clearHighlights();
   addLog(`Player ${player} played ${card.name} to the bench.`);
-  showActionFlash(player, 'BENCHES', card.name, '');
   renderAll();
 }
 
@@ -2933,7 +2481,6 @@ function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = fa
   G.pendingAction = null;
   clearHighlights();
   addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}${isDCE ? ' (2 energy)' : ''}.`);
-  showActionFlash(player, 'ATTACHES', energy.name, `→ ${targetCard.name}`);
   renderAll();
 }
 
@@ -2960,8 +2507,12 @@ async function playTrainer(player, handIdx) {
   const name = card.name;
   const rules = card.rules?.[0] || '';
 
-  // Flash trainer card name for the opponent
-  showTrainerFlash(player, name);
+  // ── Headache (Psyduck) — block Trainer plays ──────────────────────────────
+  if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
+    showToast(`Headache prevents playing Trainer cards this turn!`, true);
+    addLog(`P${player} tried to play ${name} but is blocked by Headache!`, true);
+    return;
+  }
 
   // Helper: remove card from hand and discard it
   const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
@@ -3047,23 +2598,27 @@ async function playTrainer(player, handIdx) {
   if (name === 'Switch') {
     if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
     const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    const doSwitch = (benchIdx, benchPoke) => {
+    // If only one bench option, swap immediately
+    if (benchSlots.length === 1) {
       consume();
       const old = p.active;
-      if (old.status) {
-        addLog(`${old.name}'s ${old.status} condition cleared by Switch.`);
-        old.status = null;
-      }
-      p.active = benchPoke;
-      p.bench[benchIdx] = old;
+      p.active = benchSlots[0].s;
+      p.bench[benchSlots[0].i] = old;
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
-      closeActionMenu(); renderAll();
-    };
-    if (benchSlots.length === 1) { doSwitch(benchSlots[0].i, benchSlots[0].s); return; }
+      renderAll(); return;
+    }
+    // Multiple bench options — let player choose; consume only on confirm
     closeActionMenu();
     showActionMenu('Switch — choose a Pokémon', benchSlots.map(({ s, i }) => ({
       label: `Bench ${i+1}: ${s.name}`,
-      fn: () => doSwitch(i, s)
+      fn: () => {
+        consume();
+        const old = p.active;
+        p.active = s;
+        p.bench[i] = old;
+        addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
+        closeActionMenu(); renderAll();
+      }
     })), null);
     return;
   }
@@ -3097,44 +2652,26 @@ async function playTrainer(player, handIdx) {
 
   // ── Energy Removal ────────────────────────────────
   if (name === 'Energy Removal') {
-    // Build list of all opponent Pokémon that have energy attached
-    const oppTargets = [
-      ...(opp.active?.attachedEnergy?.length ? [{ card: opp.active, zone: 'active', idx: null }] : []),
-      ...opp.bench.map((b, i) => (b?.attachedEnergy?.length ? { card: b, zone: 'bench', idx: i } : null)).filter(Boolean)
-    ];
-    if (!oppTargets.length) { showToast("Opponent has no energy to remove!", true); return; }
+    if (!opp.active?.attachedEnergy?.length) { showToast("Opponent's Active has no energy!", true); return; }
     consume();
-
-    // Step 1: choose which Pokémon to target (skip if only one option)
-    let targetEntry = oppTargets[0];
-    if (oppTargets.length > 1) {
-      const targetPicked = await openCardPicker({
-        title: 'Energy Removal',
-        subtitle: "Choose opponent's Pokémon to remove energy from",
-        cards: oppTargets.map(e => e.card),
-        maxSelect: 1
-      });
-      if (!targetPicked || !targetPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
-      targetEntry = oppTargets[targetPicked[0]];
-    }
-    const targetCard = targetEntry.zone === 'active' ? opp.active : opp.bench[targetEntry.idx];
-
-    // Step 2: choose which energy to discard (skip if only one)
-    let removed;
-    if (targetCard.attachedEnergy.length === 1) {
-      removed = targetCard.attachedEnergy.splice(0, 1)[0];
+    // If only 1 energy, remove it automatically; otherwise let player choose
+    if (opp.active.attachedEnergy.length === 1) {
+      const removed = opp.active.attachedEnergy.splice(0, 1)[0];
+      opp.discard.push(removed);
+      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
     } else {
-      const energyPicked = await openCardPicker({
+      const picked = await openCardPicker({
         title: 'Energy Removal',
-        subtitle: `Choose 1 energy to discard from ${targetCard.name}`,
-        cards: targetCard.attachedEnergy,
+        subtitle: `Choose 1 energy to discard from ${opp.active.name}`,
+        cards: opp.active.attachedEnergy,
         maxSelect: 1
       });
-      if (!energyPicked || !energyPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
-      removed = targetCard.attachedEnergy.splice(energyPicked[0], 1)[0];
+      if (!picked || !picked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      const idx = opp.active.attachedEnergy.indexOf(picked[0]);
+      const removed = opp.active.attachedEnergy.splice(idx, 1)[0];
+      opp.discard.push(removed);
+      addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${opp.active.name}.`, true);
     }
-    opp.discard.push(removed);
-    addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${targetCard.name}.`, true);
     renderAll(); return;
   }
 
@@ -3901,28 +3438,21 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const dmg = atk.damage || '0';
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
         const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
-        const blocked = !canAfford || isDisabled;
+        const isLeekSlapUsed = card.leekSlapUsed && /can't use this attack again as long as/i.test(atk.text || '');
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed;
+        const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
+                         isDisabled ? `${costStr} · DISABLED` :
+                         canAfford ? `${costStr} · ${dmg} dmg` :
+                         `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`;
         actions.push({
           label: `⚔ ${atk.name}`,
-          sub: isDisabled ? `${costStr} · DISABLED` : canAfford ? `${costStr} · ${dmg} dmg` : `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`,
+          sub: subLabel,
           fn: blocked ? null : async () => { closeActionMenu(); await performAttack(player, atk); },
           disabled: blocked,
         });
       });
     }
-    const activeStatus = card.status;
-    const retreatBlocked = activeStatus === 'paralyzed' || activeStatus === 'asleep';
-    const retreatConfused = activeStatus === 'confused';
-    const retreatLabel = retreatBlocked
-      ? `Retreat — blocked (${activeStatus})`
-      : retreatConfused
-        ? 'Retreat (flip coin — confused)'
-        : 'Retreat';
-    actions.push({
-      label: retreatLabel,
-      disabled: retreatBlocked,
-      fn: retreatBlocked ? null : () => { attemptRetreat(player); closeActionMenu(); }
-    });
+    actions.push({ label: 'Retreat', fn: () => { attemptRetreat(player); closeActionMenu(); } });
 
     // ── Pokémon Power actions ──
     if (!isMukActive()) {
@@ -3974,32 +3504,6 @@ function attemptRetreat(player) {
   if (!p.active) return;
   if (p.active.canRetreat === false) { showToast(`${p.active.name} cannot retreat!`, true); return; }
 
-  // Paralyzed and Asleep Pokémon cannot retreat (TCG rule)
-  if (p.active.status === 'paralyzed') {
-    showToast(`${p.active.name} is Paralyzed and cannot retreat!`, true); return;
-  }
-  if (p.active.status === 'asleep') {
-    showToast(`${p.active.name} is Asleep and cannot retreat!`, true); return;
-  }
-  // Confused Pokémon must flip a coin to retreat — heads OK, tails fail
-  if (p.active.status === 'confused') {
-    (async () => {
-      const heads = await flipCoin(`${p.active.name} is Confused! Heads = can retreat, Tails = cannot retreat`);
-      if (!heads) {
-        addLog(`${p.active.name} is Confused — TAILS! Cannot retreat this turn.`, true);
-        showToast(`${p.active.name} is too Confused to retreat!`, true);
-        return;
-      }
-      addLog(`${p.active.name} is Confused — HEADS! Retreating...`);
-      doRetreat(player, p);
-    })();
-    return;
-  }
-  doRetreat(player, p);
-}
-
-function doRetreat(player, p) {
-
   const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
   if (!benchSlots.length) { showToast('No bench Pokémon to retreat to!', true); return; }
 
@@ -4026,14 +3530,6 @@ function doRetreat(player, p) {
 
 function executeRetreat(player, benchIdx) {
   const p = G.players[player];
-
-  // Final guard — should not happen if attemptRetreat was used correctly,
-  // but prevents energy loss if status blocks retreat
-  if (p.active?.status === 'paralyzed' || p.active?.status === 'asleep') {
-    showToast(`${p.active.name} cannot retreat!`, true);
-    G.pendingAction = null; clearHighlights(); return;
-  }
-
   const retreatCost = p.active.convertedRetreatCost || 0;
 
   const discarded = p.active.attachedEnergy.splice(0, retreatCost);
@@ -4041,16 +3537,19 @@ function executeRetreat(player, benchIdx) {
   if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
 
   const old = p.active;
-  // Clear all special conditions when a Pokémon retreats to the bench (TCG rule)
-  if (old.status) {
-    addLog(`${old.name}'s ${old.status} condition cleared on retreat.`);
-    old.status = null;
+  // Clear per-active flags on the retreating pokemon
+  if (old) {
+    old.leekSlapUsed = false;
+    old.immuneToAttack = false;
+    old.swordsDanceActive = false;
+    old.destinyBond = false;
+    old.pounceActive = false;
+    if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
   p.active = p.bench[benchIdx];
   p.bench[benchIdx] = old;
   G.pendingAction = null;
   clearHighlights();
-  showActionFlash(player, 'RETREATS', old.name, `→ ${p.active.name}`);
   addLog(`Player ${player} retreated ${old.name} → sent out ${p.active.name}.`);
   renderAll();
 }
@@ -4059,6 +3558,15 @@ function handleBenchClick(player, slotIdx, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   const slot = G.players[player].bench[slotIdx];
+
+  // Force-switch handler (Whirlwind, Ram, Terror Strike — defending player chooses)
+  if (window._forceSwitchHandler && window._forceSwitchHandler.opp === player && slot) {
+    const handler = window._forceSwitchHandler;
+    if (handler.benchSlots.some(x => x.i === slotIdx)) {
+      handler.resolve(slotIdx);
+      return;
+    }
+  }
 
   // During PROMOTE phase — only the KO'd player can act, and only to pick a bench slot
   if (G.phase === 'PROMOTE') {
@@ -4109,43 +3617,28 @@ function flipCoin(label) {
     const labelEl = document.getElementById('coin-label');
 
     const heads = Math.random() < 0.5;
-    const endDeg = heads ? 1440 : 1620;
+    // heads = 0deg final (front face showing), tails = 180deg
+    const endDeg = heads ? 1440 : 1620; // multiple full rotations + land on face
+    coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
 
-    // Brief pause so any move flash has time to register before the coin appears
-    const PRE_DELAY = 700;
+    labelEl.textContent = label || 'Flipping a coin...';
+    resultEl.textContent = '';
+    overlay.classList.add('show');
 
-    // Extend move flash to stay visible through the coin flip
-    const moveFlashEl = document.getElementById('move-flash');
-    if (moveFlashEl?.classList.contains('show')) {
-      const COIN_TOTAL = PRE_DELAY + 1000 + 1200 + 600; // pre + spin + result + buffer
-      const newUntil = Date.now() + COIN_TOTAL;
-      if (!moveFlashEl._moveFlashUntil || moveFlashEl._moveFlashUntil < newUntil) {
-        clearTimeout(moveFlashEl._flashTimer);
-        moveFlashEl._moveFlashUntil = newUntil;
-        moveFlashEl._flashTimer = setTimeout(() => moveFlashEl.classList.remove('show'), COIN_TOTAL);
-      }
-    }
+    // Reset animation
+    coin.classList.remove('flipping');
+    void coin.offsetWidth; // reflow
+    coin.classList.add('flipping');
 
     setTimeout(() => {
-      coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
-      labelEl.textContent = label || 'Flipping a coin...';
-      resultEl.textContent = '';
-      overlay.classList.add('show');
-
-      coin.classList.remove('flipping');
-      void coin.offsetWidth;
-      coin.classList.add('flipping');
-
+      resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
+      resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
       setTimeout(() => {
-        resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
-        resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
-        setTimeout(() => {
-          overlay.classList.remove('show');
-          coin.classList.remove('flipping');
-          resolve(heads);
-        }, 1200);
-      }, 1000);
-    }, PRE_DELAY);
+        overlay.classList.remove('show');
+        coin.classList.remove('flipping');
+        resolve(heads);
+      }, 1200);
+    }, 1000);
   });
 }
 
@@ -4369,39 +3862,24 @@ async function performAttack(player, atk) {
     }
   }
 
+  // ── Pre-attack checks (Dream Eater, Leek Slap, Smokescreen, Tail Wag/Leer immunity) ──
+  if (typeof preAttackChecks === 'function') {
+    const preResult = await preAttackChecks(player, atk, myActive, oppActive);
+    if (preResult === 'block') { renderAll(); endTurn(); return; }
+  }
+
   // Apply damage — check for coin-flip damage patterns first
   const dmgStr = atk.damage || '0';
   let dmg = parseInt(dmgStr.replace(/[^0-9]/g, '')) || 0;
-
-  // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
-  // Detect by text pattern OR by known attack names that have this effect.
-  const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
-    || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
-    || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i)
-    || /^swords dance$/i.test(atk.name || '');  // name-based fallback
-  if (doubleNextMatch && myActive && dmg === 0) {
-    myActive.nextAttackDouble = true;
-    addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
-  }
-
-  // (move flash fires after weakness/resistance is resolved, below)
 
   // Resolve coin-flip damage if the attack text requires it
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
 
-  // ── Apply Swords Dance doubling AFTER coin flip ──────────────
-  // Must happen after coinDmg so the doubled value reflects the actual resolved damage
-  // (e.g. Slash flips tails → 0 damage even with Swords Dance; heads → 60 instead of 30)
-  if (myActive?.nextAttackDouble && dmg > 0) {
-    dmg *= 2;
-    myActive.nextAttackDouble = false;
-    addLog(`${myActive.name}'s Swords Dance doubles ${atk.name}'s damage to ${dmg}!`, true);
-  } else if (myActive?.nextAttackDouble && dmg === 0 && coinDmg !== null) {
-    // Coin flip returned 0 (tails) — consume the flag anyway so it doesn't linger
-    myActive.nextAttackDouble = false;
-    addLog(`${myActive.name}'s Swords Dance buff wasted — ${atk.name} did no damage (tails).`);
+  // ── Pre-damage modifications (scaling attacks: Karate Chop, Flail, Rage, Rampage, Super Fang, Boyfriends, Do the Wave, Swords Dance, Sonicboom) ──
+  if (typeof preDamageModify === 'function') {
+    dmg = preDamageModify(player, atk, dmg, myActive, oppActive);
   }
 
   // ── Extra-energy bonus damage: "does N more damage for each [Type] Energy beyond the first" ──
@@ -4462,6 +3940,14 @@ async function performAttack(player, atk) {
     }
   }
 
+  // ── RAM (Rhydon): force opponent switch BEFORE applying self-damage / checking KO ──
+  if (/rhydon does 20 damage to itself.*switch/i.test(atk.text || '') || /switch.*even if rhydon is knocked out/i.test(atk.text || '')) {
+    const ramOppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    if (ramOppBench.length) {
+      await forceOpponentSwitch(opp, false, atk.name);
+    }
+  }
+
   // ── Self-damage: "[Pokémon] does N damage to itself" (unconditional, not coin-gated) ──
   // e.g. Selfdestruct, Explosion — excludes "If tails, X does N damage to itself" (Pattern 6)
   const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
@@ -4475,51 +3961,6 @@ async function performAttack(player, atk) {
     if (myHp > 0 && myActive.damage >= myHp) {
       attackerSelfKOd = true;
     }
-  }
-
-  // ── Bench-targeting attacks: "Does N damage to 1 of your opponent's Benched Pokémon" ──
-  // e.g. Hitmonlee Stretch Kick (20 damage). No weakness/resistance applies to benched Pokémon.
-  // These attacks deal 0 to the active and all damage goes to a chosen bench slot.
-  const benchTargetMatch = (atk.text || '').match(
-    /does (\d+) damage to (?:1 of )?(?:your )?opponent[''s]* benched pok[eé]mon/i
-  );
-  if (benchTargetMatch) {
-    const benchDmg = parseInt(benchTargetMatch[1]);
-    const oppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (!oppBench.length) {
-      addLog(`${atk.name}: opponent has no Benched Pokémon to target!`);
-    } else if (oppBench.length === 1) {
-      const target = oppBench[0].s;
-      target.damage = (target.damage || 0) + benchDmg;
-      showMoveFlash(player, myActive?.name || '?', atk.name, benchDmg, target.name, '(bench)');
-      addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
-      const tHp = parseInt(target.hp) || 0;
-      if (tHp > 0 && target.damage >= tHp) {
-        addLog(`${target.name} was knocked out!`, true);
-        G.players[opp].discard.push(target);
-        G.players[opp].bench[oppBench[0].i] = null;
-      }
-    } else {
-      const picked = await openCardPicker({
-        title: atk.name,
-        subtitle: "Choose an opponent's Benched Pokémon to deal damage to",
-        cards: oppBench.map(x => x.s),
-        maxSelect: 1
-      });
-      if (picked && picked.length) {
-        const { s: target, i: slotIdx } = oppBench[picked[0]];
-        target.damage = (target.damage || 0) + benchDmg;
-        showMoveFlash(player, myActive?.name || '?', atk.name, benchDmg, target.name, '(bench)');
-        addLog(`${atk.name}: ${benchDmg} damage to ${target.name} on opponent's bench! (${target.damage}/${target.hp} HP)`, true);
-        const tHp = parseInt(target.hp) || 0;
-        if (tHp > 0 && target.damage >= tHp) {
-          addLog(`${target.name} was knocked out!`, true);
-          G.players[opp].discard.push(target);
-          G.players[opp].bench[slotIdx] = null;
-        }
-      }
-    }
-    dmg = 0;
   }
 
   if (dmg > 0) {
@@ -4540,20 +3981,24 @@ async function performAttack(player, atk) {
     const attackerTypes = myActive?.types || [];
     const weaknesses = oppActive.weaknesses || [];
     const resistances = oppActive.resistances || [];
-    for (const w of weaknesses) {
-      if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
-        dmg *= 2;
-        addLog(`Weakness! Damage doubled to ${dmg}.`);
-        break;
+    if (!atk._skipWR) {
+      for (const w of weaknesses) {
+        if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
+          dmg *= 2;
+          addLog(`Weakness! Damage doubled to ${dmg}.`);
+          break;
+        }
       }
-    }
-    // Resistance — subtract 30, min 0
-    for (const r of resistances) {
-      if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
-        dmg = Math.max(0, dmg - 30);
-        addLog(`Resistance! Damage reduced to ${dmg}.`);
-        break;
+      // Resistance — subtract 30, min 0
+      for (const r of resistances) {
+        if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
+          dmg = Math.max(0, dmg - 30);
+          addLog(`Resistance! Damage reduced to ${dmg}.`);
+          break;
+        }
       }
+    } else {
+      addLog(`${atk.name}: Weakness and Resistance ignored!`);
     }
     // Defender reduction — on the target, after weakness/resistance
     if (oppActive.defenderFull) {
@@ -4570,66 +4015,28 @@ async function performAttack(player, atk) {
       addLog(`Defender reduces damage to ${dmg}.`);
     }
 
-    oppActive.damage = (oppActive.damage || 0) + dmg;
-    const oppHp = parseInt(oppActive.hp) || 0;
-
-    // Flash shows final post-W/R damage with appropriate label
-    const wrSuffix = (() => {
-      const atkTypes = myActive?.types || [];
-      const wasWeak = (oppActive.weaknesses || []).some(w => atkTypes.some(t => t.toLowerCase() === w.type.toLowerCase()));
-      const wasResist = (oppActive.resistances || []).some(r => atkTypes.some(t => t.toLowerCase() === r.type.toLowerCase()));
-      if (wasWeak) return '⚡ WEAKNESS';
-      if (wasResist) return '🛡 RESISTANCE';
-      return '';
-    })();
-    showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?', wrSuffix);
-
-    addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
-    const koResult = checkKO(player, opp, oppActive, false);
-
-    // ── Strikes Back (Machamp) ────────────────────────────────────
-    // Fires whenever Machamp takes damage, even if KO'd.
-    // Not usable if Machamp is Asleep, Confused, or Paralyzed.
-    if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
-        oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
-      const strikesHeads = await flipCoin(`Strikes Back! (${oppActive.name}) — Heads = 10 damage to ${myActive?.name || 'attacker'}`);
-      if (strikesHeads && myActive) {
-        // Apply W/R from attacker's weaknesses/resistances
-        const defenderTypes = oppActive.types || [];
-        const attackerWeaknesses = myActive.weaknesses || [];
-        const attackerResistances = myActive.resistances || [];
-        let strikeDmg = 10;
-        for (const w of attackerWeaknesses) {
-          if (defenderTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
-            strikeDmg *= 2;
-            addLog(`Strikes Back: Weakness! ${strikeDmg} damage to ${myActive.name}.`);
-            break;
-          }
-        }
-        for (const r of attackerResistances) {
-          if (defenderTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
-            strikeDmg = Math.max(0, strikeDmg - 30);
-            addLog(`Strikes Back: Resistance! ${strikeDmg} damage to ${myActive.name}.`);
-            break;
-          }
-        }
-        if (strikeDmg > 0) {
-          myActive.damage = (myActive.damage || 0) + strikeDmg;
-          addLog(`Strikes Back! ${myActive.name} takes ${strikeDmg} damage! (${myActive.damage}/${myActive.hp} HP)`, true);
-          const strikeKo = checkKO(opp, player, myActive, false);
-          if (strikeKo === 'win') { renderAll(); return; }
-          if (strikeKo === 'promote') { renderAll(); return; }
-        }
-      } else if (!strikesHeads) {
-        addLog(`Strikes Back: TAILS — no counter-damage.`);
-      }
+    // Pounce (Persian) — reduce damage if the defender used Pounce last turn
+    if (oppActive.pounceActive && dmg > 0) {
+      dmg = Math.max(0, dmg - 10);
+      addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
     }
 
+    oppActive.damage = (oppActive.damage || 0) + dmg;
+    const oppHp = parseInt(oppActive.hp) || 0;
+    addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
+
+    // Record last attack for Mirror Move
+    if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, dmg);
+
+    // Destiny Bond check — if KO, KO the attacker too
+    const koResult = checkKO(player, opp, oppActive, false);
     if (koResult === 'win') { renderAll(); return; }
     if (koResult === 'promote') { renderAll(); return; }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
+    if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, 0);
   }
+  const _dmgDealt = dmg;
 
   // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
   if (/draw a card/i.test(atk.text || '')) {
@@ -4872,6 +4279,13 @@ async function performAttack(player, atk) {
     }
   }
 
+  // ── Apply special move effects (Lure, Whirlwind, Conversion, Destiny Bond, etc.) ──
+  if (typeof applyMoveEffects === 'function' && G.started) {
+    const currentOpp = G.players[opp].active;
+    const effectBlocked = await applyMoveEffects(player, atk, typeof _dmgDealt !== 'undefined' ? _dmgDealt : 0, myActive, currentOpp);
+    if (effectBlocked === true) return; // effect handler took over (win screen, etc.)
+  }
+
   // Attack always ends the turn
   renderAll();
   endTurn();
@@ -4890,6 +4304,12 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     addLog(`${card.name} is knocked out!`, true);
     const owner = isSelf ? attackingPlayer : defendingPlayer;
     const prizeWinner = isSelf ? defendingPlayer : attackingPlayer;
+
+    // Destiny Bond — if the KO'd card had it, KO the attacker too
+    if (!isSelf && card.destinyBond && typeof checkDestinyBond === 'function') {
+      checkDestinyBond(card, attackingPlayer);
+    }
+
     G.players[owner].discard.push(card);
     G.players[owner].active = null;
 
@@ -4974,8 +4394,9 @@ function resolvePromotion(player, benchIdx) {
   p.bench[benchIdx] = null;
   G.phase = 'MAIN';
   G.pendingPromotion = null;
+  // Clear Mirror Move tracking for this player (new active didn't see last attack)
+  if (typeof clearLastAttack === 'function') clearLastAttack(player);
   addLog(`Player ${player} promoted ${chosen.name} to Active!`, true);
-  showActionFlash(player, 'PROMOTES', chosen.name, 'TO ACTIVE');
   hidePromoteBanner();
   clearHighlights();
   renderAll();
@@ -5040,6 +4461,9 @@ function endTurn() {
   }
   G.turn = prev === 1 ? 2 : 1;  // ← flip turn
   G.turnNum++;
+
+  // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
+  if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
@@ -5054,8 +4478,6 @@ function endTurn() {
     active.attackReduction = 0;
     active.disabledAttack = null;
     active.defenderReduction = 0;
-    // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
-    // so we do NOT clear it here — it clears itself when the attack fires.
   }
   G.plusPowerActive = 0;
   G.pendingAction = null;
@@ -5107,10 +4529,8 @@ function renderAll() {
   // Wire drag-and-drop onto freshly rendered hand cards
   initDragDrop();
   // Networked: push state and apply role-based visibility
-  if (myRole !== null && G.started && !vsComputer) {
+  if (myRole !== null && G.started) {
     pushGameState();
-    applyRoleVisibility();
-  } else if (vsComputer) {
     applyRoleVisibility();
   }
 }
@@ -5182,6 +4602,7 @@ function renderField(player) {
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
           oppPower1 ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${oppPowerSup1 ? 'opacity:.4;text-decoration:line-through' : ''}">${oppPower1.name.substring(0,8)}</div>` : '',
+          typeof conversionBadges === 'function' ? conversionBadges(card) : '',
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
@@ -5210,31 +4631,18 @@ function renderField(player) {
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
             benchPower ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${benchPowerSup ? 'opacity:.4;text-decoration:line-through' : ''}">${benchPower.name.substring(0,8)}</div>` : '',
+            typeof conversionBadges === 'function' ? conversionBadges(card) : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
+          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 18)).join('');
           const benchDmg = damageCounters(card.damage);
           const oppBenchW = slotEl.clientWidth || 64;
-          const oppBenchH = slotEl.clientHeight || 56;
-          const oppIconSize = Math.min(18, Math.max(10, Math.round(oppBenchW * 0.28)));
-          const oppIconPlusgap = oppIconSize + 3;
-          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, oppIconSize)).join('');
-          const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
-            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
+            <div class="energy-overlay-bench" style="max-width:${oppBenchW}px">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
-          // Push next bench card right to avoid overlap
-          const oppEnergyCount = (card.attachedEnergy || []).length;
-          if (oppEnergyCount > 0) {
-            const iconsPerCol = Math.max(1, Math.floor(oppBenchH / oppIconPlusgap));
-            const cols = Math.ceil(oppEnergyCount / iconsPerCol);
-            slotEl.style.marginRight = (cols * oppIconPlusgap + 2) + 'px';
-          } else {
-            slotEl.style.marginRight = '';
-          }
         }
       } else {
         slotEl.innerHTML = '';
-        slotEl.style.marginRight = '';
         slotEl.classList.add('empty');
       }
       if (wasHighlighted) slotEl.classList.add('highlight');
@@ -5258,7 +4666,6 @@ function renderSlotP1(el, card) {
   if (!card) {
     el.classList.remove('occupied');
     el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
-    el.style.marginRight = ''; // clear any energy-pushed margin
     if (wasHighlighted) el.classList.add('highlight');
     return;
   }
@@ -5267,6 +4674,7 @@ function renderSlotP1(el, card) {
 
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
+  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, isActive ? 26 : 18)).join('');
   const dmg = damageCounters(card.damage, isActive);
   const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
   const power = getPower(card);
@@ -5275,38 +4683,18 @@ function renderSlotP1(el, card) {
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
     card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
     power ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${powerSuppressed ? 'opacity:.4;text-decoration:line-through' : ''}">${power.name.substring(0,8)}</div>` : '',
+    typeof conversionBadges === 'function' ? conversionBadges(card) : '',
   ].filter(Boolean);
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
   const imgSrc = card.images?.small || '';
 
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
-
-  // Scale icon size proportionally to slot width — caps at 26px (active) / 18px (bench)
-  const iconSize = isActive
-    ? Math.min(26, Math.max(14, Math.round(slotW * 0.20)))
-    : Math.min(18, Math.max(10, Math.round(slotW * 0.28)));
-  const iconPlusgap = iconSize + 3;
-
-  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, iconSize)).join('');
-  const energyStyle = `max-height:${slotH}px;max-width:none`;
+  const energyStyle = isActive
+    ? `max-height:${slotH}px`
+    : `max-width:${slotW}px`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
-
-  // Reserve right margin for energy columns so the next bench card is pushed right
-  if (!isActive) {
-    const energyCount = (card.attachedEnergy || []).length;
-    if (energyCount > 0) {
-      const iconsPerCol = Math.max(1, Math.floor(slotH / iconPlusgap));
-      const cols = Math.ceil(energyCount / iconsPerCol);
-      el.style.marginRight = (cols * iconPlusgap + 2) + 'px';
-    } else {
-      el.style.marginRight = '';
-    }
-  } else {
-    el.style.marginRight = '';
-  }
-
   if (wasHighlighted) el.classList.add('highlight');
 }
 
@@ -5488,10 +4876,9 @@ function updateTurnBadge() {
 }
 
 function setMidline(text) {
-  const isMobile = window.innerWidth <= 600;
   const defaultMsg = G.phase === 'SETUP'
-    ? (isMobile ? 'Place your Active Pokémon' : 'Both players: place your Active (and optionally bench basics), then click DONE SETUP')
-    : (isMobile ? 'Tap a card to play it' : 'Click a card in your hand to play it');
+    ? 'Both players: place your Active (and optionally bench basics), then click DONE SETUP'
+    : 'Click a card in your hand to play it';
   document.getElementById('midline-info').textContent = text || defaultMsg;
 }
 
@@ -5562,22 +4949,11 @@ function showActionMenu(title, actions, anchorEvent) {
   cancel.onclick = e => { e.stopPropagation(); closeActionMenu(); cancelAction(); };
   menu.appendChild(cancel);
 
-  // Smart positioning: bottom sheet on mobile, anchored near click on desktop
-  menu.classList.add('show');
-
-  const isMobile = window.innerWidth <= 600;
-  if (isMobile) {
-    // Bottom sheet — CSS handles positioning via media query
-    menu.style.left = '';
-    menu.style.top = '';
-    menu.style.right = '';
-    menu.style.bottom = '';
-    return;
-  }
-
+  // Smart positioning: anchor near click/element, keep within viewport
   menu.style.left = '0';
   menu.style.top = '0';
   menu.style.transform = 'none';
+  menu.classList.add('show');
 
   const mw = menu.offsetWidth;
   const mh = menu.offsetHeight;
@@ -5752,7 +5128,6 @@ function enrichCard(card) {
   if (!full) {
     return {
       ...card,
-      types: Array.isArray(card.types) ? card.types : [],
       subtypes: safeSubtypes,
       attacks: mergedAttacks,
       abilities: Array.isArray(card.abilities) ? card.abilities : [],
@@ -5767,12 +5142,10 @@ function enrichCard(card) {
       defenderFull:     card.defenderFull      ?? false,
       defenderThreshold:card.defenderThreshold ?? 0,
       plusPower:        card.plusPower         ?? 0,
-      nextAttackDouble: card.nextAttackDouble  ?? false,
     };
   }
   return {
     ...card,
-    types: (Array.isArray(card.types) && card.types.length) ? card.types : (full.types || card.types || []),
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
@@ -5791,7 +5164,6 @@ function enrichCard(card) {
     defenderFull:     card.defenderFull      ?? false,
     defenderThreshold:card.defenderThreshold ?? 0,
     plusPower:        card.plusPower         ?? 0,
-    nextAttackDouble: card.nextAttackDouble  ?? false,
   };
 }
 
@@ -5819,94 +5191,17 @@ function hidePromoteBanner() {
 }
 
 function showTurnFlash(player) {
-  const moveFlashEl = document.getElementById('move-flash');
-  const remaining = moveFlashEl?._moveFlashUntil ? moveFlashEl._moveFlashUntil - Date.now() : 0;
-  const delay = remaining > 0 ? remaining + 100 : 0;
-
-  setTimeout(() => {
-    const el = document.getElementById('turn-flash');
-    const inner = document.getElementById('turn-flash-inner');
-    const label = (vsComputer && player === 1) ? 'YOUR TURN'
-                : (vsComputer && player === 2) ? '🤖 COMPUTER\'S TURN'
-                : `PLAYER ${player}'S TURN`;
-    inner.textContent = label;
-    inner.className = `p${player}`;
-    el.classList.add('show');
-    inner.style.animation = 'none';
-    void inner.offsetWidth;
-    inner.style.animation = '';
-    setTimeout(() => el.classList.remove('show'), 1300);
-  }, delay);
-}
-
-function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
-  // Only show for the opponent's moves (not your own)
-  const isOpponent = myRole !== null && attackingPlayer !== myRole;
-  if (!isOpponent) return;
-
-  const el = document.getElementById('move-flash');
-  const whoEl = document.getElementById('move-flash-who');
-  const attackerEl = document.getElementById('move-flash-attacker');
-  const moveEl = document.getElementById('move-flash-move');
-  const dmgEl = document.getElementById('move-flash-dmg');
-
-  const label = vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`;
-  whoEl.textContent = label;
-  attackerEl.textContent = attackerName.toUpperCase();
-  moveEl.textContent = moveName.toUpperCase();
-  dmgEl.textContent = dmg > 0
-    ? `${dmg} damage → ${targetName}${suffix ? '  ' + suffix : ''}`
-    : (suffix ? suffix : `→ ${targetName}`);
-
-  el.className = `show p${attackingPlayer}`;
-
+  const el = document.getElementById('turn-flash');
+  const inner = document.getElementById('turn-flash-inner');
+  inner.textContent = `PLAYER ${player}'S TURN`;
+  inner.className = `p${player}`;
+  el.classList.add('show');
   // Reset animation
-  const inner = document.getElementById('move-flash-inner');
+  void inner.offsetWidth;
   inner.style.animation = 'none';
   void inner.offsetWidth;
   inner.style.animation = '';
-
-  clearTimeout(el._flashTimer);
-  const MOVE_FLASH_DURATION = 3500;
-  el._moveFlashUntil = Date.now() + MOVE_FLASH_DURATION;
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
-}
-
-// General opponent action flash — reuses the move-flash overlay
-// verb: top small label e.g. "PLAYS", "RETREATS", "EVOLVES"
-// subject: large center text e.g. card name or pokemon name
-// detail: optional small bottom line
-function showActionFlash(player, verb, subject, detail) {
-  const isOpponent = myRole !== null && player !== myRole;
-  if (!isOpponent) return;
-
-  const el = document.getElementById('move-flash');
-  const whoEl = document.getElementById('move-flash-who');
-  const attackerEl = document.getElementById('move-flash-attacker');
-  const moveEl = document.getElementById('move-flash-move');
-  const dmgEl = document.getElementById('move-flash-dmg');
-
-  const who = vsComputer ? '🤖 COMPUTER' : `PLAYER ${player}`;
-  whoEl.textContent = `${who} ${verb}`;
-  attackerEl.textContent = '';
-  moveEl.textContent = (subject || '').toUpperCase();
-  dmgEl.textContent = detail || '';
-
-  el.className = `show p${player}`;
-
-  const inner = document.getElementById('move-flash-inner');
-  inner.style.animation = 'none';
-  void inner.offsetWidth;
-  inner.style.animation = '';
-
-  clearTimeout(el._flashTimer);
-  const DURATION = 2000;
-  el._moveFlashUntil = Date.now() + DURATION;
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
-}
-
-function showTrainerFlash(player, cardName) {
-  showActionFlash(player, 'PLAYS', cardName, 'TRAINER');
+  setTimeout(() => el.classList.remove('show'), 1300);
 }
 
 // ══════════════════════════════════════════════════
@@ -5915,12 +5210,7 @@ function showTrainerFlash(player, cardName) {
 function showWinScreen(winnerNum, reason) {
   const p = G.players[winnerNum];
   const deckName = p.deckData?.name || null;
-  let displayName;
-  if (vsComputer) {
-    displayName = winnerNum === 1 ? '🏆 YOU WIN!' : '🤖 COMPUTER WINS';
-  } else {
-    displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
-  }
+  const displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
 
   const nameEl   = document.getElementById('win-player-name');
   const reasonEl = document.getElementById('win-reason');
@@ -5943,7 +5233,7 @@ function playAgain() {
     gameRef.off();
     gameRef = null;
   }
-  roomCode = null; myRole = null; vsComputer = false; aiThinking = false;
+  roomCode = null; myRole = null;
   // Reset G
   G = {
     started: false, turn: 1, phase: 'SETUP', turnNum: 0,
@@ -5998,11 +5288,6 @@ let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
 function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
-  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
-  if (vsComputer && G.turn === 2) {
-    if (!cards || !cards.length) return Promise.resolve(null);
-    return Promise.resolve([0]); // AI always picks first option
-  }
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
     _cardPickerSelected = [];
@@ -6521,115 +5806,12 @@ function initDragDrop() {
     el.setAttribute('draggable', 'true');
     el.addEventListener('dragstart', e => onHandDragStart(e, localPlayer, idx));
     el.addEventListener('dragend', onHandDragEnd);
-    // Touch drag — long-press to initiate
-    addTouchDrag(el, localPlayer, idx);
   });
 
   // Wire drop targets: active slot, bench slots
   wireDropTarget(document.getElementById('active-p1'), 'active', null);
   for (let i = 0; i < 5; i++) {
     wireDropTarget(document.getElementById(`bench-p1-${i}`), 'bench', i);
-  }
-}
-
-// ── Touch drag support ──────────────────────────────
-let _touchDragEl = null;
-let _touchDragGhost = null;
-let _touchLongPressTimer = null;
-let _touchStartX = 0, _touchStartY = 0;
-
-function addTouchDrag(el, player, handIdx) {
-  el.addEventListener('touchstart', e => {
-    _touchStartX = e.touches[0].clientX;
-    _touchStartY = e.touches[0].clientY;
-    // Long-press (300ms) to initiate drag
-    _touchLongPressTimer = setTimeout(() => {
-      if (!isMyTurn() && G.phase !== 'SETUP') return;
-      _dragPlayer = player;
-      _dragHandIdx = handIdx;
-      el.classList.add('dragging');
-      // Highlight valid slots
-      onHandDragStart({ dataTransfer: { effectAllowed: 'move' } }, player, handIdx);
-      // Create ghost
-      _touchDragEl = el;
-      _touchDragGhost = el.cloneNode(true);
-      _touchDragGhost.style.cssText = `position:fixed;opacity:.75;pointer-events:none;z-index:9999;width:${el.offsetWidth}px;transform:scale(1.08);`;
-      _touchDragGhost.style.left = (e.touches[0].clientX - el.offsetWidth / 2) + 'px';
-      _touchDragGhost.style.top  = (e.touches[0].clientY - el.offsetHeight * 0.7) + 'px';
-      document.body.appendChild(_touchDragGhost);
-    }, 300);
-  }, { passive: true });
-
-  el.addEventListener('touchmove', e => {
-    const dx = Math.abs(e.touches[0].clientX - _touchStartX);
-    const dy = Math.abs(e.touches[0].clientY - _touchStartY);
-    // Cancel long-press if moved significantly before it fires
-    if (dx > 8 || dy > 8) { clearTimeout(_touchLongPressTimer); _touchLongPressTimer = null; }
-    if (!_touchDragGhost) return;
-    e.preventDefault();
-    _touchDragGhost.style.left = (e.touches[0].clientX - _touchDragGhost.offsetWidth / 2) + 'px';
-    _touchDragGhost.style.top  = (e.touches[0].clientY - _touchDragGhost.offsetHeight * 0.7) + 'px';
-  }, { passive: false });
-
-  el.addEventListener('touchend', e => {
-    clearTimeout(_touchLongPressTimer);
-    _touchLongPressTimer = null;
-    if (!_touchDragGhost) return;
-    // Find drop target under finger
-    _touchDragGhost.style.display = 'none';
-    const touch = e.changedTouches[0];
-    const target = document.elementFromPoint(touch.clientX, touch.clientY);
-    _touchDragGhost.style.display = '';
-    // Walk up to find a wired drop zone
-    let dropEl = target;
-    while (dropEl && dropEl !== document.body) {
-      if (dropEl.dataset.dragType) {
-        // Simulate a drop
-        const dtype = dropEl.dataset.dragType;
-        const hi = _dragHandIdx, pl = _dragPlayer;
-        onHandDragEnd();
-        _touchDragGhost.remove(); _touchDragGhost = null;
-        executeDrop(dtype, dropEl, pl, hi);
-        return;
-      }
-      dropEl = dropEl.parentElement;
-    }
-    // No drop zone — cancel
-    onHandDragEnd();
-    _touchDragGhost.remove(); _touchDragGhost = null;
-  }, { passive: true });
-
-  el.addEventListener('touchcancel', () => {
-    clearTimeout(_touchLongPressTimer);
-    _touchLongPressTimer = null;
-    onHandDragEnd();
-    if (_touchDragGhost) { _touchDragGhost.remove(); _touchDragGhost = null; }
-  }, { passive: true });
-}
-
-function executeDrop(dtype, dropEl, player, handIdx) {
-  // Determine zone and benchIdx from element id
-  const id = dropEl.id || dropEl.closest('[id]')?.id || '';
-  let zone = 'active', benchIdx = null;
-  if (id.includes('bench')) {
-    zone = 'bench';
-    benchIdx = parseInt(id.split('-').pop());
-  }
-  if (dtype === 'valid') {
-    const droppedCard = G.players[player].hand[handIdx];
-    const isFossilOrDollDrop = droppedCard && /mysterious fossil|clefairy doll/i.test(droppedCard.name) && droppedCard.supertype === 'Trainer';
-    if (isFossilOrDollDrop) playTrainer(player, handIdx);
-    else if (zone === 'active') playAsActive(player, handIdx);
-    else startBenchPlay(player, handIdx);
-  } else if (dtype === 'evolve') {
-    evolve(player, handIdx, zone, benchIdx);
-  } else if (dtype === 'energy') {
-    const isWaterEnergy = /water/i.test(G.players[player].hand[handIdx]?.name || '');
-    const rainDance = rainDanceActive(player) && isWaterEnergy;
-    if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
-    else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
-  } else if (dtype === 'heal') {
-    playTrainer(player, handIdx);
   }
 }
 
@@ -6765,616 +5947,6 @@ function wireDropTarget(el, zone, benchIdx) {
 }
 
 // ══════════════════════════════════════════════════
-// VS COMPUTER MODE
-// ══════════════════════════════════════════════════
-let vsComputer = false;   // true when playing against AI
-let aiDifficulty = 'normal'; // 'easy' | 'normal' | 'hard'
-let aiThinking = false;   // guard against re-entrant AI turns
-
-function setAiDiff(d) {
-  aiDifficulty = d;
-  ['easy','normal','hard'].forEach(x => {
-    const btn = document.getElementById(`diff-${x}`);
-    if (!btn) return;
-    btn.style.borderColor = x === d ? 'var(--ok)' : '';
-    btn.style.color       = x === d ? 'var(--ok)' : '';
-  });
-}
-setAiDiff('normal'); // default highlight
-
-function startVsComputer() {
-  showPanel('vs-computer-panel');
-  // Wire P1 deck load to enable start button
-  const origLoad = loadDeck;
-  // We'll check readiness via the status element change
-}
-
-// Called when either player loads a deck in VS Computer mode
-function checkVsCpuReady() {
-  if (document.getElementById('vs-computer-panel')?.style.display === 'none') return;
-  const p1loaded = G.players[1].deckData !== null;
-  const p2loaded = G.players[2].deckData !== null;
-
-  // Update P1 status
-  const st1 = document.getElementById('p1-vs-cpu-status');
-  if (st1) {
-    st1.textContent = p1loaded ? `✓ ${G.players[1].deckData.name}` : 'No deck loaded';
-    st1.style.color = p1loaded ? 'var(--p1color)' : '';
-    document.querySelector('.setup-player.p1')?.classList.toggle('loaded', p1loaded);
-  }
-
-  // Update P2 status
-  const st2 = document.getElementById('p2-cpu-status');
-  if (st2) {
-    st2.textContent = p2loaded ? `✓ ${G.players[2].deckData.name}` : 'Click to choose deck';
-    st2.style.color = p2loaded ? 'var(--p2color)' : '';
-    document.querySelector('.setup-player.p2')?.classList.toggle('loaded', p2loaded);
-  }
-
-  // Enable start only when both are loaded
-  const btn = document.getElementById('start-cpu-btn');
-  if (btn) btn.disabled = !(p1loaded && p2loaded);
-}
-
-async function startVsCpuGame() {
-  vsComputer = true;
-  myRole = 1; // human is always P1
-
-  if (!G.players[1].deck.length) { showToast('Load your deck first!', true); return; }
-  if (!G.players[2].deck.length) { showToast("Choose the AI's deck first!", true); return; }
-
-  // Give AI deck cards fresh UIDs and reset combat state
-  G.players[2].deck = shuffle(G.players[2].deck.map(c => ({
-    ...c,
-    uid: `ai-${c.id}-${Math.random().toString(36).slice(2,7)}`,
-    damage: 0, attachedEnergy: [], status: null,
-    defender: false, plusPower: 0
-  })));
-  G.players[2].name = '🤖 Computer';
-
-  const cpuSt = document.getElementById('p2-cpu-status');
-  if (cpuSt) { cpuSt.textContent = `✓ ${G.players[2].deckData.name}`; cpuSt.style.color = 'var(--p2color)'; }
-
-  // No Firebase for VS Computer
-  gameRef = null;
-
-  await startGame();
-
-  // AI does setup immediately after a short delay
-  setTimeout(() => aiDoSetup(), 800);
-}
-
-// ── AI: SETUP phase — place active + bench ──────────
-function aiDoSetup() {
-  if (!vsComputer || G.phase !== 'SETUP') return;
-  const p2 = G.players[2];
-  const hand = p2.hand;
-
-  // Pick a Basic for Active — prefer lower-retreat-cost basics
-  const basics = hand.reduce((acc, c, i) => {
-    if (c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) acc.push({ c, i });
-    return acc;
-  }, []);
-  if (!basics.length) return; // no basics — shouldn't happen after mulligan
-
-  // Sort: prefer Pokémon with attacks over those without
-  basics.sort((a, b) => (b.c.attacks?.length || 0) - (a.c.attacks?.length || 0));
-
-  const activeChoice = basics[0];
-  p2.active = activeChoice.c;
-  hand.splice(activeChoice.i, 1);
-  if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
-  G.evolvedThisTurn.push(activeChoice.c.uid);
-  addLog(`🤖 Computer placed ${activeChoice.c.name} as Active.`, true);
-
-  // Place remaining basics on bench (up to 3 on easy, 5 on normal/hard)
-  const maxBench = aiDifficulty === 'easy' ? 2 : 4;
-  let placed = 0;
-  for (let attempt = hand.length - 1; attempt >= 0 && placed < maxBench; attempt--) {
-    const card = hand[attempt];
-    if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
-      const slot = p2.bench.findIndex(s => s === null);
-      if (slot === -1) break;
-      p2.bench[slot] = card;
-      G.evolvedThisTurn.push(card.uid);
-      hand.splice(attempt, 1);
-      addLog(`🤖 Computer placed ${card.name} on bench.`);
-      placed++;
-    }
-  }
-
-  renderAll();
-}
-
-// ── AI: Full turn logic ─────────────────────────────
-async function aiTakeTurn() {
-  if (!vsComputer || G.turn !== 2 || aiThinking || !G.started) return;
-  if (G.phase === 'PROMOTE') return; // handled by resolvePromotion
-  aiThinking = true;
-
-  // Visual indicator
-  const badge = document.getElementById('turn-badge');
-  if (badge) { badge.textContent = '🤖 THINKING...'; badge.className = 'turn-badge p2'; }
-
-  const delay = ms => new Promise(r => setTimeout(r, ms));
-  const AI_DELAY = aiDifficulty === 'easy' ? 1400 : aiDifficulty === 'hard' ? 600 : 1000;
-
-  try {
-    // ── DRAW phase ───────────────────────────────────
-    if (G.phase === 'DRAW') {
-      drawCard(2, true);
-      G.phase = 'MAIN';
-      updatePhase();
-      await delay(AI_DELAY * 0.5);
-    }
-
-    if (G.phase !== 'MAIN') { aiThinking = false; return; }
-
-    // ── MAIN phase actions ───────────────────────────
-    const p2 = G.players[2];
-    const p1 = G.players[1];
-
-    // 1. Ensure we have an active
-    if (!p2.active) {
-      const benchPoke = p2.bench.find(s => s !== null);
-      if (benchPoke) {
-        const idx = p2.bench.findIndex(s => s === benchPoke);
-        p2.active = benchPoke;
-        p2.bench[idx] = null;
-        addLog(`🤖 Computer moved ${benchPoke.name} to Active.`);
-        renderAll();
-        await delay(AI_DELAY);
-      } else {
-        // No pokemon at all — concede / end turn
-        aiThinking = false;
-        endTurn();
-        return;
-      }
-    }
-
-    // 2. Play basics from hand to bench
-    if (aiDifficulty !== 'easy' || Math.random() > 0.3) {
-      const hand = p2.hand;
-      for (let i = hand.length - 1; i >= 0; i--) {
-        const card = hand[i];
-        const benchFull = p2.bench.every(s => s !== null);
-        if (benchFull) break;
-        if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
-          const slot = p2.bench.findIndex(s => s === null);
-          if (slot === -1) break;
-          p2.bench[slot] = card;
-          if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
-          G.evolvedThisTurn.push(card.uid);
-          hand.splice(i, 1);
-          addLog(`🤖 Computer played ${card.name} to bench.`, true);
-          renderAll();
-          await delay(AI_DELAY * 0.6);
-        }
-      }
-    }
-
-    // 3. Evolve — on normal/hard try to evolve matching bench/active
-    if (aiDifficulty !== 'easy' && !prehistoricPowerActive()) {
-      const hand = p2.hand;
-      const evolvedUids = G.evolvedThisTurn || [];
-      for (let i = hand.length - 1; i >= 0; i--) {
-        const card = hand[i];
-        if (card.supertype !== 'Pokémon') continue;
-        if (!card.subtypes?.includes('Stage 1') && !card.subtypes?.includes('Stage 2')) continue;
-        if (!card.evolvesFrom) continue;
-
-        // Try active first
-        if (p2.active?.name === card.evolvesFrom && !evolvedUids.includes(p2.active.uid)) {
-          evolve(2, i, 'active', null);
-          await delay(AI_DELAY * 0.7);
-          break;
-        }
-        // Try bench
-        for (let b = 0; b < 5; b++) {
-          if (p2.bench[b]?.name === card.evolvesFrom && !evolvedUids.includes(p2.bench[b].uid)) {
-            evolve(2, i, 'bench', b);
-            await delay(AI_DELAY * 0.7);
-            break;
-          }
-        }
-      }
-    }
-
-    // 4. Play trainer cards (simple ones only)
-    await aiPlayTrainers();
-    await delay(AI_DELAY * 0.5);
-
-    // 5. Attach energy (one per turn unless Rain Dance)
-    if (!G.energyPlayedThisTurn) {
-      const hand = p2.hand;
-      const energyIdx = hand.findIndex(c => c.supertype === 'Energy');
-      if (energyIdx !== -1) {
-        // Attach to active if it can attack, else bench
-        const target = aiChooseEnergyTarget(p2);
-        if (target !== null) {
-          const isRainDance = /water/i.test(hand[energyIdx].name) && rainDanceActive(2);
-          attachEnergy(2, energyIdx, target.zone, target.idx, isRainDance);
-          addLog(`🤖 Computer attached energy to ${target.zone === 'active' ? p2.active?.name : p2.bench[target.idx]?.name}.`);
-          renderAll();
-          await delay(AI_DELAY * 0.7);
-        }
-      }
-    }
-
-    // 6. Consider retreating if active is badly damaged and bench is healthier
-    if (aiDifficulty !== 'easy') {
-      const retreated = await aiConsiderRetreat(p2);
-      if (retreated) await delay(AI_DELAY);
-    }
-
-    // 7. Attack if possible
-    const attacked = await aiChooseAndAttack();
-
-    if (!attacked) {
-      // No attack — just end turn
-      await delay(AI_DELAY * 0.5);
-      aiThinking = false;
-      if (G.started && G.turn === 2) endTurn();
-    }
-    // If attacked, endTurn() is called inside performAttack → endTurn flow
-    // aiThinking will be reset in the next turn's entry
-
-  } catch (e) {
-    console.error('AI error:', e);
-    aiThinking = false;
-    if (G.started && G.turn === 2) endTurn();
-  }
-}
-
-function aiChooseEnergyTarget(p2) {
-  // Helper: how many more energy does a pokemon need to fire its cheapest attack?
-  function energyNeeded(card) {
-    if (!card?.attacks?.length) return 99; // no attacks — don't bother
-    const attached = card.attachedEnergy || [];
-    // Find the attack with the lowest cost that we're closest to affording
-    let minDeficit = 99;
-    for (const atk of card.attacks) {
-      const cost = atk.cost || [];
-      if (cost.length === 0) { minDeficit = 0; break; } // free attack
-      // Count how many more energy are needed (simplified: cost.length vs attached.length)
-      const deficit = Math.max(0, cost.length - attached.length);
-      if (deficit < minDeficit) minDeficit = deficit;
-    }
-    return minDeficit;
-  }
-
-  const active = p2.active;
-
-  // Check active first: only attach if it still needs energy
-  if (active) {
-    const needed = energyNeeded(active);
-    if (needed > 0) return { zone: 'active', idx: null };
-  }
-
-  // Active is fully powered — find the bench pokemon with the greatest energy deficit
-  // (most in need of charging up), preferring those with attacks
-  let bestIdx = -1, bestDeficit = 0;
-  for (let i = 0; i < 5; i++) {
-    const b = p2.bench[i];
-    if (!b) continue;
-    const deficit = energyNeeded(b);
-    if (deficit > bestDeficit) { bestDeficit = deficit; bestIdx = i; }
-  }
-  if (bestIdx !== -1) return { zone: 'bench', idx: bestIdx };
-
-  // Everyone is fully powered — skip attaching
-  return null;
-}
-
-async function aiConsiderRetreat(p2, force = false) {
-  if (!p2.active || !p2.bench.some(s => s)) return false;
-  const active = p2.active;
-  const hp = parseInt(active.hp) || 0;
-  const dmg = active.damage || 0;
-  const pctDmg = hp > 0 ? dmg / hp : 0;
-
-  // Retreat if forced (e.g. to escape status), or if active is over 60% damaged
-  if (!force && pctDmg < 0.6) return false;
-  const retreatCost = active.convertedRetreatCost || 0;
-  const energy = active.attachedEnergy?.length || 0;
-  if (energy < retreatCost) return false;
-
-  // Find best bench option (most HP remaining)
-  let bestBench = -1, bestScore = -1;
-  for (let i = 0; i < 5; i++) {
-    const b = p2.bench[i];
-    if (!b) continue;
-    const bHp = parseInt(b.hp) || 0;
-    const bDmg = b.damage || 0;
-    const score = bHp - bDmg;
-    if (score > bestScore) { bestScore = score; bestBench = i; }
-  }
-
-  if (bestBench === -1) return false;
-
-  executeRetreat(2, bestBench);
-  addLog(`🤖 Computer retreated ${active.name}.`, true);
-  renderAll();
-  return true;
-}
-
-async function aiPlayTrainers() {
-  // On easy difficulty, rarely play trainers
-  if (aiDifficulty === 'easy' && Math.random() > 0.4) return;
-
-  const p2 = G.players[2];
-  const hand = p2.hand;
-  const opp = G.players[1];
-  const activeStatus = p2.active?.status;
-  const isStatusBad = activeStatus === 'paralyzed' || activeStatus === 'asleep' || activeStatus === 'confused';
-
-  // ── Priority: cure bad status conditions ────────────
-  if (isStatusBad) {
-    for (let i = hand.length - 1; i >= 0; i--) {
-      const card = hand[i];
-      if (card.supertype !== 'Trainer') continue;
-      const name = card.name;
-
-      // Full Heal — cures any status
-      if (name === 'Full Heal' || name === 'Full Restore') {
-        hand.splice(i, 1);
-        p2.discard.push(card);
-        const cured = p2.active.status;
-        p2.active.status = null;
-        if (name === 'Full Restore') p2.active.damage = 0;
-        addLog(`🤖 Computer played ${name} — cured ${p2.active.name} of ${cured}!`, true);
-        renderAll();
-        return;
-      }
-
-      // Switch — swap active with best bench Pokémon (clears all status)
-      if (name === 'Switch') {
-        const benchSlots = p2.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-        if (benchSlots.length) {
-          // Pick healthiest bench pokemon
-          let bestIdx = benchSlots[0].i;
-          let bestScore = -1;
-          for (const { s, i: bi } of benchSlots) {
-            const score = (parseInt(s.hp) || 0) - (s.damage || 0);
-            if (score > bestScore) { bestScore = score; bestIdx = bi; }
-          }
-          hand.splice(i, 1);
-          p2.discard.push(card);
-          const old = p2.active;
-          p2.active = p2.bench[bestIdx];
-          p2.bench[bestIdx] = old;
-          // Switch clears status on the new active
-          addLog(`🤖 Computer played Switch — swapped ${old.name} (${activeStatus}) for ${p2.active.name}!`, true);
-          renderAll();
-          return;
-        }
-      }
-
-      // Scoop Up — remove active from play (only if paralyzed and no other option)
-      if (name === 'Scoop Up' && activeStatus === 'paralyzed') {
-        const benchSlots = p2.bench.filter(s => s !== null);
-        if (benchSlots.length) {
-          hand.splice(i, 1);
-          p2.discard.push(card);
-          // Return active to hand (Scoop Up rules), clear damage/energy/status
-          const scooped = p2.active;
-          scooped.damage = 0; scooped.attachedEnergy = []; scooped.status = null;
-          p2.hand.push(scooped);
-          p2.active = null;
-          // Auto-promote best bench pokemon
-          let bestBench = 0, bestScore = -1;
-          for (let b = 0; b < 5; b++) {
-            if (!p2.bench[b]) continue;
-            const score = (parseInt(p2.bench[b].hp) || 0) - (p2.bench[b].damage || 0);
-            if (score > bestScore) { bestScore = score; bestBench = b; }
-          }
-          p2.active = p2.bench[bestBench];
-          p2.bench[bestBench] = null;
-          addLog(`🤖 Computer played Scoop Up — returned ${scooped.name} to hand, sent out ${p2.active.name}!`, true);
-          renderAll();
-          return;
-        }
-      }
-    }
-
-    // No cure trainer — try retreating to escape the status (paralysis doesn't block retreat)
-    if (activeStatus === 'paralyzed' || activeStatus === 'asleep') {
-      const retreated = await aiConsiderRetreat(p2, true); // force=true ignores damage threshold
-      if (retreated) return;
-    }
-  }
-
-  // Play draw trainers (Bill, Professor Oak) if hand is small
-  for (let i = hand.length - 1; i >= 0; i--) {
-    const card = hand[i];
-    if (card.supertype !== 'Trainer') continue;
-    const name = card.name;
-
-    // Bill — simple draw, always good
-    if (name === 'Bill') {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      for (let d = 0; d < 2 && p2.deck.length; d++) drawCard(2, true);
-      addLog(`🤖 Computer played Bill — drew 2 cards.`, true);
-      renderAll();
-      return; // one trainer per loop iteration
-    }
-
-    // Professor Oak — only if hand is small (< 4)
-    if (name === 'Professor Oak' && hand.length < 5) {
-      p2.discard.push(...hand.splice(0));
-      hand.length = 0;
-      for (let d = 0; d < 7 && p2.deck.length; d++) drawCard(2, true);
-      addLog(`🤖 Computer played Professor Oak — drew 7 cards.`, true);
-      renderAll();
-      return;
-    }
-
-    // Potion — heal active if hurt
-    if (name === 'Potion' && p2.active && (p2.active.damage || 0) >= 30) {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.damage = Math.max(0, (p2.active.damage || 0) - 20);
-      addLog(`🤖 Computer played Potion — healed ${p2.active.name} for 20.`, true);
-      renderAll();
-      return;
-    }
-
-    // Super Potion — heal if hurt
-    if (name === 'Super Potion' && p2.active && (p2.active.damage || 0) >= 50 && (p2.active.attachedEnergy?.length || 0) > 0) {
-      const removed = p2.active.attachedEnergy.splice(0, 1);
-      p2.discard.push(...removed);
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.damage = Math.max(0, (p2.active.damage || 0) - 40);
-      addLog(`🤖 Computer played Super Potion — healed ${p2.active.name} for 40.`, true);
-      renderAll();
-      return;
-    }
-
-    // PlusPower — play if we're about to attack
-    if (name === 'PlusPower' && p2.active && aiCanAttack(p2.active)) {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.plusPower = (p2.active.plusPower || 0) + 10;
-      addLog(`🤖 Computer played PlusPower on ${p2.active.name}.`, true);
-      renderAll();
-      return;
-    }
-  }
-}
-
-function aiCanAttack(card) {
-  if (!card?.attacks?.length) return false;
-  return card.attacks.some(atk => canAffordAttack(card.attachedEnergy, atk.cost, card));
-}
-
-async function aiChooseAndAttack() {
-  const p2 = G.players[2];
-  const p1 = G.players[1];
-  if (!p2.active || !p1.active) return false;
-
-  const card = p2.active;
-
-  // Can't attack while paralyzed or asleep — return false so endTurn fires
-  if (card.status === 'paralyzed' || card.status === 'asleep') return false;
-
-  const attacks = (card && isPowerActive(card, 'Transform') && dittoAttacks(2)) || card?.attacks || [];
-  if (!attacks.length) return false;
-
-  // Filter to attacks the AI can afford
-  const affordable = attacks.filter(atk =>
-    canAffordAttack(card.attachedEnergy, atk.cost, card) &&
-    !(card.disabledAttack && card.disabledAttack === atk.name)
-  );
-  if (!affordable.length) return false;
-
-  // On easy: sometimes skip attack
-  if (aiDifficulty === 'easy' && Math.random() < 0.25) return false;
-
-  // Choose best attack — highest damage, or on hard consider KO potential
-  let chosen;
-  if (aiDifficulty === 'hard') {
-    // Hard: prefer the attack most likely to KO or deal most damage
-    const oppHp = parseInt(p1.active.hp) || 0;
-    const oppDmg = p1.active.damage || 0;
-    const remaining = oppHp - oppDmg;
-    chosen = affordable.reduce((best, atk) => {
-      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      return dmg >= remaining ? atk : (dmg > bestDmg ? atk : best);
-    });
-  } else {
-    // Normal/easy: just pick highest damage attack
-    chosen = affordable.reduce((best, atk) => {
-      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      return dmg > bestDmg ? atk : best;
-    });
-  }
-
-  addLog(`🤖 Computer uses ${chosen.name}!`, true);
-  aiThinking = false; // release before async attack (which calls endTurn)
-  await performAttack(2, chosen);
-  return true;
-}
-
-// ── Hook into endTurn to trigger AI ─────────────────
-{
-  const _orig = endTurn;
-  endTurn = function() {
-    _orig();
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
-
-// ── Hook into resolvePromotion to handle AI promotion ─
-{
-  const _orig = resolvePromotion;
-  resolvePromotion = function(player, benchIdx) {
-    _orig(player, benchIdx);
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
-
-// ── AI auto-handles its own promotion ───────────────
-// Intercept checkKO to detect when AI needs to pick a new active
-{
-  const _orig = checkKO;
-  checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
-    const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
-    if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
-      setTimeout(() => aiDoPromotion(), 700);
-    }
-    return result;
-  };
-}
-
-function aiDoPromotion() {
-  if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
-  const p2 = G.players[2];
-  let bestIdx = -1, bestScore = -1;
-  for (let i = 0; i < 5; i++) {
-    if (!p2.bench[i]) continue;
-    const hp = parseInt(p2.bench[i].hp) || 0;
-    const dmg = p2.bench[i].damage || 0;
-    const score = hp - dmg;
-    if (score > bestScore) { bestScore = score; bestIdx = i; }
-  }
-  if (bestIdx === -1) return;
-  resolvePromotion(2, bestIdx);
-}
-
-// ── Hook into doneSetup to trigger AI setup completion ─
-{
-  const _orig = doneSetup;
-  doneSetup = async function() {
-    if (vsComputer && !G.players[2].active) {
-      aiDoSetup();
-    }
-    await _orig();
-  };
-}
-
-// ── Watch loadDeck to detect P1 deck load in VS CPU mode ─
-// Patch loadDeck to detect VS CPU deck load completion
-{
-  const _origLoad = loadDeck;
-  loadDeck = async function(deckName) {
-    await _origLoad(deckName);
-    if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
-      checkVsCpuReady();
-    }
-  };
-}
-
-// ══════════════════════════════════════════════════
 // MULTIPLAYER / ROOM SYSTEM
 // ══════════════════════════════════════════════════
 let myRole = null;       // 1 or 2
@@ -7383,8 +5955,8 @@ let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
 // ── Panel helpers ─────────────────────────────────
-function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
 
 function generateCode() {
   return Math.random().toString(36).substring(2,8).toUpperCase();
@@ -7652,9 +6224,8 @@ function applyRoleVisibility() {
   // We check the id prefix rather than the container so we don't accidentally grey our own cards.
   document.querySelectorAll('#hand-p1 .hand-card').forEach(el => {
     const isMyCard = el.id.startsWith(`hand-card-${myRole}-`);
-    const isAiTurn = vsComputer && G.turn === 2;
-    el.style.opacity = (isMyCard && !isAiTurn) ? '' : '0.35';
-    el.style.pointerEvents = (isMyCard && !isAiTurn) ? '' : 'none';
+    el.style.opacity = isMyCard ? '' : '0.35';
+    el.style.pointerEvents = isMyCard ? '' : 'none';
   });
 
   // Opponent hand in sidebar — always non-interactive (face down)
@@ -7678,14 +6249,11 @@ function applyRoleVisibility() {
         endBtn.style.pointerEvents = 'none';
       }
     } else {
-      const isAiTurn = vsComputer && G.turn === 2;
-      const canAct = !isAiTurn && (G.turn === myRole ||
-                     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole));
+      const canAct = G.turn === myRole ||
+                     (G.phase === 'PROMOTE' && G.pendingPromotion === myRole);
       endBtn.style.opacity = canAct ? '' : '0.4';
       endBtn.style.pointerEvents = canAct ? '' : 'none';
-      if (isAiTurn) {
-        endBtn.textContent = 'AI THINKING...';
-      } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
+      if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...') {
         endBtn.textContent = 'END TURN';
       }
     }
@@ -7717,5 +6285,6 @@ window.addEventListener('beforeunload', () => {
   if (gameRef) { gameRef.remove().catch(() => {}); }
 });
 </script>
+<script src="move-effects.js"></script>
 </body>
 </html>
