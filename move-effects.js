@@ -132,24 +132,29 @@ const _drain = (fraction) => ({
 });
 
 // Discard 1 energy from opponent's active (Hyper Beam / Whirlpool)
+// Uses ctx.oppActive snapshot — the Pokémon that was defending when the attack
+// landed, not whoever is currently active (which may be null if KO'd or
+// different if a switch happened mid-attack).
 const _discardOppEnergy = () => ({
-  postAttack: async ({ opp, atk }) => {
-    const oppActive = G.players[opp].active;
-    if (!oppActive || !(oppActive.attachedEnergy || []).length) {
+  postAttack: async ({ opp, oppActive, atk }) => {
+    // oppActive is the snapshot passed from performAttack. Fall back to current
+    // active only if the snapshot is somehow missing.
+    const target = oppActive || G.players[opp].active;
+    if (!target || !(target.attachedEnergy || []).length) {
       addLog(`${atk.name}: opponent has no energy to discard.`); return;
     }
     let idx = 0;
-    if (oppActive.attachedEnergy.length > 1) {
+    if (target.attachedEnergy.length > 1) {
       const picked = await openCardPicker({
         title: `${atk.name} — Discard Energy`,
-        subtitle: `Choose 1 energy to discard from ${oppActive.name}`,
-        cards: oppActive.attachedEnergy, maxSelect: 1
+        subtitle: `Choose 1 energy to discard from ${target.name}`,
+        cards: target.attachedEnergy, maxSelect: 1
       });
       if (picked && picked.length) idx = picked[0];
     }
-    const removed = oppActive.attachedEnergy.splice(idx, 1)[0];
+    const removed = target.attachedEnergy.splice(idx, 1)[0];
     G.players[opp].discard.push(removed);
-    addLog(`${atk.name}: discarded ${removed.name} from ${oppActive.name}!`, true);
+    addLog(`${atk.name}: discarded ${removed.name} from ${target.name}!`, true);
     renderAll();
   }
 });
