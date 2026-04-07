@@ -1132,8 +1132,14 @@ const MOVE_EFFECTS = {
       const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
       if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return; }
       let tails = 0;
-      for (const { s, i } of bench) {
-        const heads = await flipCoin(`${atk.name}: Flip for ${s.name} — Heads=20 damage`);
+      const total = bench.length;
+      for (let fi = 0; fi < bench.length; fi++) {
+        const { s, i } = bench[fi];
+        const heads = await flipCoin(
+          `${atk.name}: Flip for ${s.name} — Heads=20 damage, Tails=10 recoil`,
+          { persistent: fi < total - 1, flipNum: fi + 1, totalFlips: total }
+        );
+        if (fi === total - 1) closeCoinOverlay();
         if (heads) {
           s.damage = (s.damage || 0) + 20;
           addLog(`${atk.name}: HEADS — 20 to ${s.name}! (${s.damage}/${s.hp})`);

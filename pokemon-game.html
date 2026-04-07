@@ -2927,16 +2927,11 @@ function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = fa
     p.hand.splice(handIdx, 0, energy); return;
   }
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
-  const isDCE = /double colorless/i.test(energy.name);
   targetCard.attachedEnergy.push(energy);
-  if (isDCE) {
-    // Double Colorless Energy provides 2 Colorless tokens — add a second copy
-    targetCard.attachedEnergy.push({ ...energy, uid: energy.uid + '_b' });
-  }
   if (!isRainDance) G.energyPlayedThisTurn = true;
   G.pendingAction = null;
   clearHighlights();
-  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}${isDCE ? ' (2 energy)' : ''}.`);
+  addLog(`Player ${player} attached ${energy.name} to ${targetCard.name}${isRainDance ? ' (Rain Dance)' : ''}.`);
   showActionFlash(player, 'ATTACHES', energy.name, `→ ${targetCard.name}`);
   renderAll();
 }
@@ -3263,7 +3258,9 @@ function cancelAction() {
 // ══════════════════════════════════════════════════
 // COIN FLIP
 // ══════════════════════════════════════════════════
-function flipCoin(label) {
+function flipCoin(label, opts = {}) {
+  // opts.persistent: keep overlay open after resolving (caller closes via closeCoinOverlay())
+  // opts.flipNum / opts.totalFlips: show "Flip X of Y" when in a multi-flip sequence
   return new Promise(resolve => {
     const overlay = document.getElementById('coin-overlay');
     const coin = document.getElementById('coin');
@@ -3273,8 +3270,8 @@ function flipCoin(label) {
     const heads = Math.random() < 0.5;
     const endDeg = heads ? 1440 : 1620;
 
-    // Brief pause so any move flash has time to register before the coin appears
-    const PRE_DELAY = 700;
+    // Shorter pre-delay if overlay is already showing (consecutive flips)
+    const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
 
     // Extend move flash to stay visible through the coin flip
     const moveFlashEl = document.getElementById('move-flash');
@@ -3290,7 +3287,10 @@ function flipCoin(label) {
 
     setTimeout(() => {
       coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
-      labelEl.textContent = label || 'Flipping a coin...';
+      const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
+        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}`
+        : label;
+      labelEl.textContent = header || 'Flipping a coin...';
       resultEl.textContent = '';
       overlay.classList.add('show');
 
@@ -3302,13 +3302,17 @@ function flipCoin(label) {
         resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
         resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
         setTimeout(() => {
-          overlay.classList.remove('show');
+          if (!opts.persistent) overlay.classList.remove('show');
           coin.classList.remove('flipping');
           resolve(heads);
         }, 1200);
       }, 1000);
     }, PRE_DELAY);
   });
+}
+
+function closeCoinOverlay() {
+  document.getElementById('coin-overlay')?.classList.remove('show');
 }
 
 // ══════════════════════════════════════════════════
@@ -3384,8 +3388,8 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
     let flipNum = 0;
     while (true) {
       flipNum++;
-      const result = await flipCoin(`${atk.name}: Flip #${flipNum} — Heads = +${perFlip} dmg, keep flipping | Tails = stop`);
-      if (!result) break;
+      const result = await flipCoin(`${atk.name} — Heads = +${perFlip} dmg, keep flipping | Tails = stop`, { persistent: true, flipNum, totalFlips: flipNum });
+      if (!result) { closeCoinOverlay(); break; }
       heads++;
     }
     addLog(`${atk.name}: ${heads} heads before tails — ${heads * perFlip} damage!`);
@@ -3403,9 +3407,10 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
     const numFlips = energyCount || 1;
     let heads = 0;
     for (let i = 0; i < numFlips; i++) {
-      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
+      const result = await flipCoin(`${atk.name} (${perFlip} damage per heads)`, { persistent: i < numFlips - 1, flipNum: i + 1, totalFlips: numFlips });
       if (result) heads++;
     }
+    if (numFlips > 1) closeCoinOverlay();
     addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
     return heads * perFlip;
   }
@@ -3416,16 +3421,16 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   const flipNMatch = text.match(/flip (\d+|a) coin[s]?[\s\S]*?times the number of heads/i);
   const timesHeadsMatch2 = text.match(/does (\d+) damage times the number of heads/i);
   if (flipNMatch && timesHeadsMatch2) {
-    const rawN = flipNMatch[1];
-    const numFlips = rawN === 'a' ? 1 : parseInt(rawN);
-    const perFlip = parseInt(timesHeadsMatch2[1]);
-    let heads = 0;
-    for (let i = 0; i < numFlips; i++) {
-      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
-      if (result) heads++;
+    const numFlips2 = rawN === 'a' ? 1 : parseInt(rawN);
+    const perFlip2 = parseInt(timesHeadsMatch2[1]);
+    let heads2 = 0;
+    for (let i = 0; i < numFlips2; i++) {
+      const result = await flipCoin(`${atk.name} (${perFlip2} damage per heads)`, { persistent: i < numFlips2 - 1, flipNum: i + 1, totalFlips: numFlips2 });
+      if (result) heads2++;
     }
-    addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
-    return heads * perFlip;
+    if (numFlips2 > 1) closeCoinOverlay();
+    addLog(`${atk.name}: ${heads2} heads out of ${numFlips2} flips — ${heads2 * perFlip2} damage!`);
+    return heads2 * perFlip2;
   }
 
   // Pattern 3: "Flip a coin. If tails, this attack does nothing." / "If tails, no damage."
@@ -3479,18 +3484,16 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   const equalToMatch = text.match(/flip a number of coins equal to[^.]+/i);
   const timesHeadsMatch3 = text.match(/(\d+) damage.*times the number of heads/i);
   if (equalToMatch && timesHeadsMatch3) {
-    // For Chansey-style: number of coins = damage counters on defending / 10
-    // Approximate: use opponent's current damage / 10, min 1
-    const oppActive = G.players[player === 1 ? 2 : 1].active;
-    const numFlips = Math.max(1, Math.floor((oppActive?.damage || 0) / 10));
-    const perFlip = parseInt(timesHeadsMatch3[1]);
-    let heads = 0;
-    for (let i = 0; i < numFlips; i++) {
-      const result = await flipCoin(`${atk.name}: Flip ${i + 1} of ${numFlips} (${perFlip} damage per heads)`);
-      if (result) heads++;
+    const numFlips7 = Math.max(1, Math.floor((oppActive?.damage || 0) / 10));
+    const perFlip7 = parseInt(timesHeadsMatch3[1]);
+    let heads7 = 0;
+    for (let i = 0; i < numFlips7; i++) {
+      const result = await flipCoin(`${atk.name} (${perFlip7} damage per heads)`, { persistent: i < numFlips7 - 1, flipNum: i + 1, totalFlips: numFlips7 });
+      if (result) heads7++;
     }
-    addLog(`${atk.name}: ${heads} heads out of ${numFlips} flips — ${heads * perFlip} damage!`);
-    return heads * perFlip;
+    if (numFlips7 > 1) closeCoinOverlay();
+    addLog(`${atk.name}: ${heads7} heads out of ${numFlips7} flips — ${heads7 * perFlip7} damage!`);
+    return heads7 * perFlip7;
   }
 
   // No coin-flip damage pattern — return base damage unchanged (no flip needed)
@@ -3719,7 +3722,9 @@ async function performAttack(player, atk) {
     }
 
     // Weakness — attacker's type vs defender's weakness (×2)
-    const attackerTypes = myActive?.types || [];
+    // If attacker is Ditto under Transform, use the Defending Pokémon's types/weaknesses
+    const dittoStats = (typeof getDittoTransformStats === 'function') ? getDittoTransformStats(player) : null;
+    const attackerTypes = dittoStats?.types || myActive?.types || [];
     const weaknesses = oppActive.weaknesses || [];
     const resistances = oppActive.resistances || [];
     if (!atk._skipWR) {
@@ -3741,16 +3746,21 @@ async function performAttack(player, atk) {
     } else {
       addLog(`${atk.name}: Weakness and Resistance ignored!`);
     }
-    // Kabuto Armor: halve damage done to Kabuto (after W/R)
+    // Kabuto Armor: halve damage done to Kabuto (after W/R), rounded DOWN to nearest 10
     if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Kabuto Armor') && dmg > 0) {
-      dmg = Math.max(0, Math.floor(dmg / 2));
+      dmg = Math.floor(dmg / 20) * 10;
       addLog(`Kabuto Armor: damage halved to ${dmg}!`, true);
     }
     // Transparency (Haunter): flip — heads = prevent all effects including damage
     if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency') && dmg > 0) {
-      const transpHeads = await flipCoin(`Transparency: Heads = prevent all damage on ${oppActive.name}!`);
-      if (transpHeads) { addLog(`Transparency: HEADS — damage prevented!`, true); dmg = 0; }
-      else addLog(`Transparency: TAILS — damage applies normally.`);
+      const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
+      if (transpHeads) {
+        addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
+        dmg = 0;
+        atk._transparencyBlocked = true; // signals parseStatusEffects loop to skip all effects
+      } else {
+        addLog(`Transparency: TAILS — attack applies normally.`);
+      }
     }
     // Defender reduction — on the target, after weakness/resistance
     if (oppActive.defenderFull) {
@@ -3759,7 +3769,7 @@ async function performAttack(player, atk) {
     } else if (oppActive.defenderThreshold && dmg <= oppActive.defenderThreshold) {
       addLog(`${oppActive.name} is protected — ${dmg} damage is blocked (≤${oppActive.defenderThreshold} threshold)!`);
       dmg = 0;
-    } else if (hasInvisibleWall(oppActive) && dmg <= 30) {
+    } else if (hasInvisibleWall(oppActive) && dmg >= 30) {
       addLog(`${oppActive.name}'s Invisible Wall blocks ${dmg} damage!`, true);
       dmg = 0;
     } else if (oppActive.defender) {
@@ -3775,8 +3785,8 @@ async function performAttack(player, atk) {
 
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
-
-    // Record last attack for Mirror Move
+    // Transform (Ditto): when Ditto attacks, KO threshold uses Ditto's own HP, not the defender's
+    // (Ditto still has its own HP pool even though it copies attacks)
     if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, dmg);
 
     // Flash shows final post-W/R damage with appropriate label
@@ -3800,32 +3810,12 @@ async function performAttack(player, atk) {
         oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
       const strikesHeads = await flipCoin(`Strikes Back! (${oppActive.name}) — Heads = 10 damage to ${myActive?.name || 'attacker'}`);
       if (strikesHeads && myActive) {
-        // Apply W/R from attacker's weaknesses/resistances
-        const defenderTypes = oppActive.types || [];
-        const attackerWeaknesses = myActive.weaknesses || [];
-        const attackerResistances = myActive.resistances || [];
-        let strikeDmg = 10;
-        for (const w of attackerWeaknesses) {
-          if (defenderTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
-            strikeDmg *= 2;
-            addLog(`Strikes Back: Weakness! ${strikeDmg} damage to ${myActive.name}.`);
-            break;
-          }
-        }
-        for (const r of attackerResistances) {
-          if (defenderTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
-            strikeDmg = Math.max(0, strikeDmg - 30);
-            addLog(`Strikes Back: Resistance! ${strikeDmg} damage to ${myActive.name}.`);
-            break;
-          }
-        }
-        if (strikeDmg > 0) {
-          myActive.damage = (myActive.damage || 0) + strikeDmg;
-          addLog(`Strikes Back! ${myActive.name} takes ${strikeDmg} damage! (${myActive.damage}/${myActive.hp} HP)`, true);
-          const strikeKo = checkKO(opp, player, myActive, false);
-          if (strikeKo === 'win') { renderAll(); return; }
-          if (strikeKo === 'promote') { renderAll(); return; }
-        }
+        // Card says: no Weakness or Resistance — flat 10 damage to attacker
+        myActive.damage = (myActive.damage || 0) + 10;
+        addLog(`Strikes Back! HEADS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
+        const strikeKo = checkKO(opp, player, myActive, false);
+        if (strikeKo === 'win') { renderAll(); return; }
+        if (strikeKo === 'promote') { renderAll(); return; }
       } else if (!strikesHeads) {
         addLog(`Strikes Back: TAILS — no counter-damage.`);
       }
@@ -4017,12 +4007,11 @@ async function performAttack(player, atk) {
     }
   }
 
-  // Skip parseStatusEffects if move-effects.js handles this attack's status effects.
-  // We check applyMoveEffects (a named function, always visible cross-script) rather than
-  // MOVE_EFFECTS (the object, defined in a later script block and not yet in scope here).
+  // Parse and apply status effects — skip if the dispatch table already handled them,
+  // or if Transparency blocked all effects this attack.
   const _handledByDispatch = typeof applyMoveEffects === 'function' &&
     typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name];
-  const effects = _handledByDispatch ? [] : parseStatusEffects(atk.text || '');
+  const effects = (_handledByDispatch || atk._transparencyBlocked) ? [] : parseStatusEffects(atk.text || '');
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
@@ -4271,9 +4260,12 @@ function endTurn() {
   // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
   if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
   G.phase = 'DRAW';
+  G.pendingLass = null;
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
   G.healedThisTurn = false;
+  G.shiftedThisTurn = false;
+  G.stepInThisTurn = false;
   G.evolvedThisTurn = [];
 
   // Clear per-turn attack debuff flags from all active Pokémon
@@ -4612,8 +4604,8 @@ function renderSidebarP2Hand() {
     return;
   }
 
-  // In networked mode, show opponent's hand face-down (card backs only)
-  const showFaceUp = false; // always face-down in networked mode
+  // In networked mode, show opponent's hand face-down unless Clairvoyance is active
+  const showFaceUp = !!(G._clairvoyanceActive);
   content.innerHTML = `<div style="font-size:8px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
     <div id="hand-p2">` +
     sideHand.map((card, i) => {
@@ -4950,6 +4942,7 @@ function damageCounters(damage, isActive = false) {
 }
 
 function statusEmoji(s) {
+  if (s === 'poisoned-toxic') return '☠️☠️';
   return { asleep:'😴', confused:'😵', paralyzed:'⚡', poisoned:'☠️', burned:'🔥' }[s] || '❓';
 }
 
@@ -6799,9 +6792,10 @@ function tryApplyStatus(target, status) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DITTO — Transform: treat Ditto as a copy of the Defending Pokémon
-// Returns the opponent's active attacks if Ditto is active and Transform is
-// working; otherwise null.
+// ─────────────────────────────────────────────────────────────────────────────
+// DITTO — Transform
+// If Ditto is Active, treat it as the Defending Pokémon: same type, HP total,
+// weakness, resistance, and attacks. Any energy attached to Ditto counts as any type.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function dittoAttacks(player) {
@@ -6809,6 +6803,23 @@ function dittoAttacks(player) {
   if (!isPowerActive(p.active, 'Transform')) return null;
   const opp = G.players[player === 1 ? 2 : 1];
   return opp.active?.attacks || null;
+}
+
+// Returns the effective stats for a Ditto under Transform (used in performAttack W/R checks).
+// Returns null if Ditto is not active or Transform is not working.
+function getDittoTransformStats(player) {
+  const p = G.players[player];
+  if (!p.active || p.active.name !== 'Ditto') return null;
+  if (!isPowerActive(p.active, 'Transform')) return null;
+  const opp = G.players[player === 1 ? 2 : 1];
+  const def = opp.active;
+  if (!def) return null;
+  return {
+    types: def.types || [],
+    weaknesses: def.weaknesses || [],
+    resistances: def.resistances || [],
+    hp: def.hp,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6909,21 +6920,51 @@ async function doEnergyTrans(player) {
 }
 
 // Gengar — Curse
-// Once per turn: move 1 damage counter from Gengar to the Defending Pokémon.
+// Once per turn: move 1 damage counter from 1 opponent Pokémon to another opponent Pokémon.
 async function doCurse(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
   const p = G.players[player];
   const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
-  if (!gengar)                     { showToast('Gengar not in play!', true); return; }
-  if ((gengar.damage || 0) < 10)   { showToast('Gengar has no damage counters to move!', true); return; }
-  const opp = G.players[player === 1 ? 2 : 1];
-  if (!opp.active)                 { showToast('No opposing Active Pokémon!', true); return; }
+  if (!gengar) { showToast('Gengar not in play!', true); return; }
 
-  gengar.damage -= 10;
-  opp.active.damage = (opp.active.damage || 0) + 10;
-  addLog(`P${player} used Curse — moved 1 damage counter from ${gengar.name} to ${opp.active.name}.`, true);
+  const oppNum = player === 1 ? 2 : 1;
+  const opp = G.players[oppNum];
+  const oppAll = [opp.active, ...opp.bench].filter(Boolean);
+  const oppWithDamage = oppAll.filter(c => (c.damage || 0) >= 10);
+
+  if (oppWithDamage.length === 0) { showToast("Opponent's Pokémon have no damage counters to move!", true); return; }
+  if (oppAll.length < 2) { showToast("Opponent needs at least 2 Pokémon in play!", true); return; }
+
+  // Step 1: choose source (opponent Pokémon with at least 1 damage counter)
+  let src = oppWithDamage[0];
+  if (oppWithDamage.length > 1) {
+    const picked = await openCardPicker({
+      title: 'Curse — Source',
+      subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
+      cards: oppWithDamage, maxSelect: 1
+    });
+    if (!picked) return;
+    src = oppWithDamage[picked[0]];
+  }
+
+  // Step 2: choose destination (any other opponent Pokémon)
+  const dests = oppAll.filter(c => c !== src);
+  let dst = dests[0];
+  if (dests.length > 1) {
+    const picked = await openCardPicker({
+      title: 'Curse — Destination',
+      subtitle: "Choose an opponent Pokémon to move the damage counter TO",
+      cards: dests, maxSelect: 1
+    });
+    if (!picked) return;
+    dst = dests[picked[0]];
+  }
+
+  src.damage = (src.damage || 0) - 10;
+  dst.damage = (dst.damage || 0) + 10;
+  addLog(`P${player} used Curse — moved 1 damage counter from ${src.name} to ${dst.name}.`, true);
   G.cursedThisTurn = true;
-  checkKO(player, player === 1 ? 2 : 1, opp.active, false);
+  checkKO(player, oppNum, dst, false);
   renderAll();
 }
 
@@ -6949,13 +6990,17 @@ async function doBuzzap(player, benchIdx) {
   if (!picked) return;
   const target = targets[picked[0]];
 
-  const lightning = { id: 'base1-100', name: 'Lightning Energy', supertype: 'Energy', images: { small: '' } };
+  // Player chooses which energy type to attach
+  const chosenType = await pickType('Buzzap! — Choose an Energy type');
+  if (!chosenType) return;
+
+  const energyCard = { id: 'buzzap-energy', name: `${chosenType} Energy`, supertype: 'Energy', images: { small: '' } };
   target.attachedEnergy = target.attachedEnergy || [];
-  target.attachedEnergy.push({ ...lightning }, { ...lightning });
+  target.attachedEnergy.push({ ...energyCard, uid: `buzzap-a-${Date.now()}` }, { ...energyCard, uid: `buzzap-b-${Date.now()}` });
 
   p.discard.push(electrode);
   p.bench[benchIdx] = null;
-  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ⚡ Energy!`, true);
+  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ${chosenType} Energy!`, true);
   renderAll();
 }
 
@@ -6999,6 +7044,12 @@ async function doStrangeBehavior(player) {
   const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
 
+  // Card says "as long as you don't Knock Out Slowbro" — check before moving
+  const slowbroHp = parseInt(slowbro.hp) || 0;
+  if ((slowbro.damage || 0) + 10 >= slowbroHp) {
+    showToast("Can't use Strange Behavior — would Knock Out Slowbro!", true); return;
+  }
+
   const picked = await openCardPicker({
     title: 'Strange Behavior',
     subtitle: `Choose a Pokémon to move 1 damage counter FROM (to Slowbro)`,
@@ -7009,14 +7060,14 @@ async function doStrangeBehavior(player) {
   src.damage -= 10;
   slowbro.damage = (slowbro.damage || 0) + 10;
   addLog(`P${player} used Strange Behavior — moved 1 damage counter from ${src.name} to ${slowbro.name}.`, true);
-  checkKO(player === 1 ? 2 : 1, player, slowbro, false);
   renderAll();
 }
 
 // Venomoth — Shift
-// Change Venomoth's type to any type currently in play.
+// Once per turn: change Venomoth's type to any other Pokémon's type in play (not Colorless).
 async function doShift(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Shift!", true); return; }
+  if (G.shiftedThisTurn) { showToast("Shift can only be used once per turn!", true); return; }
   const p = G.players[player];
   if (!isPowerActive(p.active, 'Shift')) { showToast('Venomoth must be Active!', true); return; }
 
@@ -7039,31 +7090,37 @@ async function doShift(player) {
   if (!picked) return;
   const chosenType = typeList[picked[0]];
   p.active.types = [chosenType];
+  G.shiftedThisTurn = true;
   addLog(`P${player} used Shift — ${p.active.name} is now ${chosenType} type!`, true);
   renderAll();
 }
 
 // Dragonite — Step In
-// Switch Dragonite from bench to Active.
+// Once per turn: if Dragonite is on your Bench, switch it with your Active Pokémon.
 function doStepIn(player, benchIdx) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Step In!", true); return; }
+  if (G.stepInThisTurn) { showToast("Step In can only be used once per turn!", true); return; }
   const p = G.players[player];
   const dragonite = p.bench[benchIdx];
   if (!isPowerActive(dragonite, 'Step In')) { showToast('Step In: Dragonite not on bench!', true); return; }
   const old = p.active;
   p.active = dragonite;
   p.bench[benchIdx] = old;
+  G.stepInThisTurn = true;
   addLog(`P${player} used Step In — ${dragonite.name} switched to Active!`, true);
   renderAll();
 }
 
 // Tentacool — Cowardice
-// Return Tentacool to hand with all attachments discarded.
+// Return Tentacool to hand, discard all attached. Cannot use the turn it was put into play.
 function doCowardice(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Cowardice!", true); return; }
   const p = G.players[player];
   const tentacool = [p.active, ...p.bench].find(c => isPowerActive(c, 'Cowardice'));
   if (!tentacool) { showToast('Tentacool not in play!', true); return; }
+  if ((G.evolvedThisTurn || []).includes(tentacool.uid)) {
+    showToast("Cowardice can't be used the turn Tentacool was put into play!", true); return;
+  }
 
   p.discard.push(...(tentacool.attachedEnergy || []));
   tentacool.attachedEnergy = []; tentacool.damage = 0; tentacool.status = null;
@@ -7080,23 +7137,28 @@ function doCowardice(player) {
 }
 
 // Mankey — Peek
-// Look at top card of either deck or one card in opponent's hand.
+// Look at: top card of either deck, a RANDOM card from opponent's hand,
+// or 1 of either player's Prize cards.
 async function doPeek(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Peek!", true); return; }
   const opp = player === 1 ? 2 : 1;
+
   const choice = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;
       display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;`;
+    const btn = (label, value, color) =>
+      `<button onclick="this.closest('div').parentElement.remove();window._peekChoice='${value}'"
+        style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);
+          border:1px solid ${color};color:${color};cursor:pointer;border-radius:4px;">${label}</button>`;
     overlay.innerHTML = `
       <div style="font-family:var(--font);font-size:10px;color:var(--accent)">Peek — Choose What to Look At</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='myDeck'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">Your Deck (top card)</button>
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppDeck'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">Opp Deck (top card)</button>
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppHand'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Opp Hand (1 card)</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:420px;">
+        ${btn('Your Deck (top card)', 'myDeck', 'var(--p1color)')}
+        ${btn("Opp Deck (top card)", 'oppDeck', 'var(--p2color)')}
+        ${btn("Opp Hand (random card)", 'oppHand', 'var(--muted)')}
+        ${btn("Your Prizes (1 card)", 'myPrize', 'var(--ok)')}
+        ${btn("Opp Prizes (1 card)", 'oppPrize', 'var(--warn)')}
       </div>`;
     document.body.appendChild(overlay);
     const interval = setInterval(() => {
@@ -7106,25 +7168,36 @@ async function doPeek(player) {
     }, 100);
   });
 
+  const showCard = (card, logMsg) => {
+    addLog(logMsg, true);
+    const src = card.images?.large || card.images?.small || '';
+    if (src) showCardDetail(src);
+  };
+
   if (choice === 'myDeck') {
     const card = G.players[player].deck[0];
     if (!card) { addLog('Peek: your deck is empty!'); return; }
-    addLog(`P${player} used Peek — top card of own deck: ${card.name}.`, true);
-    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+    showCard(card, `P${player} used Peek — top card of own deck: ${card.name}.`);
   } else if (choice === 'oppDeck') {
     const card = G.players[opp].deck[0];
-    if (!card) { addLog('Peek: opponent\'s deck is empty!'); return; }
-    addLog(`P${player} used Peek — top card of opponent's deck: ${card.name}.`, true);
-    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+    if (!card) { addLog("Peek: opponent's deck is empty!"); return; }
+    showCard(card, `P${player} used Peek — top card of opponent's deck: ${card.name}.`);
   } else if (choice === 'oppHand') {
     const hand = G.players[opp].hand;
-    if (!hand.length) { addLog('Peek: opponent\'s hand is empty!'); return; }
-    const picked = await openCardPicker({ title: 'Peek — Opponent\'s Hand', subtitle: 'Choose 1 card to look at', cards: hand, maxSelect: 1 });
-    if (picked && picked.length) {
-      const card = hand[picked[0]];
-      addLog(`P${player} used Peek — saw ${card.name} in opponent's hand.`, true);
-      if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
-    }
+    if (!hand.length) { addLog("Peek: opponent's hand is empty!"); return; }
+    // Card says random card — pick randomly, not player-chosen
+    const card = hand[Math.floor(Math.random() * hand.length)];
+    showCard(card, `P${player} used Peek — looked at a random card in opponent's hand: ${card.name}.`);
+  } else if (choice === 'myPrize') {
+    const prizes = G.players[player].prizes || [];
+    if (!prizes.length) { addLog('Peek: no prizes left!'); return; }
+    const picked = await openCardPicker({ title: 'Peek — Your Prizes', subtitle: 'Choose 1 Prize card to look at', cards: prizes, maxSelect: 1 });
+    if (picked && picked.length) showCard(prizes[picked[0]], `P${player} used Peek — looked at own Prize: ${prizes[picked[0]].name}.`);
+  } else if (choice === 'oppPrize') {
+    const prizes = G.players[opp].prizes || [];
+    if (!prizes.length) { addLog("Peek: opponent has no prizes!"); return; }
+    const picked = await openCardPicker({ title: "Peek — Opponent's Prizes", subtitle: "Choose 1 Prize card to look at", cards: prizes, maxSelect: 1 });
+    if (picked && picked.length) showCard(prizes[picked[0]], `P${player} used Peek — looked at opponent's Prize: ${prizes[picked[0]].name}.`);
   }
 }
 
@@ -9128,8 +9201,14 @@ const MOVE_EFFECTS = {
       const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
       if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return; }
       let tails = 0;
-      for (const { s, i } of bench) {
-        const heads = await flipCoin(`${atk.name}: Flip for ${s.name} — Heads=20 damage`);
+      const total = bench.length;
+      for (let fi = 0; fi < bench.length; fi++) {
+        const { s, i } = bench[fi];
+        const heads = await flipCoin(
+          `${atk.name}: Flip for ${s.name} — Heads=20 damage, Tails=10 recoil`,
+          { persistent: fi < total - 1, flipNum: fi + 1, totalFlips: total }
+        );
+        if (fi === total - 1) closeCoinOverlay();
         if (heads) {
           s.damage = (s.damage || 0) + 20;
           addLog(`${atk.name}: HEADS — 20 to ${s.name}! (${s.damage}/${s.hp})`);

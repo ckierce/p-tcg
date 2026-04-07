@@ -143,9 +143,10 @@ function tryApplyStatus(target, status) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DITTO — Transform: treat Ditto as a copy of the Defending Pokémon
-// Returns the opponent's active attacks if Ditto is active and Transform is
-// working; otherwise null.
+// ─────────────────────────────────────────────────────────────────────────────
+// DITTO — Transform
+// If Ditto is Active, treat it as the Defending Pokémon: same type, HP total,
+// weakness, resistance, and attacks. Any energy attached to Ditto counts as any type.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function dittoAttacks(player) {
@@ -153,6 +154,23 @@ function dittoAttacks(player) {
   if (!isPowerActive(p.active, 'Transform')) return null;
   const opp = G.players[player === 1 ? 2 : 1];
   return opp.active?.attacks || null;
+}
+
+// Returns the effective stats for a Ditto under Transform (used in performAttack W/R checks).
+// Returns null if Ditto is not active or Transform is not working.
+function getDittoTransformStats(player) {
+  const p = G.players[player];
+  if (!p.active || p.active.name !== 'Ditto') return null;
+  if (!isPowerActive(p.active, 'Transform')) return null;
+  const opp = G.players[player === 1 ? 2 : 1];
+  const def = opp.active;
+  if (!def) return null;
+  return {
+    types: def.types || [],
+    weaknesses: def.weaknesses || [],
+    resistances: def.resistances || [],
+    hp: def.hp,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -253,21 +271,51 @@ async function doEnergyTrans(player) {
 }
 
 // Gengar — Curse
-// Once per turn: move 1 damage counter from Gengar to the Defending Pokémon.
+// Once per turn: move 1 damage counter from 1 opponent Pokémon to another opponent Pokémon.
 async function doCurse(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
   const p = G.players[player];
   const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
-  if (!gengar)                     { showToast('Gengar not in play!', true); return; }
-  if ((gengar.damage || 0) < 10)   { showToast('Gengar has no damage counters to move!', true); return; }
-  const opp = G.players[player === 1 ? 2 : 1];
-  if (!opp.active)                 { showToast('No opposing Active Pokémon!', true); return; }
+  if (!gengar) { showToast('Gengar not in play!', true); return; }
 
-  gengar.damage -= 10;
-  opp.active.damage = (opp.active.damage || 0) + 10;
-  addLog(`P${player} used Curse — moved 1 damage counter from ${gengar.name} to ${opp.active.name}.`, true);
+  const oppNum = player === 1 ? 2 : 1;
+  const opp = G.players[oppNum];
+  const oppAll = [opp.active, ...opp.bench].filter(Boolean);
+  const oppWithDamage = oppAll.filter(c => (c.damage || 0) >= 10);
+
+  if (oppWithDamage.length === 0) { showToast("Opponent's Pokémon have no damage counters to move!", true); return; }
+  if (oppAll.length < 2) { showToast("Opponent needs at least 2 Pokémon in play!", true); return; }
+
+  // Step 1: choose source (opponent Pokémon with at least 1 damage counter)
+  let src = oppWithDamage[0];
+  if (oppWithDamage.length > 1) {
+    const picked = await openCardPicker({
+      title: 'Curse — Source',
+      subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
+      cards: oppWithDamage, maxSelect: 1
+    });
+    if (!picked) return;
+    src = oppWithDamage[picked[0]];
+  }
+
+  // Step 2: choose destination (any other opponent Pokémon)
+  const dests = oppAll.filter(c => c !== src);
+  let dst = dests[0];
+  if (dests.length > 1) {
+    const picked = await openCardPicker({
+      title: 'Curse — Destination',
+      subtitle: "Choose an opponent Pokémon to move the damage counter TO",
+      cards: dests, maxSelect: 1
+    });
+    if (!picked) return;
+    dst = dests[picked[0]];
+  }
+
+  src.damage = (src.damage || 0) - 10;
+  dst.damage = (dst.damage || 0) + 10;
+  addLog(`P${player} used Curse — moved 1 damage counter from ${src.name} to ${dst.name}.`, true);
   G.cursedThisTurn = true;
-  checkKO(player, player === 1 ? 2 : 1, opp.active, false);
+  checkKO(player, oppNum, dst, false);
   renderAll();
 }
 
@@ -293,13 +341,17 @@ async function doBuzzap(player, benchIdx) {
   if (!picked) return;
   const target = targets[picked[0]];
 
-  const lightning = { id: 'base1-100', name: 'Lightning Energy', supertype: 'Energy', images: { small: '' } };
+  // Player chooses which energy type to attach
+  const chosenType = await pickType('Buzzap! — Choose an Energy type');
+  if (!chosenType) return;
+
+  const energyCard = { id: 'buzzap-energy', name: `${chosenType} Energy`, supertype: 'Energy', images: { small: '' } };
   target.attachedEnergy = target.attachedEnergy || [];
-  target.attachedEnergy.push({ ...lightning }, { ...lightning });
+  target.attachedEnergy.push({ ...energyCard, uid: `buzzap-a-${Date.now()}` }, { ...energyCard, uid: `buzzap-b-${Date.now()}` });
 
   p.discard.push(electrode);
   p.bench[benchIdx] = null;
-  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ⚡ Energy!`, true);
+  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ${chosenType} Energy!`, true);
   renderAll();
 }
 
@@ -343,6 +395,12 @@ async function doStrangeBehavior(player) {
   const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
 
+  // Card says "as long as you don't Knock Out Slowbro" — check before moving
+  const slowbroHp = parseInt(slowbro.hp) || 0;
+  if ((slowbro.damage || 0) + 10 >= slowbroHp) {
+    showToast("Can't use Strange Behavior — would Knock Out Slowbro!", true); return;
+  }
+
   const picked = await openCardPicker({
     title: 'Strange Behavior',
     subtitle: `Choose a Pokémon to move 1 damage counter FROM (to Slowbro)`,
@@ -353,14 +411,14 @@ async function doStrangeBehavior(player) {
   src.damage -= 10;
   slowbro.damage = (slowbro.damage || 0) + 10;
   addLog(`P${player} used Strange Behavior — moved 1 damage counter from ${src.name} to ${slowbro.name}.`, true);
-  checkKO(player === 1 ? 2 : 1, player, slowbro, false);
   renderAll();
 }
 
 // Venomoth — Shift
-// Change Venomoth's type to any type currently in play.
+// Once per turn: change Venomoth's type to any other Pokémon's type in play (not Colorless).
 async function doShift(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Shift!", true); return; }
+  if (G.shiftedThisTurn) { showToast("Shift can only be used once per turn!", true); return; }
   const p = G.players[player];
   if (!isPowerActive(p.active, 'Shift')) { showToast('Venomoth must be Active!', true); return; }
 
@@ -383,31 +441,37 @@ async function doShift(player) {
   if (!picked) return;
   const chosenType = typeList[picked[0]];
   p.active.types = [chosenType];
+  G.shiftedThisTurn = true;
   addLog(`P${player} used Shift — ${p.active.name} is now ${chosenType} type!`, true);
   renderAll();
 }
 
 // Dragonite — Step In
-// Switch Dragonite from bench to Active.
+// Once per turn: if Dragonite is on your Bench, switch it with your Active Pokémon.
 function doStepIn(player, benchIdx) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Step In!", true); return; }
+  if (G.stepInThisTurn) { showToast("Step In can only be used once per turn!", true); return; }
   const p = G.players[player];
   const dragonite = p.bench[benchIdx];
   if (!isPowerActive(dragonite, 'Step In')) { showToast('Step In: Dragonite not on bench!', true); return; }
   const old = p.active;
   p.active = dragonite;
   p.bench[benchIdx] = old;
+  G.stepInThisTurn = true;
   addLog(`P${player} used Step In — ${dragonite.name} switched to Active!`, true);
   renderAll();
 }
 
 // Tentacool — Cowardice
-// Return Tentacool to hand with all attachments discarded.
+// Return Tentacool to hand, discard all attached. Cannot use the turn it was put into play.
 function doCowardice(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Cowardice!", true); return; }
   const p = G.players[player];
   const tentacool = [p.active, ...p.bench].find(c => isPowerActive(c, 'Cowardice'));
   if (!tentacool) { showToast('Tentacool not in play!', true); return; }
+  if ((G.evolvedThisTurn || []).includes(tentacool.uid)) {
+    showToast("Cowardice can't be used the turn Tentacool was put into play!", true); return;
+  }
 
   p.discard.push(...(tentacool.attachedEnergy || []));
   tentacool.attachedEnergy = []; tentacool.damage = 0; tentacool.status = null;
@@ -424,23 +488,28 @@ function doCowardice(player) {
 }
 
 // Mankey — Peek
-// Look at top card of either deck or one card in opponent's hand.
+// Look at: top card of either deck, a RANDOM card from opponent's hand,
+// or 1 of either player's Prize cards.
 async function doPeek(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Peek!", true); return; }
   const opp = player === 1 ? 2 : 1;
+
   const choice = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;
       display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;`;
+    const btn = (label, value, color) =>
+      `<button onclick="this.closest('div').parentElement.remove();window._peekChoice='${value}'"
+        style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);
+          border:1px solid ${color};color:${color};cursor:pointer;border-radius:4px;">${label}</button>`;
     overlay.innerHTML = `
       <div style="font-family:var(--font);font-size:10px;color:var(--accent)">Peek — Choose What to Look At</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='myDeck'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">Your Deck (top card)</button>
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppDeck'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">Opp Deck (top card)</button>
-        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppHand'"
-          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Opp Hand (1 card)</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:420px;">
+        ${btn('Your Deck (top card)', 'myDeck', 'var(--p1color)')}
+        ${btn("Opp Deck (top card)", 'oppDeck', 'var(--p2color)')}
+        ${btn("Opp Hand (random card)", 'oppHand', 'var(--muted)')}
+        ${btn("Your Prizes (1 card)", 'myPrize', 'var(--ok)')}
+        ${btn("Opp Prizes (1 card)", 'oppPrize', 'var(--warn)')}
       </div>`;
     document.body.appendChild(overlay);
     const interval = setInterval(() => {
@@ -450,25 +519,36 @@ async function doPeek(player) {
     }, 100);
   });
 
+  const showCard = (card, logMsg) => {
+    addLog(logMsg, true);
+    const src = card.images?.large || card.images?.small || '';
+    if (src) showCardDetail(src);
+  };
+
   if (choice === 'myDeck') {
     const card = G.players[player].deck[0];
     if (!card) { addLog('Peek: your deck is empty!'); return; }
-    addLog(`P${player} used Peek — top card of own deck: ${card.name}.`, true);
-    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+    showCard(card, `P${player} used Peek — top card of own deck: ${card.name}.`);
   } else if (choice === 'oppDeck') {
     const card = G.players[opp].deck[0];
-    if (!card) { addLog('Peek: opponent\'s deck is empty!'); return; }
-    addLog(`P${player} used Peek — top card of opponent's deck: ${card.name}.`, true);
-    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+    if (!card) { addLog("Peek: opponent's deck is empty!"); return; }
+    showCard(card, `P${player} used Peek — top card of opponent's deck: ${card.name}.`);
   } else if (choice === 'oppHand') {
     const hand = G.players[opp].hand;
-    if (!hand.length) { addLog('Peek: opponent\'s hand is empty!'); return; }
-    const picked = await openCardPicker({ title: 'Peek — Opponent\'s Hand', subtitle: 'Choose 1 card to look at', cards: hand, maxSelect: 1 });
-    if (picked && picked.length) {
-      const card = hand[picked[0]];
-      addLog(`P${player} used Peek — saw ${card.name} in opponent's hand.`, true);
-      if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
-    }
+    if (!hand.length) { addLog("Peek: opponent's hand is empty!"); return; }
+    // Card says random card — pick randomly, not player-chosen
+    const card = hand[Math.floor(Math.random() * hand.length)];
+    showCard(card, `P${player} used Peek — looked at a random card in opponent's hand: ${card.name}.`);
+  } else if (choice === 'myPrize') {
+    const prizes = G.players[player].prizes || [];
+    if (!prizes.length) { addLog('Peek: no prizes left!'); return; }
+    const picked = await openCardPicker({ title: 'Peek — Your Prizes', subtitle: 'Choose 1 Prize card to look at', cards: prizes, maxSelect: 1 });
+    if (picked && picked.length) showCard(prizes[picked[0]], `P${player} used Peek — looked at own Prize: ${prizes[picked[0]].name}.`);
+  } else if (choice === 'oppPrize') {
+    const prizes = G.players[opp].prizes || [];
+    if (!prizes.length) { addLog("Peek: opponent has no prizes!"); return; }
+    const picked = await openCardPicker({ title: "Peek — Opponent's Prizes", subtitle: "Choose 1 Prize card to look at", cards: prizes, maxSelect: 1 });
+    if (picked && picked.length) showCard(prizes[picked[0]], `P${player} used Peek — looked at opponent's Prize: ${prizes[picked[0]].name}.`);
   }
 }
 
