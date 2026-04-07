@@ -405,6 +405,64 @@ const MOVE_EFFECTS = {
     }
   },
 
+  // Water Gun (Poliwrath, Poliwag, Vaporeon, Lapras, Omastar, Seadra, Omanyte):
+  // Base damage + 10 per extra Water energy beyond what was paid in cost, max +20
+  'Water Gun': {
+    modifyDamage: ({ myActive, atk }) => {
+      const base = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      const waterInCost = (atk.cost || []).filter(c => /water/i.test(c)).length;
+      const waterAttached = (myActive?.attachedEnergy || []).filter(e => /water/i.test(e.name)).length;
+      const extras = Math.max(0, waterAttached - waterInCost);
+      const bonus = Math.min(extras, 2) * 10;
+      if (bonus > 0) addLog(`Water Gun: +${bonus} bonus (${extras} extra Water Energy).`);
+      return base + bonus;
+    }
+  },
+
+  // Hydro Pump (Blastoise): same formula as Water Gun
+  'Hydro Pump': {
+    modifyDamage: ({ myActive, atk }) => {
+      const base = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      const waterInCost = (atk.cost || []).filter(c => /water/i.test(c)).length;
+      const waterAttached = (myActive?.attachedEnergy || []).filter(e => /water/i.test(e.name)).length;
+      const extras = Math.max(0, waterAttached - waterInCost);
+      const bonus = Math.min(extras, 2) * 10;
+      if (bonus > 0) addLog(`Hydro Pump: +${bonus} bonus (${extras} extra Water Energy).`);
+      return base + bonus;
+    }
+  },
+
+  // Thrash (Nidoking): single flip — heads = 30+10=40; tails = 30 + 10 self-damage
+  // Handled here so engine Pattern 4 AND Pattern 6 don't each flip independently
+  'Thrash': {
+    modifyDamage: async ({ atk }) => {
+      const heads = await flipCoin(`${atk.name}: Heads = 40 damage, Tails = 30 damage + Nidoking takes 10`);
+      atk._thrashHeads = heads;
+      return heads ? 40 : 30;
+    },
+    postAttack: async ({ myActive, atk }) => {
+      if (!atk._thrashHeads && myActive) {
+        myActive.damage = (myActive.damage || 0) + 10;
+        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+      }
+    }
+  },
+
+  // Thunderpunch (Electabuzz): single flip — heads = 40; tails = 30 + 10 self-damage
+  'Thunderpunch': {
+    modifyDamage: async ({ atk }) => {
+      const heads = await flipCoin(`${atk.name}: Heads = 40 damage, Tails = 30 damage + Electabuzz takes 10`);
+      atk._tpunchHeads = heads;
+      return heads ? 40 : 30;
+    },
+    postAttack: async ({ myActive, atk }) => {
+      if (!atk._tpunchHeads && myActive) {
+        myActive.damage = (myActive.damage || 0) + 10;
+        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+      }
+    }
+  },
+
   // Bind/Bubble/Bubblebeam/Body Slam/Freeze Dry/Ice Beam/Irongrip/Lick/
   // Nasty Goo/Psyshock/Star Freeze/String Shot/Stun Spore/Thunder Wave/
   // Tongue Wrap/Wrap: flip → paralyzed
@@ -617,8 +675,9 @@ const MOVE_EFFECTS = {
 
   // Foul Odor (Gloom): both self and opp Confused
   'Foul Odor': {
-    postAttack: async ({ myActive, atk }) => {
-      if (myActive) { tryApplyStatus(myActive, 'confused'); addLog(`${atk.name}: ${myActive.name} is Confused!`, true); }
+    postAttack: async ({ myActive, oppActive, atk }) => {
+      if (myActive)  { tryApplyStatus(myActive, 'confused');  addLog(`${atk.name}: ${myActive.name} is now Confused!`, true); }
+      if (oppActive) { tryApplyStatus(oppActive, 'confused'); addLog(`${atk.name}: ${oppActive.name} is now Confused!`, true); }
     }
   },
 
@@ -988,7 +1047,10 @@ const MOVE_EFFECTS = {
   'Supersonic': _statusOppFlip('confused'),
 
   // Super Fang (Raticate): damage = half opp's remaining HP (rounded up to 10)
+  // Super Fang (Raticate): damage = half opp's remaining HP (rounded up to nearest 10)
+  // Card does not apply Weakness or Resistance
   'Super Fang': {
+    preAttack: ({ atk }) => { atk._skipWR = true; },
     modifyDamage: ({ oppActive }) => {
       const hp = parseInt(oppActive?.hp) || 0;
       return roundUp10(Math.max(0, hp - (oppActive?.damage || 0)) / 2);
@@ -1139,10 +1201,10 @@ function preAttackChecks(player, atk, myActive, oppActive) {
   return effect.preAttack({ player, opp: player === 1 ? 2 : 1, atk, myActive, oppActive });
 }
 
-function preDamageModify(player, atk, dmg, myActive, oppActive) {
+async function preDamageModify(player, atk, dmg, myActive, oppActive) {
   const effect = MOVE_EFFECTS[atk.name];
   if (!effect?.modifyDamage) return dmg;
-  const result = effect.modifyDamage({ player, opp: player === 1 ? 2 : 1, atk, dmg, myActive, oppActive });
+  const result = await effect.modifyDamage({ player, opp: player === 1 ? 2 : 1, atk, dmg, myActive, oppActive });
   return (result !== null && result !== undefined) ? result : dmg;
 }
 
