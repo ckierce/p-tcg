@@ -3125,14 +3125,21 @@ function attemptRetreat(player) {
         return;
       }
       addLog(`${p.active.name} is Confused — HEADS! Retreating...`);
-      doRetreat(player, p);
+      await doRetreat(player, p);
     })();
     return;
   }
-  doRetreat(player, p);
+  doRetreat(player, p); // async — fire and forget is fine here (no await needed at call site)
 }
 
-function doRetreat(player, p) {
+// Returns the total number of energy tokens an attachedEnergy array provides.
+// Double Colorless Energy counts as 2; all other cards count as 1.
+function energyValue(attachedEnergy) {
+  return (attachedEnergy || []).reduce((sum, e) =>
+    sum + (/double colorless/i.test(e.name || '') ? 2 : 1), 0);
+}
+
+async function doRetreat(player, p) {
 
   const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
   if (!benchSlots.length) { showToast('No bench Pokémon to retreat to!', true); return; }
@@ -3141,14 +3148,14 @@ function doRetreat(player, p) {
   const _retreatDiscount = typeof retreatCostReduction === 'function' ? retreatCostReduction(player) : 0;
   const retreatCost = Math.max(0, _baseRetreat - _retreatDiscount);
   const attached = p.active.attachedEnergy || [];
-  if (attached.length < retreatCost) {
-    showToast(`Need ${retreatCost} energy to retreat — only ${attached.length} attached!`, true);
+  if (energyValue(attached) < retreatCost) {
+    showToast(`Need ${retreatCost} energy to retreat — only ${energyValue(attached)} attached!`, true);
     return;
   }
 
   // If only one bench option, do it immediately
   if (benchSlots.length === 1) {
-    executeRetreat(player, benchSlots[0].i);
+    await executeRetreat(player, benchSlots[0].i);
     return;
   }
 
@@ -3160,11 +3167,10 @@ function doRetreat(player, p) {
   setMidline(`Choose a bench Pokémon to switch in for ${p.active.name}`);
 }
 
-function executeRetreat(player, benchIdx) {
+async function executeRetreat(player, benchIdx) {
   const p = G.players[player];
 
-  // Final guard — should not happen if attemptRetreat was used correctly,
-  // but prevents energy loss if status blocks retreat
+  // Final guard
   if (p.active?.status === 'paralyzed' || p.active?.status === 'asleep') {
     showToast(`${p.active.name} cannot retreat!`, true);
     G.pendingAction = null; clearHighlights(); return;
@@ -3174,12 +3180,61 @@ function executeRetreat(player, benchIdx) {
   const _retreatDiscount = typeof retreatCostReduction === 'function' ? retreatCostReduction(player) : 0;
   const retreatCost = Math.max(0, _baseRetreat - _retreatDiscount);
 
-  const discarded = p.active.attachedEnergy.splice(0, retreatCost);
-  p.discard.push(...discarded);
-  if (retreatCost > 0) addLog(`P${player} discarded ${retreatCost} energy to retreat.`);
+  // ── Energy discard for retreat ───────────────────────────────────────────
+  // Player chooses which energy cards to discard. The total energy VALUE of
+  // chosen cards must equal or exceed retreatCost. DCE counts as 2.
+  let toDiscard = [];
+  if (retreatCost > 0) {
+    const attached = p.active.attachedEnergy || [];
+
+    // If only one energy card and it exactly covers the cost, auto-discard
+    const autoDiscard = attached.length === 1 ||
+      (attached.length > 0 && energyValue(attached) === retreatCost);
+
+    if (autoDiscard) {
+      // Automatically pick the minimum cards needed
+      let remaining = retreatCost;
+      for (const e of attached) {
+        if (remaining <= 0) break;
+        toDiscard.push(e);
+        remaining -= /double colorless/i.test(e.name || '') ? 2 : 1;
+      }
+    } else {
+      // Let player pick which energy to discard
+      // Show picker; player selects cards until enough energy value is chosen
+      const picked = await openCardPicker({
+        title: `${p.active.name} — Retreat`,
+        subtitle: `Choose energy to discard (need ${retreatCost} energy value to pay retreat cost)`,
+        cards: attached,
+        maxSelect: attached.length,
+        minValue: retreatCost,        // hint for the UI (not enforced by picker itself)
+      });
+
+      if (!picked || !picked.length) {
+        showToast('Retreat cancelled.', true);
+        G.pendingAction = null; clearHighlights();
+        return;
+      }
+
+      toDiscard = picked.map(i => attached[i]);
+      const chosenValue = energyValue(toDiscard);
+      if (chosenValue < retreatCost) {
+        showToast(`Not enough energy selected (${chosenValue} of ${retreatCost} needed). Retreat cancelled.`, true);
+        G.pendingAction = null; clearHighlights();
+        return;
+      }
+    }
+
+    // Remove chosen cards from attachedEnergy and discard them
+    toDiscard.forEach(e => {
+      const idx = p.active.attachedEnergy.indexOf(e);
+      if (idx !== -1) p.active.attachedEnergy.splice(idx, 1);
+    });
+    p.discard.push(...toDiscard);
+    addLog(`P${player} discarded ${toDiscard.map(e => e.name).join(', ')} to retreat.`);
+  }
 
   const old = p.active;
-  // Clear per-active move-effects flags on retreating pokemon
   if (old) {
     old.leekSlapUsed = false;
     old.immuneToAttack = false;
@@ -3188,7 +3243,6 @@ function executeRetreat(player, benchIdx) {
     old.pounceActive = false;
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
-  // Clear all special conditions when a Pokémon retreats to the bench (TCG rule)
   if (old.status) {
     addLog(`${old.name}'s ${old.status} condition cleared on retreat.`);
     old.status = null;
@@ -3202,7 +3256,7 @@ function executeRetreat(player, benchIdx) {
   renderAll();
 }
 
-function handleBenchClick(player, slotIdx, evt) {
+async function handleBenchClick(player, slotIdx, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
   const slot = G.players[player].bench[slotIdx];
@@ -3227,7 +3281,7 @@ function handleBenchClick(player, slotIdx, evt) {
   }
 
   if (G.pendingAction?.type === 'retreat' && G.pendingAction.player === player && slot) {
-    executeRetreat(player, slotIdx); return;
+    await executeRetreat(player, slotIdx); return;
   }
 
   if (G.pendingAction?.type === 'bench' && G.pendingAction.player === player && !slot) {
@@ -5986,15 +6040,14 @@ async function aiTakeTurn() {
 function aiChooseEnergyTarget(p2) {
   // Helper: how many more energy does a pokemon need to fire its cheapest attack?
   function energyNeeded(card) {
-    if (!card?.attacks?.length) return 99; // no attacks — don't bother
+    if (!card?.attacks?.length) return 99;
     const attached = card.attachedEnergy || [];
-    // Find the attack with the lowest cost that we're closest to affording
+    const haveTokens = energyValue(attached);
     let minDeficit = 99;
     for (const atk of card.attacks) {
       const cost = atk.cost || [];
-      if (cost.length === 0) { minDeficit = 0; break; } // free attack
-      // Count how many more energy are needed (simplified: cost.length vs attached.length)
-      const deficit = Math.max(0, cost.length - attached.length);
+      if (cost.length === 0) { minDeficit = 0; break; }
+      const deficit = Math.max(0, cost.length - haveTokens);
       if (deficit < minDeficit) minDeficit = deficit;
     }
     return minDeficit;
@@ -6033,7 +6086,7 @@ async function aiConsiderRetreat(p2, force = false) {
   // Retreat if forced (e.g. to escape status), or if active is over 60% damaged
   if (!force && pctDmg < 0.6) return false;
   const retreatCost = active.convertedRetreatCost || 0;
-  const energy = active.attachedEnergy?.length || 0;
+  const energy = energyValue(active.attachedEnergy);
   if (energy < retreatCost) return false;
 
   // Find best bench option (most HP remaining)
