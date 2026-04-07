@@ -2711,6 +2711,10 @@ function selectHandCard(player, handIdx, evt) {
   if (G.phase === 'PROMOTE') {
     showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true); return;
   }
+  // Role guard: only act on your own hand
+  if (myRole !== null && player !== myRole) {
+    showToast(`Those are Player ${player}'s cards!`, true); return;
+  }
   if (G.phase !== 'SETUP' && G.turn !== player) {
     showToast(`It's Player ${G.turn}'s turn!`, true); return;
   }
@@ -2956,17 +2960,25 @@ function startEnergyAttach(player, handIdx, isRainDance = false) {
 function onActiveClick(player, evt) {
   // Remap slot IDs to actual players based on perspective
   if (myRole === 2) player = player === 1 ? 2 : 1;
+
+  // Always allow View Card on any slot regardless of turn/role
+  const viewCardFn = (card) => {
+    const src = card?.images?.large || card?.images?.small || '';
+    if (src) showActionMenu(card.name, [{ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } }], evt);
+  };
+
   if (G.pendingAction?.type === 'energy' && G.pendingAction.player === player) {
     attachEnergy(player, G.pendingAction.handIdx, 'active', null, G.pendingAction.isRainDance || false);
     G.pendingAction = null; clearHighlights(); return;
   }
   const p = G.players[player];
-  const canAct = G.phase === 'SETUP' || (G.turn === player && G.phase === 'MAIN');
+  const isMyPokemon = myRole === null || player === myRole;
+  const canAct = isMyPokemon && (G.phase === 'SETUP' || (G.turn === player && G.phase === 'MAIN'));
   if (p.active && canAct) {
     showFieldActionMenu(player, 'active', null, evt);
-  } else if (p.active && player !== myRole) {
-    const src = p.active.images?.large || p.active.images?.small || '';
-    if (src) showActionMenu(p.active.name, [{ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } }], evt);
+  } else if (p.active) {
+    // Not our pokemon or not our turn — View Card only
+    viewCardFn(p.active);
   }
 }
 
@@ -3028,8 +3040,8 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
     }});
   }
 
-  // Attacks — only from active slot, only on your turn during MAIN phase
-  if (zone === 'active' && G.turn === player && G.phase === 'MAIN') {
+  // Attacks — only from active slot, only on your turn, only your own pokemon
+  if (zone === 'active' && G.turn === player && G.phase === 'MAIN' && (myRole === null || player === myRole)) {
     // Ditto: use opponent's attacks via Transform power
     const transformAttacks = dittoAttacks(player);
     const attacks = transformAttacks || card.attacks || [];
@@ -3230,11 +3242,12 @@ function handleBenchClick(player, slotIdx, evt) {
     attachEnergy(player, G.pendingAction.handIdx, 'bench', slotIdx, G.pendingAction.isRainDance || false);
     G.pendingAction = null; clearHighlights(); return;
   }
-  const canAct = G.phase === 'SETUP' || G.turn === player;
+  const isMyPokemon = myRole === null || player === myRole;
+  const canAct = isMyPokemon && (G.phase === 'SETUP' || G.turn === player);
   if (slot && canAct) {
     showFieldActionMenu(player, 'bench', slotIdx, evt);
-  } else if (slot && player !== myRole) {
-    // Opponent bench — show View Card only
+  } else if (slot) {
+    // Not our pokemon or not our turn — View Card only
     const src = slot.images?.large || slot.images?.small || '';
     if (src) showActionMenu(slot.name, [{ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } }], evt);
   }
@@ -7992,24 +8005,29 @@ const _drain = (fraction) => ({
 });
 
 // Discard 1 energy from opponent's active (Hyper Beam / Whirlpool)
+// Uses ctx.oppActive snapshot — the Pokémon that was defending when the attack
+// landed, not whoever is currently active (which may be null if KO'd or
+// different if a switch happened mid-attack).
 const _discardOppEnergy = () => ({
-  postAttack: async ({ opp, atk }) => {
-    const oppActive = G.players[opp].active;
-    if (!oppActive || !(oppActive.attachedEnergy || []).length) {
+  postAttack: async ({ opp, oppActive, atk }) => {
+    // oppActive is the snapshot passed from performAttack. Fall back to current
+    // active only if the snapshot is somehow missing.
+    const target = oppActive || G.players[opp].active;
+    if (!target || !(target.attachedEnergy || []).length) {
       addLog(`${atk.name}: opponent has no energy to discard.`); return;
     }
     let idx = 0;
-    if (oppActive.attachedEnergy.length > 1) {
+    if (target.attachedEnergy.length > 1) {
       const picked = await openCardPicker({
         title: `${atk.name} — Discard Energy`,
-        subtitle: `Choose 1 energy to discard from ${oppActive.name}`,
-        cards: oppActive.attachedEnergy, maxSelect: 1
+        subtitle: `Choose 1 energy to discard from ${target.name}`,
+        cards: target.attachedEnergy, maxSelect: 1
       });
       if (picked && picked.length) idx = picked[0];
     }
-    const removed = oppActive.attachedEnergy.splice(idx, 1)[0];
+    const removed = target.attachedEnergy.splice(idx, 1)[0];
     G.players[opp].discard.push(removed);
-    addLog(`${atk.name}: discarded ${removed.name} from ${oppActive.name}!`, true);
+    addLog(`${atk.name}: discarded ${removed.name} from ${target.name}!`, true);
     renderAll();
   }
 });
