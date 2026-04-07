@@ -2952,872 +2952,6 @@ function startEnergyAttach(player, handIdx, isRainDance = false) {
   setMidline(isRainDance ? 'Rain Dance: choose a Water Pokémon to attach energy to' : 'Choose a bench Pokémon to attach energy to');
 }
 
-async function playTrainer(player, handIdx) {
-  closeActionMenu();
-  const p = G.players[player];
-  const opp = G.players[player === 1 ? 2 : 1];
-  const card = p.hand[handIdx];
-  const name = card.name;
-  const rules = card.rules?.[0] || '';
-
-  // Flash trainer card name for the opponent
-  showTrainerFlash(player, name);
-
-  // Headache (Psyduck) block — opponent can't play Trainer cards this turn
-  if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
-    showToast(`Headache prevents playing Trainer cards this turn!`, true);
-    addLog(`P${player} tried to play ${name} but is blocked by Headache!`, true);
-    return;
-  }
-
-  // Helper: remove card from hand and discard it
-  const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
-
-  // ── Bill ──────────────────────────────────────────
-  if (name === 'Bill') {
-    consume();
-    drawCard(player, true); drawCard(player, true);
-    addLog(`P${player} played Bill — drew 2 cards.`, true);
-    renderAll(); return;
-  }
-
-  // ── Professor Oak ─────────────────────────────────
-  if (name === 'Professor Oak') {
-    // Discard hand then draw 7
-    p.hand.splice(handIdx, 1); // remove oak first
-    p.discard.push(...p.hand, card);
-    p.hand = [];
-    for (let i = 0; i < 7; i++) drawCard(player, true);
-    addLog(`P${player} played Professor Oak — discarded hand and drew 7.`, true);
-    renderAll(); return;
-  }
-
-  // ── Impostor Professor Oak ────────────────────────
-  if (name === 'Impostor Professor Oak') {
-    consume();
-    opp.discard.push(...opp.hand);
-    opp.hand = [];
-    opp.deck = shuffle(opp.deck);
-    for (let i = 0; i < 7; i++) {
-      if (opp.deck.length) opp.hand.push(opp.deck.shift());
-    }
-    addLog(`P${player} played Impostor Professor Oak — opponent reshuffled and drew 7.`, true);
-    renderAll(); return;
-  }
-
-  // ── Potion ────────────────────────────────────────
-  if (name === 'Potion') {
-    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
-    consume();
-    p.active.damage = Math.max(0, p.active.damage - 20);
-    addLog(`P${player} used Potion — removed 20 damage from ${p.active.name}.`, true);
-    renderAll(); return;
-  }
-
-  // ── Super Potion ──────────────────────────────────
-  if (name === 'Super Potion') {
-    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
-    if (!p.active.attachedEnergy?.length) { showToast('Must discard 1 energy to use Super Potion!', true); return; }
-    consume();
-    p.active.attachedEnergy.splice(0, 1); // discard one energy
-    p.active.damage = Math.max(0, p.active.damage - 40);
-    addLog(`P${player} used Super Potion — discarded 1 energy, removed 40 damage from ${p.active.name}.`, true);
-    renderAll(); return;
-  }
-
-  // ── Full Heal ─────────────────────────────────────
-  if (name === 'Full Heal') {
-    if (!p.active) { showToast('No active Pokémon!', true); return; }
-    consume();
-    p.active.status = null;
-    addLog(`P${player} used Full Heal — ${p.active.name} is cured of all status conditions.`, true);
-    renderAll(); return;
-  }
-
-  // ── Pokémon Center ────────────────────────────────
-  if (name === 'Pokémon Center') {
-    consume();
-    const healed = [];
-    [p.active, ...p.bench].forEach(c => {
-      if (c && c.damage > 0) {
-        c.damage = 0;
-        p.discard.push(...(c.attachedEnergy || []));
-        c.attachedEnergy = [];
-        healed.push(c.name);
-      }
-    });
-    addLog(`P${player} used Pokémon Center — healed all Pokémon, discarded their energy: ${healed.join(', ') || 'none'}.`, true);
-    renderAll(); return;
-  }
-
-  // ── Switch ────────────────────────────────────────
-  if (name === 'Switch') {
-    if (!p.bench.some(s => s !== null)) { showToast('No bench Pokémon to switch with!', true); return; }
-    const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    const doSwitch = (benchIdx, benchPoke) => {
-      consume();
-      const old = p.active;
-      if (old.status) {
-        addLog(`${old.name}'s ${old.status} condition cleared by Switch.`);
-        old.status = null;
-      }
-      p.active = benchPoke;
-      p.bench[benchIdx] = old;
-      addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
-      closeActionMenu(); renderAll();
-    };
-    if (benchSlots.length === 1) { doSwitch(benchSlots[0].i, benchSlots[0].s); return; }
-    closeActionMenu();
-    showActionMenu('Switch — choose a Pokémon', benchSlots.map(({ s, i }) => ({
-      label: `Bench ${i+1}: ${s.name}`,
-      fn: () => doSwitch(i, s)
-    })), null);
-    return;
-  }
-
-  // ── Gust of Wind ─────────────────────────────────
-  if (name === 'Gust of Wind') {
-    const oppBench = opp.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (!oppBench.length) { showToast("Opponent has no bench Pokémon!", true); return; }
-    if (oppBench.length === 1) {
-      consume();
-      const { s, i } = oppBench[0];
-      const old = opp.active;
-      opp.active = s; opp.bench[i] = old;
-      addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
-      renderAll(); return;
-    }
-    // Multiple bench options — let player choose; consume only on confirm
-    closeActionMenu();
-    showActionMenu("Gust of Wind — choose opponent's Pokémon", oppBench.map(({ s, i }) => ({
-      label: `${s.name} (Bench ${i + 1})`,
-      fn: () => {
-        consume();
-        const old = opp.active;
-        opp.active = s; opp.bench[i] = old;
-        addLog(`P${player} used Gust of Wind — opponent's ${opp.active.name} forced to Active.`, true);
-        closeActionMenu(); renderAll();
-      }
-    })), null);
-    return;
-  }
-
-  // ── Energy Removal ────────────────────────────────
-  if (name === 'Energy Removal') {
-    // Build list of all opponent Pokémon that have energy attached
-    const oppTargets = [
-      ...(opp.active?.attachedEnergy?.length ? [{ card: opp.active, zone: 'active', idx: null }] : []),
-      ...opp.bench.map((b, i) => (b?.attachedEnergy?.length ? { card: b, zone: 'bench', idx: i } : null)).filter(Boolean)
-    ];
-    if (!oppTargets.length) { showToast("Opponent has no energy to remove!", true); return; }
-    consume();
-
-    // Step 1: choose which Pokémon to target (skip if only one option)
-    let targetEntry = oppTargets[0];
-    if (oppTargets.length > 1) {
-      const targetPicked = await openCardPicker({
-        title: 'Energy Removal',
-        subtitle: "Choose opponent's Pokémon to remove energy from",
-        cards: oppTargets.map(e => e.card),
-        maxSelect: 1
-      });
-      if (!targetPicked || !targetPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
-      targetEntry = oppTargets[targetPicked[0]];
-    }
-    const targetCard = targetEntry.zone === 'active' ? opp.active : opp.bench[targetEntry.idx];
-
-    // Step 2: choose which energy to discard (skip if only one)
-    let removed;
-    if (targetCard.attachedEnergy.length === 1) {
-      removed = targetCard.attachedEnergy.splice(0, 1)[0];
-    } else {
-      const energyPicked = await openCardPicker({
-        title: 'Energy Removal',
-        subtitle: `Choose 1 energy to discard from ${targetCard.name}`,
-        cards: targetCard.attachedEnergy,
-        maxSelect: 1
-      });
-      if (!energyPicked || !energyPicked.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
-      removed = targetCard.attachedEnergy.splice(energyPicked[0], 1)[0];
-    }
-    opp.discard.push(removed);
-    addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${targetCard.name}.`, true);
-    renderAll(); return;
-  }
-
-  // ── Super Energy Removal ──────────────────────────
-  if (name === 'Super Energy Removal') {
-    // Check opp has any energy on any Pokémon
-    const oppAllPokemon = [
-      ...(opp.active ? [{ label: `Active: ${opp.active.name}`, zone: 'active', idx: null }] : []),
-      ...opp.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i } : null).filter(Boolean)
-    ];
-    const oppHasEnergy = oppAllPokemon.some(entry => {
-      const card = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
-      return card?.attachedEnergy?.length > 0;
-    });
-    if (!oppHasEnergy) { showToast("Opponent has no energy!", true); return; }
-    if (!p.active?.attachedEnergy?.length) { showToast("Must discard 1 of your energy first!", true); return; }
-
-    // Step 1: player discards 1 of their own energy
-    let myCostIdx = 0;
-    if (p.active.attachedEnergy.length > 1) {
-      const myCostPicked = await openCardPicker({
-        title: 'Super Energy Removal — Your Cost',
-        subtitle: `Choose 1 energy to discard from your ${p.active.name}`,
-        cards: p.active.attachedEnergy,
-        maxSelect: 1
-      });
-      if (!myCostPicked || !myCostPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
-      myCostIdx = p.active.attachedEnergy.indexOf(myCostPicked[0]);
-    }
-    consume();
-    const myRemoved = p.active.attachedEnergy.splice(myCostIdx, 1)[0];
-    p.discard.push(myRemoved);
-    addLog(`P${player} discarded ${myRemoved.name} from their own ${p.active.name} as cost.`);
-
-    // Step 2: choose which opp Pokémon to target (if opp has energy on multiple)
-    const oppTargetsWithEnergy = oppAllPokemon.filter(entry => {
-      const card = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
-      return card?.attachedEnergy?.length > 0;
-    });
-    let targetCard = opp.active;
-    let targetLabel = opp.active?.name || 'Active';
-    if (oppTargetsWithEnergy.length > 1) {
-      const targetPicked = await openCardPicker({
-        title: 'Super Energy Removal — Target',
-        subtitle: "Choose opponent's Pokémon to remove energy from",
-        cards: oppTargetsWithEnergy.map(entry => {
-          const c = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
-          return { ...c, _serEntry: entry };
-        }),
-        maxSelect: 1
-      });
-      if (!targetPicked || !targetPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
-      const entry = targetPicked[0]._serEntry;
-      targetCard = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
-      targetLabel = targetCard.name;
-    } else if (oppTargetsWithEnergy.length === 1) {
-      const entry = oppTargetsWithEnergy[0];
-      targetCard = entry.zone === 'active' ? opp.active : opp.bench[entry.idx];
-      targetLabel = targetCard.name;
-    }
-
-    // Step 3: choose up to 2 energies to discard from target
-    const oppEnergy = targetCard.attachedEnergy || [];
-    let removedEnergy = [];
-    if (oppEnergy.length <= 2) {
-      removedEnergy = oppEnergy.splice(0, oppEnergy.length);
-    } else {
-      const oppEnergyPicked = await openCardPicker({
-        title: 'Super Energy Removal — Discard Energy',
-        subtitle: `Choose up to 2 energy to discard from ${targetLabel}`,
-        cards: oppEnergy,
-        maxSelect: 2
-      });
-      if (!oppEnergyPicked || !oppEnergyPicked.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
-      for (const c of oppEnergyPicked) {
-        const i = targetCard.attachedEnergy.indexOf(c);
-        if (i !== -1) removedEnergy.push(...targetCard.attachedEnergy.splice(i, 1));
-      }
-    }
-    opp.discard.push(...removedEnergy);
-    addLog(`P${player} used Super Energy Removal — discarded ${removedEnergy.length} energy from ${targetLabel}.`, true);
-    renderAll(); return;
-  }
-
-  // ── Energy Retrieval ──────────────────────────────
-  if (name === 'Energy Retrieval') {
-    const energyInDiscard = p.discard.filter(c => c.supertype === 'Energy');
-    if (!energyInDiscard.length) { showToast('No energy in discard pile!', true); return; }
-    consume();
-    // Return up to 2 basic energy from discard to hand
-    const basicEnergy = p.discard.filter(c => c.supertype === 'Energy' && !(/double colorless/i.test(c.name)));
-    const toRetrieve = basicEnergy.slice(0, 2);
-    toRetrieve.forEach(e => {
-      const i = p.discard.findIndex(c => c === e);
-      if (i !== -1) { p.hand.push(...p.discard.splice(i, 1)); }
-    });
-    addLog(`P${player} used Energy Retrieval — returned ${toRetrieve.length} energy card(s) to hand.`, true);
-    renderAll(); return;
-  }
-
-  // ── Energy Search ─────────────────────────────────
-  if (name === 'Energy Search') {
-    const energyInDeck = p.deck.filter(c => c.supertype === 'Energy' && !(/double colorless/i.test(c.name)));
-    if (!energyInDeck.length) { showToast('No basic energy in deck!', true); return; }
-    consume();
-    (async () => {
-      const picked = await openCardPicker({
-        title: 'Energy Search',
-        subtitle: 'Choose 1 basic energy from your deck',
-        cards: energyInDeck,
-        maxSelect: 1
-      });
-      if (!picked) { // cancelled — put card back
-        p.hand.push(card); p.discard.pop(); return;
-      }
-      const chosenCard = energyInDeck[picked[0]];
-      const deckIdx = p.deck.findIndex(c => c === chosenCard);
-      if (deckIdx !== -1) p.hand.push(...p.deck.splice(deckIdx, 1));
-      p.deck = shuffle(p.deck);
-      addLog(`P${player} used Energy Search — took ${chosenCard.name} from deck.`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Computer Search ───────────────────────────────
-  if (name === 'Computer Search') {
-    const otherCards = p.hand.filter((_, i) => i !== handIdx);
-    if (otherCards.length < 2) { showToast('Need at least 2 other cards in hand to use Computer Search!', true); return; }
-    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
-    // Don't consume yet — need to discard 2 first
-    (async () => {
-      // Step 1: pick 2 cards from hand to discard
-      const discardPicked = await openCardPicker({
-        title: 'Computer Search',
-        subtitle: 'Discard 2 cards from your hand',
-        cards: otherCards,
-        maxSelect: 2
-      });
-      if (!discardPicked || discardPicked.length < 2) {
-        showToast('Computer Search cancelled.'); return;
-      }
-      // Remove Computer Search from hand first
-      p.hand.splice(handIdx, 1);
-      p.discard.push(card);
-      // Discard the 2 chosen cards (indices are into otherCards)
-      const toDiscard = discardPicked.map(i => otherCards[i]);
-      toDiscard.forEach(dc => {
-        const hi = p.hand.findIndex(c => c === dc);
-        if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1));
-      });
-
-      // Step 2: pick any card from deck
-      const deckPicked = await openCardPicker({
-        title: 'Computer Search',
-        subtitle: 'Choose any card from your deck',
-        cards: p.deck,
-        maxSelect: 1
-      });
-      if (!deckPicked) {
-        addLog(`P${player} used Computer Search — discarded 2 cards but found nothing.`, true);
-        renderAll(); return;
-      }
-      const foundCard = p.deck[deckPicked[0]];
-      const deckIdx = p.deck.findIndex(c => c === foundCard);
-      if (deckIdx !== -1) p.hand.push(...p.deck.splice(deckIdx, 1));
-      p.deck = shuffle(p.deck);
-      addLog(`P${player} used Computer Search — discarded 2, found ${foundCard.name}.`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── PlusPower ─────────────────────────────────────
-  if (name === 'PlusPower') {
-    if (!p.active) { showToast('No Active Pokémon!', true); return; }
-    consume();
-    p.active.plusPower = (p.active.plusPower || 0) + 10;
-    addLog(`P${player} attached PlusPower to ${p.active.name} (+10 damage next attack).`, true);
-    renderAll(); return;
-  }
-
-  // ── Defender ──────────────────────────────────────
-  if (name === 'Defender') {
-    if (!p.active) { showToast('No Active Pokémon!', true); return; }
-    consume();
-    p.active.defender = true;
-    addLog(`P${player} attached Defender to ${p.active.name} (-20 damage until end of opponent's next turn).`, true);
-    renderAll(); return;
-  }
-
-  // ── Clefairy Doll ─────────────────────────────────
-  if (name === 'Clefairy Doll') {
-    const benchFull = p.bench.every(s => s !== null);
-    if (benchFull) { showToast('Bench is full!', true); return; }
-    consume();
-    const doll = {
-      id: card.id, name: 'Clefairy Doll',
-      supertype: 'Pokémon', subtypes: ['Basic'],
-      hp: '10', attacks: [], attachedEnergy: [],
-      damage: 0, status: null,
-      images: card.images,
-      isDoll: true,         // no prize on KO, can't retreat, can't have status
-      canRetreat: false,
-    };
-    const freeSlot = p.bench.findIndex(s => s === null);
-    p.bench[freeSlot] = doll;
-    addLog(`P${player} played Clefairy Doll to the bench.`, true);
-    renderAll(); return;
-  }
-
-  // ── Mysterious Fossil ─────────────────────────────
-  if (name === 'Mysterious Fossil') {
-    // Can be played as Active (if no active yet) or to Bench
-    const hasActive = !!p.active;
-    const benchFull = p.bench.every(s => s !== null);
-    if (hasActive && benchFull) { showToast('Bench is full!', true); return; }
-    const fossilUid = `fossil-${Math.random().toString(36).slice(2,9)}`;
-    const fossil = {
-      id: card.id, name: 'Mysterious Fossil',
-      uid: fossilUid,
-      supertype: 'Pokémon', subtypes: ['Basic'],
-      hp: '10', attacks: [], attachedEnergy: [],
-      damage: 0, status: null,
-      images: card.images,
-      isDoll: true,      // no prize on KO, same treatment as Clefairy Doll
-      isFossil: true,    // can be discarded from bench voluntarily
-      canRetreat: false,
-    };
-    consume();
-    // Mark fossil as played this turn — cannot be evolved until next turn
-    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
-    G.evolvedThisTurn.push(fossilUid);
-    if (!hasActive) {
-      // No active yet — play as Active
-      p.active = fossil;
-      addLog(`P${player} played Mysterious Fossil as their Active.`, true);
-    } else {
-      const freeSlot = p.bench.findIndex(s => s === null);
-      p.bench[freeSlot] = fossil;
-      addLog(`P${player} played Mysterious Fossil to the bench.`, true);
-    }
-    renderAll(); return;
-  }
-  if (name === 'Revive') {
-    const basicInDiscard = p.discard.find(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
-    if (!basicInDiscard) { showToast('No Basic Pokémon in discard!', true); return; }
-    const benchFull = p.bench.every(s => s !== null);
-    if (benchFull) { showToast('Bench is full!', true); return; }
-    consume();
-    const idx2 = p.discard.findIndex(c => c === basicInDiscard);
-    const revived = p.discard.splice(idx2, 1)[0];
-    revived.damage = Math.floor((parseInt(revived.hp) || 0) / 2);
-    revived.attachedEnergy = []; revived.status = null;
-    const freeSlot = p.bench.findIndex(s => s === null);
-    p.bench[freeSlot] = revived;
-    addLog(`P${player} used Revive — ${revived.name} returned to bench at half HP.`, true);
-    renderAll(); return;
-  }
-
-  // ── Mr. Fuji ──────────────────────────────────────
-  if (name === 'Mr. Fuji') {
-    const benchPokemon = p.bench.filter(s => s !== null);
-    if (!benchPokemon.length) { showToast('No bench Pokémon to choose!', true); return; }
-    consume();
-    // Shuffle first bench pokemon and its attachments into deck
-    const idx3 = p.bench.findIndex(s => s !== null);
-    const fujiTarget = p.bench[idx3];
-    p.bench[idx3] = null;
-    p.deck.push(fujiTarget, ...(fujiTarget.attachedEnergy || []));
-    p.deck = shuffle(p.deck);
-    addLog(`P${player} used Mr. Fuji — ${fujiTarget.name} and attached cards shuffled into deck.`, true);
-    renderAll(); return;
-  }
-
-  // ── Gambler ───────────────────────────────────────
-  if (name === 'Gambler') {
-    consume();
-    p.deck = shuffle([...p.deck, ...p.hand]);
-    p.hand = [];
-    // Coin flip handled via flipCoin async
-    (async () => {
-      const heads = await flipCoin('Gambler: Heads = draw 8, Tails = draw 1');
-      const count = heads ? 8 : 1;
-      for (let i = 0; i < count && p.deck.length; i++) drawCard(player, true);
-      addLog(`P${player} used Gambler — ${heads ? 'HEADS' : 'TAILS'}, drew ${count} card(s).`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Recycle ───────────────────────────────────────
-  if (name === 'Recycle') {
-    if (!p.discard.length) { showToast('Discard pile is empty!', true); return; }
-    consume();
-    (async () => {
-      const heads = await flipCoin('Recycle: Heads = put top discard card on deck');
-      if (heads) {
-        const recycled = p.discard[p.discard.length - 1];
-        p.deck.unshift(p.discard.pop());
-        addLog(`P${player} used Recycle — HEADS! ${recycled.name} returned to top of deck.`, true);
-      } else {
-        addLog(`P${player} used Recycle — TAILS! No effect.`);
-      }
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Poké Ball ─────────────────────────────────────
-  if (name === 'Poké Ball') {
-    consume();
-    (async () => {
-      const heads = await flipCoin('Poké Ball: Heads = search deck for any Pokémon');
-      if (heads) {
-        const pokemon = p.deck.filter(c => c.supertype === 'Pokémon');
-        if (!pokemon.length) {
-          addLog(`P${player} used Poké Ball — HEADS but no Pokémon in deck.`); renderAll(); return;
-        }
-        const picked = await openCardPicker({
-          title: 'Poké Ball',
-          subtitle: 'Choose a Pokémon from your deck',
-          cards: pokemon,
-          maxSelect: 1
-        });
-        if (picked) {
-          const found = pokemon[picked[0]];
-          const i = p.deck.findIndex(c => c === found);
-          if (i !== -1) p.hand.push(...p.deck.splice(i, 1));
-          p.deck = shuffle(p.deck);
-          addLog(`P${player} used Poké Ball — HEADS! Found ${found.name}.`, true);
-        } else {
-          addLog(`P${player} used Poké Ball — HEADS but no Pokémon chosen.`);
-        }
-      } else {
-        addLog(`P${player} used Poké Ball — TAILS! No effect.`);
-      }
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Scoop Up ──────────────────────────────────────
-  if (name === 'Scoop Up') {
-    // Must have a bench pokemon to scoop (can't scoop active if it's your only pokemon)
-    const benchCount = p.bench.filter(s => s !== null).length;
-    const hasActive = !!p.active;
-
-    // Can only target bench pokemon — or active if there's at least one bench pokemon remaining
-    // Either way need at least one pokemon left after scooping
-    const canScoopActive = hasActive && benchCount >= 1;
-    const canScoopBench = benchCount >= 1 && (hasActive || benchCount >= 2);
-
-    if (!canScoopActive && !canScoopBench) {
-      showToast('Cannot use Scoop Up — would leave you with no Pokémon!', true); return;
-    }
-
-    // Build list of eligible targets (Basic only — can't scoop evolutions)
-    const targets = [];
-    if (canScoopActive && p.active && p.active.subtypes?.includes('Basic') && !p.active.isDoll) {
-      targets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
-    }
-    p.bench.forEach((b, i) => {
-      if (b && b.subtypes?.includes('Basic') && !b.isDoll) {
-        // Can scoop from bench if we have active, or if there are 2+ bench pokemon
-        if (hasActive || benchCount >= 2) {
-          targets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
-        }
-      }
-    });
-
-    if (!targets.length) { showToast('No eligible Basic Pokémon to scoop!', true); return; }
-
-    consume();
-
-    // If only one valid target, scoop immediately
-    const doScoop = (zone, idx) => {
-      let target, returnCard;
-      if (zone === 'active') {
-        target = p.active;
-        p.active = null;
-      } else {
-        target = p.bench[idx];
-        p.bench[idx] = null;
-      }
-      // Discard all attached cards, return pokemon to hand with damage/status reset
-      p.discard.push(...(target.attachedEnergy || []));
-      target.attachedEnergy = [];
-      target.damage = 0;
-      target.status = null;
-      p.hand.push(target);
-      addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
-      renderAll();
-    };
-
-    if (targets.length === 1) {
-      doScoop(targets[0].zone, targets[0].idx);
-      return;
-    }
-
-    // Multiple targets — show action menu to pick
-    closeActionMenu();
-    showActionMenu('Scoop Up — choose a Pokémon', targets.map(t => ({
-      label: t.label,
-      fn: () => { closeActionMenu(); doScoop(t.zone, t.idx); }
-    })));
-    return;
-  }
-
-  // ── Pokédex ───────────────────────────────────────
-  // Look at top 5 cards of deck, rearrange in any order
-  if (name === 'Pokédex') {
-    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
-    consume();
-    await openPokedex(player);
-    renderAll(); return;
-  }
-
-  // ── Lass ──────────────────────────────────────────
-  // Reveal both hands face-up; discard all Trainer cards from both hands
-  if (name === 'Lass') {
-    consume();
-
-    // Snapshot both hands BEFORE discarding so the modal can show what was discarded
-    const snapshots = {};
-    for (const pNum of [1, 2]) {
-      snapshots[pNum] = G.players[pNum].hand.map(c => ({
-        name: c.name,
-        img: c.images?.small || '',
-        isTrainer: c.supertype === 'Trainer',
-      }));
-    }
-
-    // Discard all Trainers from both hands
-    const trainersDiscarded = { 1: [], 2: [] };
-    for (const pNum of [1, 2]) {
-      const pp = G.players[pNum];
-      const trainers = pp.hand.filter(c => c.supertype === 'Trainer');
-      trainers.forEach(t => {
-        const i = pp.hand.findIndex(c => c === t);
-        if (i !== -1) { pp.discard.push(...pp.hand.splice(i, 1)); }
-      });
-      trainersDiscarded[pNum] = trainers.map(t => t.name);
-    }
-
-    addLog(`P${player} used Lass — P1 discarded: ${trainersDiscarded[1].join(', ') || 'none'}; P2 discarded: ${trainersDiscarded[2].join(', ') || 'none'}.`, true);
-
-    // Store snapshot in G so both players see the modal on receiveGameState
-    G.pendingLass = { snapshots, player };
-
-    renderAll(); // pushes state including pendingLass, triggers modal on both clients
-    showLassModal(snapshots, player);
-    return;
-  }
-
-  // ── Maintenance ───────────────────────────────────
-  // Shuffle 2 cards from hand into deck, draw 1
-  if (name === 'Maintenance') {
-    const otherCards = p.hand.filter((_, i) => i !== handIdx);
-    if (otherCards.length < 2) { showToast('Need at least 2 other cards in hand!', true); return; }
-    (async () => {
-      const picked = await openCardPicker({
-        title: 'Maintenance',
-        subtitle: 'Choose 2 cards to shuffle back into your deck',
-        cards: otherCards,
-        maxSelect: 2
-      });
-      if (!picked || picked.length < 2) { showToast('Maintenance cancelled.'); return; }
-      p.hand.splice(handIdx, 1); p.discard.push(card); // consume Maintenance
-      const toShuffle = picked.map(i => otherCards[i]);
-      toShuffle.forEach(sc => {
-        const hi = p.hand.findIndex(c => c === sc);
-        if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1));
-      });
-      p.deck = shuffle(p.deck);
-      drawCard(player, true);
-      addLog(`P${player} used Maintenance — shuffled 2 cards back, drew 1.`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Item Finder ───────────────────────────────────
-  // Discard 2 cards to retrieve any Trainer from discard pile
-  if (name === 'Item Finder') {
-    const trainersInDiscard = p.discard.filter(c => c.supertype === 'Trainer');
-    if (!trainersInDiscard.length) { showToast('No Trainer cards in discard!', true); return; }
-    const otherCards = p.hand.filter((_, i) => i !== handIdx);
-    if (otherCards.length < 2) { showToast('Need at least 2 other cards to discard!', true); return; }
-    (async () => {
-      const discardPicked = await openCardPicker({
-        title: 'Item Finder',
-        subtitle: 'Discard 2 cards from your hand',
-        cards: otherCards,
-        maxSelect: 2
-      });
-      if (!discardPicked || discardPicked.length < 2) { showToast('Item Finder cancelled.'); return; }
-      p.hand.splice(handIdx, 1); p.discard.push(card);
-      const toDiscard = discardPicked.map(i => otherCards[i]);
-      toDiscard.forEach(dc => {
-        const hi = p.hand.findIndex(c => c === dc);
-        if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1));
-      });
-      const trainerPicked = await openCardPicker({
-        title: 'Item Finder',
-        subtitle: 'Choose a Trainer card from your discard',
-        cards: trainersInDiscard,
-        maxSelect: 1
-      });
-      if (!trainerPicked) { addLog(`P${player} used Item Finder — discarded 2 but found nothing.`, true); renderAll(); return; }
-      const found = trainersInDiscard[trainerPicked[0]];
-      const di = p.discard.findIndex(c => c === found);
-      if (di !== -1) p.hand.push(...p.discard.splice(di, 1));
-      addLog(`P${player} used Item Finder — discarded 2, retrieved ${found.name}.`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Devolution Spray ──────────────────────────────
-  // Devolve an evolved Pokémon; the evolution goes to discard
-  if (name === 'Devolution Spray') {
-    // Find evolved pokemon (Stage 1 or Stage 2) on board
-    const evolvedTargets = [];
-    if (p.active?.subtypes?.includes('Stage 1') || p.active?.subtypes?.includes('Stage 2'))
-      evolvedTargets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
-    p.bench.forEach((b, i) => {
-      if (b?.subtypes?.includes('Stage 1') || b?.subtypes?.includes('Stage 2'))
-        evolvedTargets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
-    });
-    if (!evolvedTargets.length) { showToast('No evolved Pokémon to devolve!', true); return; }
-    consume();
-    const doDevolution = (zone, idx) => {
-      const target = zone === 'active' ? p.active : p.bench[idx];
-      if (!target || !target.evolvesFrom) return;
-      // The evolved card goes to discard; the pre-evolution card needs to come from discard or hand
-      const preEvo = [...p.discard, ...p.hand].find(c => c.name === target.evolvesFrom && c.supertype === 'Pokémon');
-      p.discard.push(target);
-      if (preEvo) {
-        const src = p.hand.includes(preEvo) ? p.hand : p.discard;
-        const si = src.findIndex(c => c === preEvo);
-        const restored = src.splice(si, 1)[0];
-        restored.damage = target.damage; restored.attachedEnergy = target.attachedEnergy; restored.status = null;
-        if (zone === 'active') p.active = restored; else p.bench[idx] = restored;
-        addLog(`P${player} used Devolution Spray — ${target.name} devolved to ${restored.name}.`, true);
-      } else {
-        // No pre-evolution found — slot becomes empty
-        if (zone === 'active') p.active = null; else p.bench[idx] = null;
-        addLog(`P${player} used Devolution Spray — ${target.name} discarded (no ${target.evolvesFrom} to replace).`, true);
-      }
-      renderAll();
-    };
-    if (evolvedTargets.length === 1) { doDevolution(evolvedTargets[0].zone, evolvedTargets[0].idx); return; }
-    closeActionMenu();
-    showActionMenu('Devolution Spray — choose target', evolvedTargets.map(t => ({
-      label: t.label, fn: () => { closeActionMenu(); doDevolution(t.zone, t.idx); }
-    })), null);
-    return;
-  }
-
-  // ── Pokémon Trader ────────────────────────────────
-  // Trade a Pokémon in hand for a Pokémon in deck
-  if (name === 'Pokémon Trader') {
-    const pokemonInHand = p.hand.filter((c, i) => i !== handIdx && c.supertype === 'Pokémon');
-    const pokemonInDeck = p.deck.filter(c => c.supertype === 'Pokémon');
-    if (!pokemonInHand.length) { showToast('No other Pokémon in hand to trade!', true); return; }
-    if (!pokemonInDeck.length) { showToast('No Pokémon in deck!', true); return; }
-    (async () => {
-      const fromHand = await openCardPicker({
-        title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your hand to trade',
-        cards: pokemonInHand, maxSelect: 1
-      });
-      if (!fromHand) { showToast('Pokémon Trader cancelled.'); return; }
-      const fromDeck = await openCardPicker({
-        title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your deck to take',
-        cards: pokemonInDeck, maxSelect: 1
-      });
-      if (!fromDeck) { showToast('Pokémon Trader cancelled.'); return; }
-      // Consume trainer
-      p.hand.splice(handIdx, 1); p.discard.push(card);
-      // Move chosen hand pokemon to deck
-      const handPoke = pokemonInHand[fromHand[0]];
-      const hi = p.hand.findIndex(c => c === handPoke);
-      if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1));
-      // Move chosen deck pokemon to hand
-      const deckPoke = pokemonInDeck[fromDeck[0]];
-      const di = p.deck.findIndex(c => c === deckPoke);
-      if (di !== -1) p.hand.push(...p.deck.splice(di, 1));
-      p.deck = shuffle(p.deck);
-      addLog(`P${player} used Pokémon Trader — traded ${handPoke.name} for ${deckPoke.name}.`, true);
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Pokémon Breeder ───────────────────────────────
-  // Play a Stage 2 directly onto a Basic (skipping Stage 1)
-  if (name === 'Pokémon Breeder') {
-    const stage2InHand = p.hand.filter((c, i) => i !== handIdx && c.subtypes?.includes('Stage 2'));
-    if (!stage2InHand.length) { showToast('No Stage 2 Pokémon in hand!', true); return; }
-    (async () => {
-      const picked = await openCardPicker({
-        title: 'Pokémon Breeder', subtitle: 'Choose a Stage 2 to play directly',
-        cards: stage2InHand, maxSelect: 1
-      });
-      if (!picked) { showToast('Pokémon Breeder cancelled.'); return; }
-      const stage2 = stage2InHand[picked[0]];
-      // Find valid targets (Basic that this Stage 2's pre-evolution chain matches)
-      // Simplified: allow evolving any Basic → Stage 2 if the Stage 2's evolvesFrom exists on board
-      // We need to find the Stage 1 name, then the Basic
-      const targets = [];
-      [{ zone: 'active', card: p.active, idx: null },
-       ...p.bench.map((b, i) => ({ zone: 'bench', card: b, idx: i }))
-      ].forEach(({ zone, card: bc, idx }) => {
-        if (bc?.supertype === 'Pokémon') targets.push({ zone, idx, name: bc.name });
-      });
-      if (!targets.length) { showToast('No Pokémon on board to evolve!', true); return; }
-      p.hand.splice(handIdx, 1); p.discard.push(card);
-      const stage2Idx = p.hand.findIndex(c => c === stage2);
-      if (stage2Idx !== -1) p.hand.splice(stage2Idx, 1);
-      if (targets.length === 1) {
-        const t = targets[0];
-        const target = t.zone === 'active' ? p.active : p.bench[t.idx];
-        stage2.damage = target.damage || 0; stage2.attachedEnergy = target.attachedEnergy || []; stage2.status = null;
-        if (t.zone === 'active') p.active = stage2; else p.bench[t.idx] = stage2;
-        addLog(`P${player} used Pokémon Breeder — ${target.name} → ${stage2.name}!`, true);
-        renderAll(); return;
-      }
-      closeActionMenu();
-      showActionMenu('Pokémon Breeder — choose target', targets.map(t => ({
-        label: `${t.zone === 'active' ? 'Active' : `Bench ${t.idx+1}`}: ${t.name}`,
-        fn: () => {
-          const target = t.zone === 'active' ? p.active : p.bench[t.idx];
-          stage2.damage = target.damage || 0; stage2.attachedEnergy = target.attachedEnergy || []; stage2.status = null;
-          if (t.zone === 'active') p.active = stage2; else p.bench[t.idx] = stage2;
-          addLog(`P${player} used Pokémon Breeder — ${target.name} → ${stage2.name}!`, true);
-          closeActionMenu(); renderAll();
-        }
-      })), null);
-    })();
-    return;
-  }
-
-  // ── Pokémon Flute ─────────────────────────────────
-  // Put a Basic Pokémon from opponent's discard onto their bench
-  if (name === 'Pokémon Flute') {
-    const oppBasics = opp.discard.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
-    if (!oppBasics.length) { showToast("No Basic Pokémon in opponent's discard!", true); return; }
-    if (opp.bench.every(s => s !== null)) { showToast("Opponent's bench is full!", true); return; }
-    (async () => {
-      const picked = await openCardPicker({
-        title: "Pokémon Flute", subtitle: "Choose a Basic from opponent's discard to put on their bench",
-        cards: oppBasics, maxSelect: 1
-      });
-      if (!picked) { showToast('Pokémon Flute cancelled.'); return; }
-      consume();
-      const chosen = oppBasics[picked[0]];
-      const di = opp.discard.findIndex(c => c === chosen);
-      if (di !== -1) {
-        const moved = opp.discard.splice(di, 1)[0];
-        moved.damage = 0; moved.attachedEnergy = []; moved.status = null;
-        const freeSlot = opp.bench.findIndex(s => s === null);
-        opp.bench[freeSlot] = moved;
-        addLog(`P${player} used Pokémon Flute — ${moved.name} placed on opponent's bench.`, true);
-      }
-      renderAll();
-    })();
-    return;
-  }
-
-  // ── Fallback for unimplemented trainers ───────────
-  consume();
-  addLog(`P${player} played ${name}. (effect not yet automated)`, true);
-  showToast(`${name}: ${rules.substring(0, 60)}...`);
-  renderAll();
-}
 
 function onActiveClick(player, evt) {
   // Remap slot IDs to actual players based on perspective
@@ -3936,28 +3070,9 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
       fn: retreatBlocked ? null : () => { attemptRetreat(player); closeActionMenu(); }
     });
 
-    // ── Pokémon Power actions ──
-    if (!isMukActive()) {
-      // Damage Swap (Alakazam anywhere on bench/active)
-      if (damageSwapActive(player) && G.phase === 'MAIN') {
-        actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
-      }
-      // Energy Trans (Venusaur)
-      if (energyTransActive(player) && G.phase === 'MAIN') {
-        actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
-      }
-      // Curse (Gengar) — once per turn
-      if (!G.cursedThisTurn && [p.active, ...p.bench].some(c => isPowerActive(c, 'Curse')) && G.phase === 'MAIN') {
-        actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
-      }
-      // Metronome (Clefable must be active)
-      if (zone === 'active' && isPowerActive(card, 'Metronome') && G.phase === 'MAIN') {
-        actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
-      }
-      // Buzzap (Electrode on bench)
-      if (zone === 'bench' && isPowerActive(card, 'Buzzap') && G.phase === 'MAIN') {
-        actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
-      }
+    // ── Pokémon Power actions (from pokemon-powers.js) ──
+    if (typeof getFieldActionExtras === 'function') {
+      actions.push(...getFieldActionExtras(player, zone, benchIdx, card));
     }
   }
 
@@ -4015,7 +3130,9 @@ function doRetreat(player, p) {
   const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
   if (!benchSlots.length) { showToast('No bench Pokémon to retreat to!', true); return; }
 
-  const retreatCost = p.active.convertedRetreatCost || 0;
+  const _baseRetreat = p.active.convertedRetreatCost || 0;
+  const _retreatDiscount = typeof retreatCostReduction === 'function' ? retreatCostReduction(player) : 0;
+  const retreatCost = Math.max(0, _baseRetreat - _retreatDiscount);
   const attached = p.active.attachedEnergy || [];
   if (attached.length < retreatCost) {
     showToast(`Need ${retreatCost} energy to retreat — only ${attached.length} attached!`, true);
@@ -4046,7 +3163,9 @@ function executeRetreat(player, benchIdx) {
     G.pendingAction = null; clearHighlights(); return;
   }
 
-  const retreatCost = p.active.convertedRetreatCost || 0;
+  const _baseRetreat = p.active.convertedRetreatCost || 0;
+  const _retreatDiscount = typeof retreatCostReduction === 'function' ? retreatCostReduction(player) : 0;
+  const retreatCost = Math.max(0, _baseRetreat - _retreatDiscount);
 
   const discarded = p.active.attachedEnergy.splice(0, retreatCost);
   p.discard.push(...discarded);
@@ -4608,6 +3727,17 @@ async function performAttack(player, atk) {
     } else {
       addLog(`${atk.name}: Weakness and Resistance ignored!`);
     }
+    // Kabuto Armor: halve damage done to Kabuto (after W/R)
+    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Kabuto Armor') && dmg > 0) {
+      dmg = Math.max(0, Math.floor(dmg / 2));
+      addLog(`Kabuto Armor: damage halved to ${dmg}!`, true);
+    }
+    // Transparency (Haunter): flip — heads = prevent all effects including damage
+    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency') && dmg > 0) {
+      const transpHeads = await flipCoin(`Transparency: Heads = prevent all damage on ${oppActive.name}!`);
+      if (transpHeads) { addLog(`Transparency: HEADS — damage prevented!`, true); dmg = 0; }
+      else addLog(`Transparency: TAILS — damage applies normally.`);
+    }
     // Defender reduction — on the target, after weakness/resistance
     if (oppActive.defenderFull) {
       addLog(`${oppActive.name} is fully protected — all damage prevented!`);
@@ -5125,6 +4255,7 @@ function endTurn() {
   G.phase = 'DRAW';
   G.energyPlayedThisTurn = false;
   G.cursedThisTurn = false;
+  G.healedThisTurn = false;
   G.evolvedThisTurn = [];
 
   // Clear per-turn attack debuff flags from all active Pokémon
@@ -5244,6 +4375,9 @@ function renderField(player) {
     // Render in the top "opponent" zone
     // During SETUP in networked mode: show face-down placeholders so opponent's choices are hidden
     const setupHide = G.phase === 'SETUP' && myRole !== null;
+    // Clairvoyance (Omanyte): opponent's hand is revealed face-up
+    G._clairvoyanceActive = typeof isPowerActive === 'function' &&
+      [G.players[topPlayer].active, ...G.players[topPlayer].bench].some(c => isPowerActive(c, 'Clairvoyance'));
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
@@ -6289,307 +5423,6 @@ function cancelPokedex() {
   if (_dexResolve) { _dexResolve(); _dexResolve = null; }
 }
 
-// ══════════════════════════════════════════════════
-// POKéMON POWERS
-// ══════════════════════════════════════════════════
-
-// Returns the Pokémon Power ability object for a card, or null if none / suppressed
-function getPower(card) {
-  if (!card) return null;
-  const ability = (card.abilities || []).find(a =>
-    a.type === 'Pokémon Power' || a.type === 'Pokemon Power' ||
-    a.type === 'Poké-Power' || a.type === 'Poke-Power'
-  );
-  return ability || null;
-}
-
-// Returns true if a card has a named power (case-insensitive)
-function hasPower(card, name) {
-  const p = getPower(card);
-  return p && p.name.toLowerCase() === name.toLowerCase();
-}
-
-// Muk's Toxic Gas suppresses ALL other Pokémon Powers while Muk is in play
-function isMukActive() {
-  for (const pNum of [1, 2]) {
-    const p = G.players[pNum];
-    const all = [p.active, ...p.bench].filter(Boolean);
-    if (all.some(c => hasPower(c, 'Toxic Gas'))) return true;
-  }
-  return false;
-}
-
-// Aerodactyl's Prehistoric Power: no Pokémon can evolve while Aerodactyl is in play.
-// Muk's Toxic Gas suppresses this power (Muk wins), otherwise it blocks all evolution.
-function prehistoricPowerActive() {
-  if (isMukActive()) return false; // Toxic Gas suppresses Prehistoric Power
-  for (const pNum of [1, 2]) {
-    const p = G.players[pNum];
-    const all = [p.active, ...p.bench].filter(Boolean);
-    if (all.some(c => hasPower(c, 'Prehistoric Power'))) return true;
-  }
-  return false;
-}
-
-// Is a given power active for a card? (checks Muk suppression, status, confusion)
-function isPowerActive(card, powerName) {
-  if (!hasPower(card, powerName)) return false;
-  if (powerName === 'Toxic Gas') return true; // Toxic Gas suppresses others but not itself
-  if (isMukActive()) return false;            // all other powers suppressed
-  return true;
-}
-
-// ── Thick Skinned (Snorlax) ──────────────────────────────
-// Returns true if the card is immune to special conditions
-// TCG API name is "Thick Skinned" (with 'd')
-function hasThickSkin(card) {
-  return isPowerActive(card, 'Thick Skinned');
-}
-
-// ── Invisible Wall (Mr. Mime) ─────────────────────────────
-// Prevents all damage from attacks that do 30 or less to Mr. Mime
-function hasInvisibleWall(card) {
-  return isPowerActive(card, 'Invisible Wall');
-}
-
-// ── Energy Burn (Charizard) ───────────────────────────────
-// All energy attached to Charizard counts as Fire
-function hasEnergyBurn(card) {
-  return isPowerActive(card, 'Energy Burn');
-}
-
-// ── Rain Dance (Blastoise) ────────────────────────────────
-// Player may attach unlimited Water Energy to Water Pokémon per turn
-function rainDanceActive(player) {
-  const p = G.players[player];
-  const all = [p.active, ...p.bench].filter(Boolean);
-  return all.some(c => isPowerActive(c, 'Rain Dance'));
-}
-
-// ── Energy Trans (Venusaur) ───────────────────────────────
-// Player may move Grass Energy freely between Grass Pokémon as an action
-function energyTransActive(player) {
-  const p = G.players[player];
-  const all = [p.active, ...p.bench].filter(Boolean);
-  return all.some(c => isPowerActive(c, 'Energy Trans'));
-}
-
-// ── Damage Swap (Alakazam) ────────────────────────────────
-// Player may redistribute damage counters among own Pokémon
-function damageSwapActive(player) {
-  const p = G.players[player];
-  const all = [p.active, ...p.bench].filter(Boolean);
-  return all.some(c => isPowerActive(c, 'Damage Swap'));
-}
-
-// ── Apply Thick Skin: block status if active ──────────────
-// Call this before applyStatus. Returns true if status was blocked.
-function tryApplyStatus(target, status) {
-  if (hasThickSkin(target)) {
-    addLog(`${target.name}'s Thick Skinned prevents ${status}!`, true);
-    showToast(`${target.name} is immune to status conditions!`);
-    return false; // blocked
-  }
-  applyStatus(target, status);
-  return true;
-}
-
-// ── Execute Damage Swap UI ────────────────────────────────
-async function doDamageSwap(player) {
-  if (!damageSwapActive(player)) { showToast('Alakazam not in play!', true); return; }
-  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Damage Swap!", true); return; }
-  const p = G.players[player];
-  const allPokemon = [
-    ...(p.active ? [{ label: `Active: ${p.active.name} (${p.active.damage || 0} dmg)`, card: p.active }] : []),
-    ...p.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name} (${b.damage || 0} dmg)`, card: b } : null).filter(Boolean)
-  ];
-  if (allPokemon.length < 2) { showToast('Need at least 2 Pokémon to swap damage!', true); return; }
-
-  // Pick source
-  const srcPicked = await openCardPicker({
-    title: 'Damage Swap — Source',
-    subtitle: 'Choose Pokémon to take damage counter FROM',
-    cards: allPokemon.filter(x => (x.card.damage || 0) >= 10).map(x => x.card),
-    maxSelect: 1
-  });
-  if (!srcPicked) return;
-  const srcCard = allPokemon.filter(x => (x.card.damage || 0) >= 10)[srcPicked[0]].card;
-
-  // Pick destination
-  const dstCandidates = allPokemon.filter(x => x.card !== srcCard);
-  const dstPicked = await openCardPicker({
-    title: 'Damage Swap — Destination',
-    subtitle: 'Choose Pokémon to move the damage counter TO',
-    cards: dstCandidates.map(x => x.card),
-    maxSelect: 1
-  });
-  if (!dstPicked) return;
-  const dstCard = dstCandidates[dstPicked[0]].card;
-
-  // Move 10 damage
-  srcCard.damage = (srcCard.damage || 0) - 10;
-  dstCard.damage = (dstCard.damage || 0) + 10;
-  addLog(`P${player} used Damage Swap — moved 10 damage from ${srcCard.name} to ${dstCard.name}.`, true);
-
-  // Check if destination is now KO'd
-  const dstOwner = p.active === dstCard ? player :
-    p.bench.findIndex(b => b === dstCard) !== -1 ? player : null;
-  if (dstOwner !== null) checkKO(player === 1 ? 2 : 1, player, dstCard, false);
-  renderAll();
-}
-
-// ── Execute Energy Trans UI ───────────────────────────────
-async function doEnergyTrans(player) {
-  if (!energyTransActive(player)) { showToast('Venusaur not in play!', true); return; }
-  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Energy Trans!", true); return; }
-  const p = G.players[player];
-
-  // Collect all Grass Pokémon with attached Grass Energy
-  const grassPokemon = [
-    ...(p.active ? [p.active] : []),
-    ...p.bench.filter(Boolean)
-  ].filter(c => (c.types || []).some(t => /grass/i.test(t)) || (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
-
-  const sources = grassPokemon.filter(c => (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
-  if (!sources.length) { showToast('No Grass Energy to move!', true); return; }
-
-  const srcPicked = await openCardPicker({
-    title: 'Energy Trans — Source',
-    subtitle: 'Choose Pokémon to take Grass Energy FROM',
-    cards: sources,
-    maxSelect: 1
-  });
-  if (!srcPicked) return;
-  const srcCard = sources[srcPicked[0]];
-
-  const grassEnergy = srcCard.attachedEnergy.filter(e => /grass/i.test(e.name));
-  const energyPicked = await openCardPicker({
-    title: 'Energy Trans — Which Energy',
-    subtitle: 'Choose which Grass Energy to move',
-    cards: grassEnergy,
-    maxSelect: 1
-  });
-  if (!energyPicked) return;
-  const energyCard = grassEnergy[energyPicked[0]];
-
-  const destinations = grassPokemon.filter(c => c !== srcCard);
-  if (!destinations.length) { showToast('No other Grass Pokémon to move energy to!', true); return; }
-  const dstPicked = await openCardPicker({
-    title: 'Energy Trans — Destination',
-    subtitle: 'Choose Pokémon to attach Grass Energy TO',
-    cards: destinations,
-    maxSelect: 1
-  });
-  if (!dstPicked) return;
-  const dstCard = destinations[dstPicked[0]];
-
-  const idx = srcCard.attachedEnergy.findIndex(e => e === energyCard);
-  if (idx !== -1) {
-    srcCard.attachedEnergy.splice(idx, 1);
-    dstCard.attachedEnergy = dstCard.attachedEnergy || [];
-    dstCard.attachedEnergy.push(energyCard);
-    addLog(`P${player} used Energy Trans — moved Grass Energy from ${srcCard.name} to ${dstCard.name}.`, true);
-    renderAll();
-  }
-}
-
-// ── Execute Curse (Gengar) ─────────────────────────────────
-// Once per turn: move 1 damage counter from Gengar to defending Pokémon
-async function doCurse(player) {
-  const p = G.players[player];
-  const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
-  if (!gengar) { showToast('Gengar not in play!', true); return; }
-  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
-  if ((gengar.damage || 0) < 10) { showToast("Gengar has no damage counters to move!", true); return; }
-  const opp = G.players[player === 1 ? 2 : 1];
-  if (!opp.active) { showToast('No opposing Active Pokémon!', true); return; }
-
-  gengar.damage -= 10;
-  opp.active.damage = (opp.active.damage || 0) + 10;
-  addLog(`P${player} used Curse — moved 1 damage counter from ${gengar.name} to ${opp.active.name}.`, true);
-  G.cursedThisTurn = true;
-  checkKO(player, player === 1 ? 2 : 1, opp.active, false);
-  renderAll();
-}
-
-// ── Execute Buzzap (Electrode) ───────────────────────────
-// Sacrifice Electrode to add 2 energy of any type to a Pokémon
-async function doBuzzap(player, benchIdx) {
-  const p = G.players[player];
-  const electrode = benchIdx === 'active' ? p.active : p.bench[benchIdx];
-  if (!isPowerActive(electrode, 'Buzzap')) { showToast('No Buzzap Electrode!', true); return; }
-  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Buzzap!", true); return; }
-
-  const targets = [
-    ...(p.active && p.active !== electrode ? [p.active] : []),
-    ...p.bench.map((b, i) => (b && b !== electrode) ? b : null).filter(Boolean)
-  ];
-  if (!targets.length) { showToast('No other Pokémon to power up!', true); return; }
-
-  const picked = await openCardPicker({
-    title: 'Buzzap!',
-    subtitle: 'Choose a Pokémon to attach 2 Lightning Energy to',
-    cards: targets,
-    maxSelect: 1
-  });
-  if (!picked) return;
-  const target = targets[picked[0]];
-
-  // Create 2 Lightning Energy tokens
-  const lightningEnergy = { id: 'base1-100', name: 'Lightning Energy', supertype: 'Energy', images: { small: '' } };
-  target.attachedEnergy = target.attachedEnergy || [];
-  target.attachedEnergy.push({ ...lightningEnergy }, { ...lightningEnergy });
-
-  // Discard Electrode (KO it, no prize)
-  if (benchIdx === 'active') {
-    p.discard.push(electrode);
-    p.active = null;
-  } else {
-    p.discard.push(electrode);
-    p.bench[benchIdx] = null;
-  }
-  addLog(`P${player} used Buzzap! — ${electrode.name} KO'd itself to power up ${target.name} with 2 ⚡ Energy!`, true);
-  renderAll();
-}
-
-// ── Execute Metronome (Clefable) ─────────────────────────
-// Copy any one of the opponent's active Pokémon's attacks
-async function doMetronome(player) {
-  const p = G.players[player];
-  const clefable = isPowerActive(p.active, 'Metronome') ? p.active : null;
-  if (!clefable) { showToast('Clefable must be Active to use Metronome!', true); return; }
-  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Metronome!", true); return; }
-  const opp = G.players[player === 1 ? 2 : 1];
-  if (!opp.active?.attacks?.length) { showToast('Opponent has no attacks to copy!', true); return; }
-
-  const attacks = opp.active.attacks;
-  if (attacks.length === 1) {
-    addLog(`${clefable.name} uses Metronome — copying ${attacks[0].name}!`, true);
-    closeActionMenu();
-    await performAttack(player, attacks[0]);
-    return;
-  }
-  closeActionMenu();
-  showActionMenu('Metronome — choose attack to copy', attacks.map(atk => ({
-    label: `${atk.name} — ${atk.damage || '0'}`,
-    sub: atk.cost?.join(', ') || '—',
-    fn: async () => {
-      addLog(`${clefable.name} uses Metronome — copying ${atk.name}!`, true);
-      closeActionMenu();
-      await performAttack(player, atk);
-    }
-  })), null);
-}
-
-// ── Execute Transform (Ditto) ─────────────────────────────
-// Ditto copies all attacks of the opposing Active Pokémon
-function dittoAttacks(player) {
-  const p = G.players[player];
-  if (!isPowerActive(p.active, 'Transform')) return null;
-  if (isMukActive()) return null;
-  const opp = G.players[player === 1 ? 2 : 1];
-  return opp.active?.attacks || null;
-}
 
 // ══════════════════════════════════════════════════
 // DRAG AND DROP
@@ -7801,6 +6634,1228 @@ setMidline('Load decks and press Start Game');
 window.addEventListener('beforeunload', () => {
   if (gameRef) { gameRef.remove().catch(() => {}); }
 });
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// POKEMON-POWERS.JS — All Pokémon Power logic extracted from pokemon-game.html
+//
+// Powers are passive or once-per-turn abilities on Pokémon cards.
+// This file provides:
+//
+//   Query helpers (passive checks used throughout the game):
+//     getPower(card)               → ability object or null
+//     hasPower(card, name)         → bool
+//     isMukActive()                → bool — Toxic Gas suppresses all other powers
+//     prehistoricPowerActive()     → bool — no evolution while Aerodactyl in play
+//     isPowerActive(card, name)    → bool — checks Muk suppression + status
+//     hasThickSkin(card)           → bool — immune to status conditions
+//     hasInvisibleWall(card)       → bool — blocks ≤30 damage
+//     hasEnergyBurn(card)          → bool — all energy counts as Fire
+//     rainDanceActive(player)      → bool — unlimited Water energy attachment
+//     energyTransActive(player)    → bool — move Grass energy freely
+//     damageSwapActive(player)     → bool — move damage counters freely
+//     retreatCostReduction(player) → number — Dodrio's Retreat Aid discount
+//
+//   Status guard:
+//     tryApplyStatus(target, status) → bool — blocked by Thick Skinned
+//
+//   Active power actions (triggered from showFieldActionMenu):
+//     doDamageSwap(player)         — Alakazam: redistribute damage counters
+//     doEnergyTrans(player)        — Venusaur: move Grass energy
+//     doCurse(player)              — Gengar: move 1 damage counter to opponent
+//     doBuzzap(player, benchIdx)   — Electrode: sacrifice for 2 Lightning energy
+//     doMetronome(player)          — Clefable: copy opponent's attack
+//     dittoAttacks(player)         — Ditto Transform: returns opp's attacks or null
+//
+//   Passive powers wired elsewhere in performAttack:
+//     strikesBack already handled inline in performAttack
+//
+//   Powers added to the action menu (injected via getFieldActionExtras):
+//     getFieldActionExtras(player, zone, benchIdx, card) → action[] for menu
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QUERY HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Returns the Pokémon Power ability object for a card, or null if none.
+function getPower(card) {
+  if (!card) return null;
+  return (card.abilities || []).find(a =>
+    a.type === 'Pokémon Power' || a.type === 'Pokemon Power' ||
+    a.type === 'Poké-Power'    || a.type === 'Poke-Power'
+  ) || null;
+}
+
+// Returns true if a card has a specific named power (case-insensitive match).
+function hasPower(card, name) {
+  const p = getPower(card);
+  return !!(p && p.name.toLowerCase() === name.toLowerCase());
+}
+
+// Muk's Toxic Gas: suppresses ALL other Pokémon Powers while Muk is in play.
+function isMukActive() {
+  for (const pNum of [1, 2]) {
+    const all = [G.players[pNum].active, ...G.players[pNum].bench].filter(Boolean);
+    if (all.some(c => hasPower(c, 'Toxic Gas') && !_isStatusBlocked(c))) return true;
+  }
+  return false;
+}
+
+// Internal: returns true if a card's status would block its power from working.
+function _isStatusBlocked(card) {
+  return card?.status === 'asleep' || card?.status === 'confused' || card?.status === 'paralyzed';
+}
+
+// Aerodactyl's Prehistoric Power: no evolution can be played while it's in play.
+// Muk's Toxic Gas suppresses Prehistoric Power.
+function prehistoricPowerActive() {
+  if (isMukActive()) return false;
+  for (const pNum of [1, 2]) {
+    const all = [G.players[pNum].active, ...G.players[pNum].bench].filter(Boolean);
+    if (all.some(c => hasPower(c, 'Prehistoric Power') && !_isStatusBlocked(c))) return true;
+  }
+  return false;
+}
+
+// Is a named power currently active on a specific card?
+// Checks: card has the power, Muk isn't suppressing it, card isn't status-blocked.
+function isPowerActive(card, powerName) {
+  if (!hasPower(card, powerName)) return false;
+  if (powerName === 'Toxic Gas') return !_isStatusBlocked(card); // Toxic Gas can't suppress itself
+  if (isMukActive()) return false;
+  if (_isStatusBlocked(card)) return false;
+  return true;
+}
+
+// Snorlax — Thick Skinned: immune to all special conditions.
+function hasThickSkin(card) {
+  return isPowerActive(card, 'Thick Skinned');
+}
+
+// Mr. Mime — Invisible Wall: prevents damage of 30 or less.
+function hasInvisibleWall(card) {
+  return isPowerActive(card, 'Invisible Wall');
+}
+
+// Charizard — Energy Burn: all attached energy counts as Fire.
+function hasEnergyBurn(card) {
+  return isPowerActive(card, 'Energy Burn');
+}
+
+// Blastoise — Rain Dance: may attach unlimited Water energy to Water Pokémon per turn.
+function rainDanceActive(player) {
+  const all = [G.players[player].active, ...G.players[player].bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Rain Dance'));
+}
+
+// Venusaur — Energy Trans: may move Grass energy freely between Grass Pokémon.
+function energyTransActive(player) {
+  const all = [G.players[player].active, ...G.players[player].bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Energy Trans'));
+}
+
+// Alakazam — Damage Swap: may redistribute damage counters among own Pokémon.
+function damageSwapActive(player) {
+  const all = [G.players[player].active, ...G.players[player].bench].filter(Boolean);
+  return all.some(c => isPowerActive(c, 'Damage Swap'));
+}
+
+// Dodrio — Retreat Aid: reduce retreat cost by 1 Colorless for each Dodrio on bench.
+function retreatCostReduction(player) {
+  return G.players[player].bench.filter(c => c && isPowerActive(c, 'Retreat Aid')).length;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATUS GUARD — applies status unless Thick Skinned blocks it
+// ─────────────────────────────────────────────────────────────────────────────
+
+function tryApplyStatus(target, status) {
+  if (hasThickSkin(target)) {
+    addLog(`${target.name}'s Thick Skinned prevents ${status}!`, true);
+    showToast(`${target.name} is immune to status conditions!`);
+    return false;
+  }
+  target.status = status;
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DITTO — Transform: treat Ditto as a copy of the Defending Pokémon
+// Returns the opponent's active attacks if Ditto is active and Transform is
+// working; otherwise null.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function dittoAttacks(player) {
+  const p = G.players[player];
+  if (!isPowerActive(p.active, 'Transform')) return null;
+  const opp = G.players[player === 1 ? 2 : 1];
+  return opp.active?.attacks || null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTIVE POWER ACTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Alakazam — Damage Swap
+// Move 1 damage counter from one of your Pokémon to another.
+async function doDamageSwap(player) {
+  if (!damageSwapActive(player)) { showToast('Alakazam not in play!', true); return; }
+  if (isMukActive())             { showToast("Muk's Toxic Gas suppresses Damage Swap!", true); return; }
+  const p = G.players[player];
+  const all = [
+    ...(p.active ? [{ label: `Active: ${p.active.name} (${p.active.damage||0} dmg)`, card: p.active }] : []),
+    ...p.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name} (${b.damage||0} dmg)`, card: b } : null).filter(Boolean)
+  ];
+  if (all.length < 2) { showToast('Need at least 2 Pokémon to swap damage!', true); return; }
+
+  const sources = all.filter(x => (x.card.damage || 0) >= 10);
+  if (!sources.length) { showToast('No Pokémon have damage counters to move!', true); return; }
+
+  const srcPicked = await openCardPicker({
+    title: 'Damage Swap — Source',
+    subtitle: 'Choose a Pokémon to take a damage counter FROM',
+    cards: sources.map(x => x.card), maxSelect: 1
+  });
+  if (!srcPicked) return;
+  const srcCard = sources[srcPicked[0]].card;
+
+  const dsts = all.filter(x => x.card !== srcCard);
+  const dstPicked = await openCardPicker({
+    title: 'Damage Swap — Destination',
+    subtitle: 'Choose a Pokémon to move the damage counter TO',
+    cards: dsts.map(x => x.card), maxSelect: 1
+  });
+  if (!dstPicked) return;
+  const dstCard = dsts[dstPicked[0]].card;
+
+  srcCard.damage = (srcCard.damage || 0) - 10;
+  dstCard.damage = (dstCard.damage || 0) + 10;
+  addLog(`P${player} used Damage Swap — moved 10 damage from ${srcCard.name} to ${dstCard.name}.`, true);
+
+  // Check if destination Pokémon is now KO'd
+  checkKO(player === 1 ? 2 : 1, player, dstCard, false);
+  renderAll();
+}
+
+// Venusaur — Energy Trans
+// Move 1 Grass energy from one of your Grass Pokémon to another.
+async function doEnergyTrans(player) {
+  if (!energyTransActive(player)) { showToast('Venusaur not in play!', true); return; }
+  if (isMukActive())              { showToast("Muk's Toxic Gas suppresses Energy Trans!", true); return; }
+  const p = G.players[player];
+
+  const all = [p.active, ...p.bench].filter(Boolean);
+  const withGrass = all.filter(c => (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
+  if (!withGrass.length) { showToast('No Grass Energy to move!', true); return; }
+
+  const srcPicked = await openCardPicker({
+    title: 'Energy Trans — Source',
+    subtitle: 'Choose a Pokémon to take Grass Energy FROM',
+    cards: withGrass, maxSelect: 1
+  });
+  if (!srcPicked) return;
+  const srcCard = withGrass[srcPicked[0]];
+
+  const grassOnSrc = srcCard.attachedEnergy.filter(e => /grass/i.test(e.name));
+  let energyCard = grassOnSrc[0];
+  if (grassOnSrc.length > 1) {
+    const ePicked = await openCardPicker({
+      title: 'Energy Trans — Which Energy',
+      subtitle: 'Choose which Grass Energy to move',
+      cards: grassOnSrc, maxSelect: 1
+    });
+    if (!ePicked) return;
+    energyCard = grassOnSrc[ePicked[0]];
+  }
+
+  const dsts = all.filter(c => c !== srcCard);
+  if (!dsts.length) { showToast('No other Pokémon to attach Grass Energy to!', true); return; }
+
+  const dstPicked = await openCardPicker({
+    title: 'Energy Trans — Destination',
+    subtitle: 'Choose a Pokémon to attach Grass Energy TO',
+    cards: dsts, maxSelect: 1
+  });
+  if (!dstPicked) return;
+  const dstCard = dsts[dstPicked[0]];
+
+  const idx = srcCard.attachedEnergy.findIndex(e => e === energyCard);
+  if (idx !== -1) {
+    srcCard.attachedEnergy.splice(idx, 1);
+    dstCard.attachedEnergy = dstCard.attachedEnergy || [];
+    dstCard.attachedEnergy.push(energyCard);
+    addLog(`P${player} used Energy Trans — moved Grass Energy from ${srcCard.name} to ${dstCard.name}.`, true);
+    renderAll();
+  }
+}
+
+// Gengar — Curse
+// Once per turn: move 1 damage counter from Gengar to the Defending Pokémon.
+async function doCurse(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
+  const p = G.players[player];
+  const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
+  if (!gengar)                     { showToast('Gengar not in play!', true); return; }
+  if ((gengar.damage || 0) < 10)   { showToast('Gengar has no damage counters to move!', true); return; }
+  const opp = G.players[player === 1 ? 2 : 1];
+  if (!opp.active)                 { showToast('No opposing Active Pokémon!', true); return; }
+
+  gengar.damage -= 10;
+  opp.active.damage = (opp.active.damage || 0) + 10;
+  addLog(`P${player} used Curse — moved 1 damage counter from ${gengar.name} to ${opp.active.name}.`, true);
+  G.cursedThisTurn = true;
+  checkKO(player, player === 1 ? 2 : 1, opp.active, false);
+  renderAll();
+}
+
+// Electrode — Buzzap
+// Sacrifice Electrode to add 2 Lightning energy to another Pokémon.
+async function doBuzzap(player, benchIdx) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Buzzap!", true); return; }
+  const p = G.players[player];
+  const electrode = p.bench[benchIdx];
+  if (!isPowerActive(electrode, 'Buzzap')) { showToast('No Buzzap Electrode!', true); return; }
+
+  const targets = [
+    ...(p.active && p.active !== electrode ? [p.active] : []),
+    ...p.bench.map((b, i) => (b && b !== electrode) ? b : null).filter(Boolean)
+  ];
+  if (!targets.length) { showToast('No other Pokémon to power up!', true); return; }
+
+  const picked = await openCardPicker({
+    title: 'Buzzap!',
+    subtitle: 'Choose a Pokémon to attach 2 Lightning Energy to',
+    cards: targets, maxSelect: 1
+  });
+  if (!picked) return;
+  const target = targets[picked[0]];
+
+  const lightning = { id: 'base1-100', name: 'Lightning Energy', supertype: 'Energy', images: { small: '' } };
+  target.attachedEnergy = target.attachedEnergy || [];
+  target.attachedEnergy.push({ ...lightning }, { ...lightning });
+
+  p.discard.push(electrode);
+  p.bench[benchIdx] = null;
+  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ⚡ Energy!`, true);
+  renderAll();
+}
+
+// Clefable — Metronome (Power version, triggered from action menu)
+// Copy any one of the opponent's Active Pokémon's attacks and use it.
+async function doMetronome(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Metronome!", true); return; }
+  const p = G.players[player];
+  if (!isPowerActive(p.active, 'Metronome')) { showToast('Clefable must be Active!', true); return; }
+  const opp = G.players[player === 1 ? 2 : 1];
+  if (!opp.active?.attacks?.length) { showToast('Opponent has no attacks to copy!', true); return; }
+
+  const attacks = opp.active.attacks;
+  if (attacks.length === 1) {
+    addLog(`${p.active.name} uses Metronome — copying ${attacks[0].name}!`, true);
+    closeActionMenu();
+    await performAttack(player, attacks[0]);
+    return;
+  }
+
+  closeActionMenu();
+  showActionMenu('Metronome — choose attack to copy', attacks.map(atk => ({
+    label: `⚔ ${atk.name}`,
+    sub: `${atk.cost?.join(', ') || '—'} · ${atk.damage || '0'} dmg`,
+    fn: async () => {
+      addLog(`${p.active.name} uses Metronome — copying ${atk.name}!`, true);
+      closeActionMenu();
+      await performAttack(player, atk);
+    }
+  })), null);
+}
+
+// Slowbro — Strange Behavior
+// Move 1 damage counter from any of your Pokémon to Slowbro.
+async function doStrangeBehavior(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Strange Behavior!", true); return; }
+  const p = G.players[player];
+  const slowbro = [p.active, ...p.bench].find(c => isPowerActive(c, 'Strange Behavior'));
+  if (!slowbro) { showToast('Slowbro not in play!', true); return; }
+
+  const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
+  if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
+
+  const picked = await openCardPicker({
+    title: 'Strange Behavior',
+    subtitle: `Choose a Pokémon to move 1 damage counter FROM (to Slowbro)`,
+    cards: sources, maxSelect: 1
+  });
+  if (!picked) return;
+  const src = sources[picked[0]];
+  src.damage -= 10;
+  slowbro.damage = (slowbro.damage || 0) + 10;
+  addLog(`P${player} used Strange Behavior — moved 1 damage counter from ${src.name} to ${slowbro.name}.`, true);
+  checkKO(player === 1 ? 2 : 1, player, slowbro, false);
+  renderAll();
+}
+
+// Venomoth — Shift
+// Change Venomoth's type to any type currently in play.
+async function doShift(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Shift!", true); return; }
+  const p = G.players[player];
+  if (!isPowerActive(p.active, 'Shift')) { showToast('Venomoth must be Active!', true); return; }
+
+  // Collect all types currently in play
+  const typesInPlay = new Set();
+  for (const pNum of [1, 2]) {
+    [G.players[pNum].active, ...G.players[pNum].bench].forEach(c => {
+      if (c) (c.types || []).forEach(t => typesInPlay.add(t));
+    });
+  }
+  const typeList = [...typesInPlay].filter(t => !/colorless/i.test(t));
+  if (!typeList.length) { showToast('No non-Colorless types in play!', true); return; }
+
+  const picked = await openCardPicker({
+    title: 'Shift — Choose Type',
+    subtitle: "Choose a type to change Venomoth's type to",
+    cards: typeList.map(t => ({ name: t, images: { small: '' } })),
+    maxSelect: 1
+  });
+  if (!picked) return;
+  const chosenType = typeList[picked[0]];
+  p.active.types = [chosenType];
+  addLog(`P${player} used Shift — ${p.active.name} is now ${chosenType} type!`, true);
+  renderAll();
+}
+
+// Dragonite — Step In
+// Switch Dragonite from bench to Active.
+function doStepIn(player, benchIdx) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Step In!", true); return; }
+  const p = G.players[player];
+  const dragonite = p.bench[benchIdx];
+  if (!isPowerActive(dragonite, 'Step In')) { showToast('Step In: Dragonite not on bench!', true); return; }
+  const old = p.active;
+  p.active = dragonite;
+  p.bench[benchIdx] = old;
+  addLog(`P${player} used Step In — ${dragonite.name} switched to Active!`, true);
+  renderAll();
+}
+
+// Tentacool — Cowardice
+// Return Tentacool to hand with all attachments discarded.
+function doCowardice(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Cowardice!", true); return; }
+  const p = G.players[player];
+  const tentacool = [p.active, ...p.bench].find(c => isPowerActive(c, 'Cowardice'));
+  if (!tentacool) { showToast('Tentacool not in play!', true); return; }
+
+  p.discard.push(...(tentacool.attachedEnergy || []));
+  tentacool.attachedEnergy = []; tentacool.damage = 0; tentacool.status = null;
+  p.hand.push(tentacool);
+
+  if (p.active === tentacool) {
+    p.active = null;
+  } else {
+    const idx = p.bench.findIndex(c => c === tentacool);
+    if (idx !== -1) p.bench[idx] = null;
+  }
+  addLog(`P${player} used Cowardice — ${tentacool.name} returned to hand.`, true);
+  renderAll();
+}
+
+// Mankey — Peek
+// Look at top card of either deck or one card in opponent's hand.
+async function doPeek(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Peek!", true); return; }
+  const opp = player === 1 ? 2 : 1;
+  const choice = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;
+      display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;`;
+    overlay.innerHTML = `
+      <div style="font-family:var(--font);font-size:10px;color:var(--accent)">Peek — Choose What to Look At</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;">
+        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='myDeck'"
+          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">Your Deck (top card)</button>
+        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppDeck'"
+          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">Opp Deck (top card)</button>
+        <button onclick="this.closest('div').parentElement.remove();window._peekChoice='oppHand'"
+          style="font-family:var(--font);font-size:8px;padding:8px 14px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Opp Hand (1 card)</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    const interval = setInterval(() => {
+      if (window._peekChoice !== undefined) {
+        clearInterval(interval); const v = window._peekChoice; window._peekChoice = undefined; resolve(v);
+      }
+    }, 100);
+  });
+
+  if (choice === 'myDeck') {
+    const card = G.players[player].deck[0];
+    if (!card) { addLog('Peek: your deck is empty!'); return; }
+    addLog(`P${player} used Peek — top card of own deck: ${card.name}.`, true);
+    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+  } else if (choice === 'oppDeck') {
+    const card = G.players[opp].deck[0];
+    if (!card) { addLog('Peek: opponent\'s deck is empty!'); return; }
+    addLog(`P${player} used Peek — top card of opponent's deck: ${card.name}.`, true);
+    if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+  } else if (choice === 'oppHand') {
+    const hand = G.players[opp].hand;
+    if (!hand.length) { addLog('Peek: opponent\'s hand is empty!'); return; }
+    const picked = await openCardPicker({ title: 'Peek — Opponent\'s Hand', subtitle: 'Choose 1 card to look at', cards: hand, maxSelect: 1 });
+    if (picked && picked.length) {
+      const card = hand[picked[0]];
+      addLog(`P${player} used Peek — saw ${card.name} in opponent's hand.`, true);
+      if (card.images?.large || card.images?.small) showCardDetail(card.images.large || card.images.small);
+    }
+  }
+}
+
+// Vileplume — Heal
+// Once per turn: flip a coin — heads = remove 1 damage counter from any of your Pokémon.
+async function doHeal(player) {
+  if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Heal!", true); return; }
+  const p = G.players[player];
+  const damaged = [p.active, ...p.bench].filter(c => c && (c.damage || 0) >= 10);
+  if (!damaged.length) { showToast('No Pokémon with damage counters!', true); return; }
+
+  const heads = await flipCoin('Heal (Vileplume): Heads = remove 1 damage counter from a Pokémon');
+  if (!heads) { addLog(`P${player} used Heal — TAILS! No effect.`); return; }
+
+  let target = damaged[0];
+  if (damaged.length > 1) {
+    const picked = await openCardPicker({ title: 'Heal — Choose Pokémon', subtitle: 'Remove 1 damage counter from which Pokémon?', cards: damaged, maxSelect: 1 });
+    if (picked && picked.length) target = damaged[picked[0]];
+  }
+  target.damage = Math.max(0, (target.damage || 0) - 10);
+  addLog(`P${player} used Heal — HEADS! Removed 1 damage counter from ${target.name}.`, true);
+  renderAll();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FIELD ACTION EXTRAS
+// Returns additional actions to show in the action menu for a Pokémon slot.
+// Called from showFieldActionMenu in the main HTML.
+// ─────────────────────────────────────────────────────────────────────────────
+function getFieldActionExtras(player, zone, benchIdx, card) {
+  if (G.phase !== 'MAIN' || G.turn !== player) return [];
+  if (isMukActive()) return [];
+
+  const actions = [];
+
+  // Alakazam — Damage Swap (on any slot, since Alakazam could be active or bench)
+  if (damageSwapActive(player)) {
+    actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
+  }
+
+  // Venusaur — Energy Trans
+  if (energyTransActive(player)) {
+    actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
+  }
+
+  // Gengar — Curse (once per turn, Gengar on bench or active)
+  if (!G.cursedThisTurn) {
+    const p = G.players[player];
+    if ([p.active, ...p.bench].some(c => isPowerActive(c, 'Curse'))) {
+      actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
+    }
+  }
+
+  // Clefable — Metronome (only from active slot)
+  if (zone === 'active' && isPowerActive(card, 'Metronome')) {
+    actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
+  }
+
+  // Electrode — Buzzap (only from bench slot)
+  if (zone === 'bench' && isPowerActive(card, 'Buzzap')) {
+    actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
+  }
+
+  // Slowbro — Strange Behavior (from any slot)
+  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Strange Behavior'))) {
+    actions.push({ label: '🌀 Strange Behavior (Slowbro)', fn: () => { closeActionMenu(); doStrangeBehavior(player); } });
+  }
+
+  // Venomoth — Shift (only from active slot)
+  if (zone === 'active' && isPowerActive(card, 'Shift')) {
+    actions.push({ label: '🦋 Shift (Venomoth)', fn: () => { closeActionMenu(); doShift(player); } });
+  }
+
+  // Dragonite — Step In (only from bench slot)
+  if (zone === 'bench' && isPowerActive(card, 'Step In')) {
+    actions.push({ label: '🐉 Step In (Dragonite)', fn: () => { closeActionMenu(); doStepIn(player, benchIdx); } });
+  }
+
+  // Tentacool — Cowardice (from any slot)
+  if (isPowerActive(card, 'Cowardice')) {
+    actions.push({ label: '🌊 Cowardice (Tentacool)', fn: () => { closeActionMenu(); doCowardice(player); } });
+  }
+
+  // Mankey — Peek (from any slot)
+  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Peek'))) {
+    actions.push({ label: '👁 Peek (Mankey)', fn: () => { closeActionMenu(); doPeek(player); } });
+  }
+
+  // Vileplume — Heal (from any slot)
+  if (!G.healedThisTurn && [G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Heal'))) {
+    actions.push({ label: '🌸 Heal (Vileplume)', fn: async () => { closeActionMenu(); await doHeal(player); G.healedThisTurn = true; } });
+  }
+
+  return actions;
+}
+
+</script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// TRAINER-CARDS.JS — Name-keyed dispatch table for all Trainer cards
+//
+// Each entry in TRAINER_EFFECTS maps a card name (exactly as in cards.json)
+// to an async handler function:
+//
+//   async handler(ctx) — executes the card's effect
+//   ctx: { player, opp, p, oppP, card, handIdx, consume }
+//     consume() — removes card from hand and puts in discard
+//
+// Public API (replaces playTrainer in pokemon-game.html):
+//   async function playTrainer(player, handIdx)
+//
+// Shares access to all globals: G, flipCoin, openCardPicker, addLog,
+// showToast, renderAll, drawCard, shuffle, enrichCard, showTrainerFlash,
+// showLassModal, openPokedex, isTrainerBlocked
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TRAINER_EFFECTS = {
+
+  // ── Bill ─────────────────────────────────────────────────────────────────
+  // Draw 2 cards.
+  'Bill': async ({ player, consume }) => {
+    consume();
+    drawCard(player, true); drawCard(player, true);
+    addLog(`P${player} played Bill — drew 2 cards.`, true);
+    renderAll();
+  },
+
+  // ── Professor Oak ─────────────────────────────────────────────────────────
+  // Discard your hand, draw 7 cards.
+  'Professor Oak': async ({ player, p, card, handIdx, consume }) => {
+    p.hand.splice(handIdx, 1); // remove Oak first
+    p.discard.push(...p.hand, card);
+    p.hand = [];
+    for (let i = 0; i < 7; i++) drawCard(player, true);
+    addLog(`P${player} played Professor Oak — discarded hand and drew 7.`, true);
+    renderAll();
+  },
+
+  // ── Impostor Professor Oak ────────────────────────────────────────────────
+  // Opponent shuffles hand into deck and draws 7.
+  'Impostor Professor Oak': async ({ player, oppP, consume }) => {
+    consume();
+    oppP.discard.push(...oppP.hand);
+    oppP.hand = [];
+    oppP.deck = shuffle(oppP.deck);
+    for (let i = 0; i < 7 && oppP.deck.length; i++) oppP.hand.push(oppP.deck.shift());
+    addLog(`P${player} played Impostor Professor Oak — opponent reshuffled and drew 7.`, true);
+    renderAll();
+  },
+
+  // ── Potion ────────────────────────────────────────────────────────────────
+  // Remove up to 2 damage counters (20 damage) from 1 of your Pokémon.
+  'Potion': async ({ player, p, consume }) => {
+    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
+    consume();
+    p.active.damage = Math.max(0, p.active.damage - 20);
+    addLog(`P${player} used Potion — removed 20 damage from ${p.active.name}.`, true);
+    renderAll();
+  },
+
+  // ── Super Potion ──────────────────────────────────────────────────────────
+  // Discard 1 energy from own Pokémon to remove 4 damage counters (40 damage).
+  'Super Potion': async ({ player, p, consume }) => {
+    if (!p.active || !p.active.damage) { showToast('No damage to heal!', true); return; }
+    if (!p.active.attachedEnergy?.length) { showToast('Must discard 1 energy to use Super Potion!', true); return; }
+    consume();
+    p.active.attachedEnergy.splice(0, 1);
+    p.active.damage = Math.max(0, p.active.damage - 40);
+    addLog(`P${player} used Super Potion — discarded 1 energy, removed 40 damage from ${p.active.name}.`, true);
+    renderAll();
+  },
+
+  // ── Full Heal ─────────────────────────────────────────────────────────────
+  // Cure Active Pokémon of all status conditions.
+  'Full Heal': async ({ player, p, consume }) => {
+    if (!p.active) { showToast('No active Pokémon!', true); return; }
+    consume();
+    p.active.status = null;
+    addLog(`P${player} used Full Heal — ${p.active.name} is cured of all status conditions.`, true);
+    renderAll();
+  },
+
+  // ── Full Restore ──────────────────────────────────────────────────────────
+  // Heal all damage AND cure status from Active Pokémon.
+  'Full Restore': async ({ player, p, consume }) => {
+    if (!p.active) { showToast('No active Pokémon!', true); return; }
+    consume();
+    p.active.damage = 0;
+    p.active.status = null;
+    addLog(`P${player} used Full Restore — ${p.active.name} fully healed and cured.`, true);
+    renderAll();
+  },
+
+  // ── Pokémon Center ────────────────────────────────────────────────────────
+  // Remove all damage from all your Pokémon; discard all their energy.
+  'Pokémon Center': async ({ player, p, consume }) => {
+    consume();
+    const healed = [];
+    [p.active, ...p.bench].forEach(c => {
+      if (!c || !c.damage) return;
+      c.damage = 0;
+      p.discard.push(...(c.attachedEnergy || []));
+      c.attachedEnergy = [];
+      healed.push(c.name);
+    });
+    addLog(`P${player} used Pokémon Center — healed all Pokémon, discarded energy: ${healed.join(', ') || 'none'}.`, true);
+    renderAll();
+  },
+
+  // ── Max Potion ────────────────────────────────────────────────────────────
+  // Remove all damage from 1 of your Pokémon; discard all its energy.
+  'Max Potion': async ({ player, p, consume }) => {
+    const targets = [p.active, ...p.bench].filter(c => c && c.damage > 0);
+    if (!targets.length) { showToast('No damaged Pokémon to heal!', true); return; }
+    consume();
+    let target = targets[0];
+    if (targets.length > 1) {
+      const picked = await openCardPicker({ title: 'Max Potion', subtitle: 'Choose a Pokémon to fully heal', cards: targets, maxSelect: 1 });
+      if (picked && picked.length) target = targets[picked[0]];
+    }
+    p.discard.push(...(target.attachedEnergy || []));
+    target.attachedEnergy = [];
+    target.damage = 0;
+    addLog(`P${player} used Max Potion — ${target.name} fully healed, energy discarded.`, true);
+    renderAll();
+  },
+
+  // ── Revive ────────────────────────────────────────────────────────────────
+  // Return a Basic Pokémon from discard to bench at half HP.
+  'Revive': async ({ player, p, consume }) => {
+    const basics = p.discard.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+    if (!basics.length) { showToast('No Basic Pokémon in discard!', true); return; }
+    if (p.bench.every(s => s !== null)) { showToast('Bench is full!', true); return; }
+    consume();
+    let chosen = basics[0];
+    if (basics.length > 1) {
+      const picked = await openCardPicker({ title: 'Revive', subtitle: 'Choose a Basic Pokémon to revive', cards: basics, maxSelect: 1 });
+      if (picked && picked.length) chosen = basics[picked[0]];
+    }
+    const idx = p.discard.findIndex(c => c === chosen);
+    const revived = p.discard.splice(idx, 1)[0];
+    revived.damage = Math.floor((parseInt(revived.hp) || 0) / 2);
+    revived.attachedEnergy = []; revived.status = null;
+    const slot = p.bench.findIndex(s => s === null);
+    p.bench[slot] = revived;
+    addLog(`P${player} used Revive — ${revived.name} returned to bench at half HP.`, true);
+    renderAll();
+  },
+
+  // ── Scoop Up ──────────────────────────────────────────────────────────────
+  // Return a Basic Pokémon to hand, discarding all its attachments.
+  'Scoop Up': async ({ player, p, consume }) => {
+    const benchCount = p.bench.filter(s => s !== null).length;
+    const targets = [];
+    if (p.active?.subtypes?.includes('Basic') && !p.active.isDoll && benchCount >= 1)
+      targets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
+    p.bench.forEach((b, i) => {
+      if (b?.subtypes?.includes('Basic') && !b.isDoll)
+        targets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
+    });
+    if (!targets.length) { showToast('No eligible Basic Pokémon to scoop!', true); return; }
+    consume();
+    const doScoop = (zone, idx) => {
+      const target = zone === 'active' ? p.active : p.bench[idx];
+      p.discard.push(...(target.attachedEnergy || []));
+      target.attachedEnergy = []; target.damage = 0; target.status = null;
+      p.hand.push(target);
+      if (zone === 'active') p.active = null; else p.bench[idx] = null;
+      addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
+      renderAll();
+    };
+    if (targets.length === 1) { doScoop(targets[0].zone, targets[0].idx); return; }
+    const picked = await openCardPicker({ title: 'Scoop Up', subtitle: 'Choose a Pokémon to return to hand', cards: targets.map(t => ({ name: t.label, images: { small: '' } })), maxSelect: 1 });
+    if (picked && picked.length) doScoop(targets[picked[0]].zone, targets[picked[0]].idx);
+  },
+
+  // ── Switch ────────────────────────────────────────────────────────────────
+  // Switch your Active Pokémon with one from your bench.
+  'Switch': async ({ player, p, consume }) => {
+    const benchSlots = p.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    if (!benchSlots.length) { showToast('No bench Pokémon to switch with!', true); return; }
+    const doSwitch = ({ s, i }) => {
+      consume();
+      const old = p.active;
+      if (old?.status) { addLog(`${old.name}'s ${old.status} cleared by Switch.`); old.status = null; }
+      p.active = s; p.bench[i] = old;
+      addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
+      renderAll();
+    };
+    if (benchSlots.length === 1) { doSwitch(benchSlots[0]); return; }
+    const picked = await openCardPicker({ title: 'Switch — Choose a Pokémon', subtitle: 'Choose a bench Pokémon to switch in', cards: benchSlots.map(x => x.s), maxSelect: 1 });
+    if (picked && picked.length) doSwitch(benchSlots[picked[0]]);
+  },
+
+  // ── Gust of Wind ─────────────────────────────────────────────────────────
+  // Force one of opponent's bench Pokémon to become Active.
+  'Gust of Wind': async ({ player, opp, oppP, consume }) => {
+    const bench = oppP.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    if (!bench.length) { showToast("Opponent has no bench Pokémon!", true); return; }
+    const doGust = ({ s, i }) => {
+      consume();
+      const old = oppP.active;
+      oppP.active = s; oppP.bench[i] = old;
+      addLog(`P${player} used Gust of Wind — opponent's ${oppP.active.name} forced to Active.`, true);
+      renderAll();
+    };
+    if (bench.length === 1) { doGust(bench[0]); return; }
+    const picked = await openCardPicker({ title: "Gust of Wind — Choose Opponent's Pokémon", subtitle: 'Choose 1 to force Active', cards: bench.map(x => x.s), maxSelect: 1 });
+    if (picked && picked.length) doGust(bench[picked[0]]);
+  },
+
+  // ── PlusPower ─────────────────────────────────────────────────────────────
+  // Active Pokémon's next attack does +10 damage.
+  'PlusPower': async ({ player, p, consume }) => {
+    if (!p.active) { showToast('No Active Pokémon!', true); return; }
+    consume();
+    p.active.plusPower = (p.active.plusPower || 0) + 10;
+    addLog(`P${player} attached PlusPower to ${p.active.name} (+10 damage next attack).`, true);
+    renderAll();
+  },
+
+  // ── Defender ─────────────────────────────────────────────────────────────
+  // Active Pokémon takes 20 less damage until end of opponent's next turn.
+  'Defender': async ({ player, p, consume }) => {
+    if (!p.active) { showToast('No Active Pokémon!', true); return; }
+    consume();
+    p.active.defender = true;
+    addLog(`P${player} attached Defender to ${p.active.name} (-20 damage until end of opponent's next turn).`, true);
+    renderAll();
+  },
+
+  // ── Energy Removal ────────────────────────────────────────────────────────
+  // Choose 1 energy attached to an opponent's Pokémon and discard it.
+  'Energy Removal': async ({ player, opp, oppP, consume }) => {
+    const targets = [
+      ...(oppP.active?.attachedEnergy?.length ? [{ card: oppP.active, zone: 'active', idx: null }] : []),
+      ...oppP.bench.map((b, i) => b?.attachedEnergy?.length ? { card: b, zone: 'bench', idx: i } : null).filter(Boolean)
+    ];
+    if (!targets.length) { showToast("Opponent has no energy to remove!", true); return; }
+    consume();
+    let entry = targets[0];
+    if (targets.length > 1) {
+      const picked = await openCardPicker({ title: 'Energy Removal', subtitle: "Choose opponent's Pokémon to remove energy from", cards: targets.map(e => e.card), maxSelect: 1 });
+      if (!picked?.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      entry = targets[picked[0]];
+    }
+    const targetCard = entry.zone === 'active' ? oppP.active : oppP.bench[entry.idx];
+    let removed;
+    if (targetCard.attachedEnergy.length === 1) {
+      removed = targetCard.attachedEnergy.splice(0, 1)[0];
+    } else {
+      const picked = await openCardPicker({ title: 'Energy Removal', subtitle: `Choose 1 energy to discard from ${targetCard.name}`, cards: targetCard.attachedEnergy, maxSelect: 1 });
+      if (!picked?.length) { addLog('Energy Removal cancelled.'); renderAll(); return; }
+      removed = targetCard.attachedEnergy.splice(picked[0], 1)[0];
+    }
+    oppP.discard.push(removed);
+    addLog(`P${player} used Energy Removal — discarded ${removed.name} from ${targetCard.name}.`, true);
+    renderAll();
+  },
+
+  // ── Super Energy Removal ──────────────────────────────────────────────────
+  // Discard 1 of your own energy to remove up to 2 from an opponent's Pokémon.
+  'Super Energy Removal': async ({ player, opp, p, oppP, consume }) => {
+    const oppHasEnergy = [oppP.active, ...oppP.bench].some(c => c?.attachedEnergy?.length);
+    if (!oppHasEnergy) { showToast("Opponent has no energy!", true); return; }
+    if (!p.active?.attachedEnergy?.length) { showToast("Must discard 1 of your energy first!", true); return; }
+    // Step 1: discard 1 of own energy
+    let myCostIdx = 0;
+    if (p.active.attachedEnergy.length > 1) {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: `Discard 1 energy from your ${p.active.name}`, cards: p.active.attachedEnergy, maxSelect: 1 });
+      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      myCostIdx = picked[0];
+    }
+    consume();
+    const myRemoved = p.active.attachedEnergy.splice(myCostIdx, 1)[0];
+    p.discard.push(myRemoved);
+    addLog(`P${player} discarded ${myRemoved.name} from ${p.active.name} as cost.`);
+    // Step 2: choose opponent's target
+    const oppTargets = [
+      ...(oppP.active?.attachedEnergy?.length ? [{ label: `Active: ${oppP.active.name}`, zone: 'active', idx: null }] : []),
+      ...oppP.bench.map((b, i) => b?.attachedEnergy?.length ? { label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i } : null).filter(Boolean)
+    ];
+    let targetCard = oppP.active;
+    if (oppTargets.length > 1) {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Target', subtitle: "Choose opponent's Pokémon", cards: oppTargets.map(e => { const c = e.zone === 'active' ? oppP.active : oppP.bench[e.idx]; return { ...c, _entry: e }; }), maxSelect: 1 });
+      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      const entry = oppTargets[picked[0]];
+      targetCard = entry.zone === 'active' ? oppP.active : oppP.bench[entry.idx];
+    }
+    // Step 3: remove up to 2 energies
+    let removed = [];
+    if (targetCard.attachedEnergy.length <= 2) {
+      removed = targetCard.attachedEnergy.splice(0);
+    } else {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Discard Energy', subtitle: `Choose up to 2 energy from ${targetCard.name}`, cards: targetCard.attachedEnergy, maxSelect: 2 });
+      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      picked.sort((a,b)=>b-a).forEach(i => removed.push(...targetCard.attachedEnergy.splice(i, 1)));
+    }
+    oppP.discard.push(...removed);
+    addLog(`P${player} used Super Energy Removal — discarded ${removed.length} energy from ${targetCard.name}.`, true);
+    renderAll();
+  },
+
+  // ── Energy Retrieval ──────────────────────────────────────────────────────
+  // Trade 1 card from hand for up to 2 basic Energy from discard.
+  'Energy Retrieval': async ({ player, p, consume }) => {
+    const basics = p.discard.filter(c => c.supertype === 'Energy' && !/double colorless/i.test(c.name));
+    if (!basics.length) { showToast('No basic energy in discard!', true); return; }
+    consume();
+    const toGet = basics.slice(0, 2);
+    toGet.forEach(e => { const i = p.discard.findIndex(c => c === e); if (i !== -1) p.hand.push(...p.discard.splice(i, 1)); });
+    addLog(`P${player} used Energy Retrieval — returned ${toGet.length} energy card(s) to hand.`, true);
+    renderAll();
+  },
+
+  // ── Energy Search ─────────────────────────────────────────────────────────
+  // Search deck for any basic Energy card.
+  'Energy Search': async ({ player, p, card, handIdx, consume }) => {
+    const energy = p.deck.filter(c => c.supertype === 'Energy' && !/double colorless/i.test(c.name));
+    if (!energy.length) { showToast('No basic energy in deck!', true); return; }
+    consume();
+    const picked = await openCardPicker({ title: 'Energy Search', subtitle: 'Choose 1 basic energy from your deck', cards: energy, maxSelect: 1 });
+    if (!picked) { p.hand.push(card); p.discard.pop(); return; }
+    const found = energy[picked[0]];
+    const i = p.deck.findIndex(c => c === found);
+    if (i !== -1) p.hand.push(...p.deck.splice(i, 1));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Energy Search — took ${found.name} from deck.`, true);
+    renderAll();
+  },
+
+  // ── Computer Search ───────────────────────────────────────────────────────
+  // Discard 2 cards from hand to search deck for any card.
+  'Computer Search': async ({ player, p, card, handIdx }) => {
+    const others = p.hand.filter((_, i) => i !== handIdx);
+    if (others.length < 2) { showToast('Need at least 2 other cards in hand!', true); return; }
+    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
+    const discardPicked = await openCardPicker({ title: 'Computer Search', subtitle: 'Discard 2 cards from your hand', cards: others, maxSelect: 2 });
+    if (!discardPicked || discardPicked.length < 2) { showToast('Computer Search cancelled.'); return; }
+    p.hand.splice(handIdx, 1); p.discard.push(card);
+    discardPicked.map(i => others[i]).forEach(dc => { const hi = p.hand.findIndex(c => c === dc); if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1)); });
+    const deckPicked = await openCardPicker({ title: 'Computer Search', subtitle: 'Choose any card from your deck', cards: p.deck, maxSelect: 1 });
+    if (!deckPicked) { addLog(`P${player} used Computer Search — discarded 2 but found nothing.`, true); renderAll(); return; }
+    const found = p.deck[deckPicked[0]];
+    const di = p.deck.findIndex(c => c === found);
+    if (di !== -1) p.hand.push(...p.deck.splice(di, 1));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Computer Search — discarded 2, found ${found.name}.`, true);
+    renderAll();
+  },
+
+  // ── Item Finder ───────────────────────────────────────────────────────────
+  // Discard 2 cards to retrieve any Trainer from discard.
+  'Item Finder': async ({ player, p, card, handIdx }) => {
+    const trainers = p.discard.filter(c => c.supertype === 'Trainer');
+    if (!trainers.length) { showToast('No Trainer cards in discard!', true); return; }
+    const others = p.hand.filter((_, i) => i !== handIdx);
+    if (others.length < 2) { showToast('Need at least 2 other cards to discard!', true); return; }
+    const discardPicked = await openCardPicker({ title: 'Item Finder', subtitle: 'Discard 2 cards from your hand', cards: others, maxSelect: 2 });
+    if (!discardPicked || discardPicked.length < 2) { showToast('Item Finder cancelled.'); return; }
+    p.hand.splice(handIdx, 1); p.discard.push(card);
+    discardPicked.map(i => others[i]).forEach(dc => { const hi = p.hand.findIndex(c => c === dc); if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1)); });
+    const trainerPicked = await openCardPicker({ title: 'Item Finder', subtitle: 'Choose a Trainer from your discard', cards: trainers, maxSelect: 1 });
+    if (!trainerPicked) { addLog(`P${player} used Item Finder — discarded 2 but found nothing.`, true); renderAll(); return; }
+    const found = trainers[trainerPicked[0]];
+    const di = p.discard.findIndex(c => c === found);
+    if (di !== -1) p.hand.push(...p.discard.splice(di, 1));
+    addLog(`P${player} used Item Finder — discarded 2, retrieved ${found.name}.`, true);
+    renderAll();
+  },
+
+  // ── Maintenance ───────────────────────────────────────────────────────────
+  // Shuffle 2 cards from hand into deck, draw 1.
+  'Maintenance': async ({ player, p, card, handIdx }) => {
+    const others = p.hand.filter((_, i) => i !== handIdx);
+    if (others.length < 2) { showToast('Need at least 2 other cards in hand!', true); return; }
+    const picked = await openCardPicker({ title: 'Maintenance', subtitle: 'Choose 2 cards to shuffle back into your deck', cards: others, maxSelect: 2 });
+    if (!picked || picked.length < 2) { showToast('Maintenance cancelled.'); return; }
+    p.hand.splice(handIdx, 1); p.discard.push(card);
+    picked.map(i => others[i]).forEach(sc => { const hi = p.hand.findIndex(c => c === sc); if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1)); });
+    p.deck = shuffle(p.deck);
+    drawCard(player, true);
+    addLog(`P${player} used Maintenance — shuffled 2 cards back, drew 1.`, true);
+    renderAll();
+  },
+
+  // ── Lass ──────────────────────────────────────────────────────────────────
+  // Both players reveal hands; discard all Trainer cards from both.
+  'Lass': async ({ player, p, card, handIdx }) => {
+    p.hand.splice(handIdx, 1);
+    const snapshots = {};
+    for (const pNum of [1, 2]) {
+      snapshots[pNum] = G.players[pNum].hand.map(c => ({ name: c.name, img: c.images?.small || '', isTrainer: c.supertype === 'Trainer' }));
+    }
+    const discarded = { 1: [], 2: [] };
+    for (const pNum of [1, 2]) {
+      const pp = G.players[pNum];
+      const trainers = pp.hand.filter(c => c.supertype === 'Trainer');
+      trainers.forEach(t => { const i = pp.hand.findIndex(c => c === t); if (i !== -1) pp.discard.push(...pp.hand.splice(i, 1)); });
+      discarded[pNum] = trainers.map(t => t.name);
+    }
+    p.discard.push(card);
+    addLog(`P${player} used Lass — P1 discarded: ${discarded[1].join(', ')||'none'}; P2 discarded: ${discarded[2].join(', ')||'none'}.`, true);
+    G.pendingLass = { snapshots, player };
+    renderAll();
+    showLassModal(snapshots, player);
+  },
+
+  // ── Gambler ───────────────────────────────────────────────────────────────
+  // Shuffle hand into deck. Flip coin: heads=draw 8, tails=draw 1.
+  'Gambler': async ({ player, p, consume }) => {
+    consume();
+    p.deck = shuffle([...p.deck, ...p.hand]);
+    p.hand = [];
+    const heads = await flipCoin('Gambler: Heads = draw 8, Tails = draw 1');
+    const count = heads ? 8 : 1;
+    for (let i = 0; i < count && p.deck.length; i++) drawCard(player, true);
+    addLog(`P${player} used Gambler — ${heads ? 'HEADS' : 'TAILS'}, drew ${count} card(s).`, true);
+    renderAll();
+  },
+
+  // ── Recycle ───────────────────────────────────────────────────────────────
+  // Flip coin: heads = put top discard card on top of deck.
+  'Recycle': async ({ player, p, consume }) => {
+    if (!p.discard.length) { showToast('Discard pile is empty!', true); return; }
+    consume();
+    const heads = await flipCoin('Recycle: Heads = return top discard card to top of deck');
+    if (heads) {
+      const recycled = p.discard[p.discard.length - 1];
+      p.deck.unshift(p.discard.pop());
+      addLog(`P${player} used Recycle — HEADS! ${recycled.name} returned to top of deck.`, true);
+    } else {
+      addLog(`P${player} used Recycle — TAILS! No effect.`);
+    }
+    renderAll();
+  },
+
+  // ── Poké Ball ─────────────────────────────────────────────────────────────
+  // Flip coin: heads = search deck for any Pokémon.
+  'Poké Ball': async ({ player, p, consume }) => {
+    consume();
+    const heads = await flipCoin('Poké Ball: Heads = search deck for any Pokémon');
+    if (heads) {
+      const pokemon = p.deck.filter(c => c.supertype === 'Pokémon');
+      if (!pokemon.length) { addLog(`P${player} used Poké Ball — HEADS but no Pokémon in deck.`); renderAll(); return; }
+      const picked = await openCardPicker({ title: 'Poké Ball', subtitle: 'Choose a Pokémon from your deck', cards: pokemon, maxSelect: 1 });
+      if (picked) {
+        const found = pokemon[picked[0]];
+        const i = p.deck.findIndex(c => c === found);
+        if (i !== -1) p.hand.push(...p.deck.splice(i, 1));
+        p.deck = shuffle(p.deck);
+        addLog(`P${player} used Poké Ball — HEADS! Found ${found.name}.`, true);
+      } else { addLog(`P${player} used Poké Ball — HEADS but no Pokémon chosen.`); }
+    } else { addLog(`P${player} used Poké Ball — TAILS! No effect.`); }
+    renderAll();
+  },
+
+  // ── Pokédex ───────────────────────────────────────────────────────────────
+  // Look at top 5 cards of deck, rearrange in any order.
+  'Pokédex': async ({ player, p, consume }) => {
+    if (!p.deck.length) { showToast('Deck is empty!', true); return; }
+    consume();
+    await openPokedex(player);
+    renderAll();
+  },
+
+  // ── Clefairy Doll ─────────────────────────────────────────────────────────
+  // Play as a Basic Pokémon on bench. No prize on KO.
+  'Clefairy Doll': async ({ player, p, card, consume }) => {
+    if (p.bench.every(s => s !== null)) { showToast('Bench is full!', true); return; }
+    consume();
+    const doll = { ...card, name: 'Clefairy Doll', supertype: 'Pokémon', subtypes: ['Basic'], hp: '10', attacks: [], attachedEnergy: [], damage: 0, status: null, isDoll: true, canRetreat: false };
+    p.bench[p.bench.findIndex(s => s === null)] = doll;
+    addLog(`P${player} played Clefairy Doll to the bench.`, true);
+    renderAll();
+  },
+
+  // ── Mysterious Fossil ─────────────────────────────────────────────────────
+  // Play as a Basic Pokémon (Active or Bench). No prize on KO.
+  'Mysterious Fossil': async ({ player, p, card, consume }) => {
+    const hasActive = !!p.active;
+    if (hasActive && p.bench.every(s => s !== null)) { showToast('Bench is full!', true); return; }
+    const fossilUid = `fossil-${Math.random().toString(36).slice(2,9)}`;
+    const fossil = { ...card, name: 'Mysterious Fossil', uid: fossilUid, supertype: 'Pokémon', subtypes: ['Basic'], hp: '10', attacks: [], attachedEnergy: [], damage: 0, status: null, isDoll: true, isFossil: true, canRetreat: false };
+    consume();
+    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+    G.evolvedThisTurn.push(fossilUid);
+    if (!hasActive) { p.active = fossil; addLog(`P${player} played Mysterious Fossil as their Active.`, true); }
+    else { p.bench[p.bench.findIndex(s => s === null)] = fossil; addLog(`P${player} played Mysterious Fossil to the bench.`, true); }
+    renderAll();
+  },
+
+  // ── Mr. Fuji ──────────────────────────────────────────────────────────────
+  // Shuffle a bench Pokémon and all its attachments into your deck.
+  'Mr. Fuji': async ({ player, p, consume }) => {
+    const bench = p.bench.filter(s => s !== null);
+    if (!bench.length) { showToast('No bench Pokémon to choose!', true); return; }
+    consume();
+    let target = bench[0];
+    if (bench.length > 1) {
+      const picked = await openCardPicker({ title: 'Mr. Fuji', subtitle: 'Choose a bench Pokémon to shuffle into deck', cards: bench, maxSelect: 1 });
+      if (picked && picked.length) target = bench[picked[0]];
+    }
+    const idx = p.bench.findIndex(s => s === target);
+    p.bench[idx] = null;
+    p.deck.push(target, ...(target.attachedEnergy || []));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Mr. Fuji — ${target.name} and attachments shuffled into deck.`, true);
+    renderAll();
+  },
+
+  // ── Devolution Spray ──────────────────────────────────────────────────────
+  // Devolve an evolved Pokémon; the evolution card goes to discard.
+  'Devolution Spray': async ({ player, p, consume }) => {
+    const evolved = [];
+    if (p.active?.subtypes?.includes('Stage 1') || p.active?.subtypes?.includes('Stage 2')) evolved.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
+    p.bench.forEach((b, i) => { if (b?.subtypes?.includes('Stage 1') || b?.subtypes?.includes('Stage 2')) evolved.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i }); });
+    if (!evolved.length) { showToast('No evolved Pokémon to devolve!', true); return; }
+    consume();
+    const doDevolution = (zone, idx) => {
+      const target = zone === 'active' ? p.active : p.bench[idx];
+      if (!target?.evolvesFrom) return;
+      const preEvo = [...p.discard, ...p.hand].find(c => c.name === target.evolvesFrom && c.supertype === 'Pokémon');
+      p.discard.push(target);
+      if (preEvo) {
+        const src = p.hand.includes(preEvo) ? p.hand : p.discard;
+        const si = src.findIndex(c => c === preEvo);
+        const restored = src.splice(si, 1)[0];
+        restored.damage = target.damage; restored.attachedEnergy = target.attachedEnergy; restored.status = null;
+        if (zone === 'active') p.active = restored; else p.bench[idx] = restored;
+        addLog(`P${player} used Devolution Spray — ${target.name} devolved to ${restored.name}.`, true);
+      } else {
+        if (zone === 'active') p.active = null; else p.bench[idx] = null;
+        addLog(`P${player} used Devolution Spray — ${target.name} discarded (no ${target.evolvesFrom} to replace).`, true);
+      }
+      renderAll();
+    };
+    if (evolved.length === 1) { doDevolution(evolved[0].zone, evolved[0].idx); return; }
+    const picked = await openCardPicker({ title: 'Devolution Spray', subtitle: 'Choose a Pokémon to devolve', cards: evolved.map(e => ({ name: e.label, images: { small: '' } })), maxSelect: 1 });
+    if (picked && picked.length) doDevolution(evolved[picked[0]].zone, evolved[picked[0]].idx);
+  },
+
+  // ── Pokémon Trader ────────────────────────────────────────────────────────
+  // Trade a Pokémon in hand for one in deck.
+  'Pokémon Trader': async ({ player, p, card, handIdx }) => {
+    const handPokemon = p.hand.filter((c, i) => i !== handIdx && c.supertype === 'Pokémon');
+    const deckPokemon = p.deck.filter(c => c.supertype === 'Pokémon');
+    if (!handPokemon.length) { showToast('No other Pokémon in hand to trade!', true); return; }
+    if (!deckPokemon.length) { showToast('No Pokémon in deck!', true); return; }
+    const fromHand = await openCardPicker({ title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your hand to trade', cards: handPokemon, maxSelect: 1 });
+    if (!fromHand) { showToast('Pokémon Trader cancelled.'); return; }
+    const fromDeck = await openCardPicker({ title: 'Pokémon Trader', subtitle: 'Choose a Pokémon from your deck to take', cards: deckPokemon, maxSelect: 1 });
+    if (!fromDeck) { showToast('Pokémon Trader cancelled.'); return; }
+    p.hand.splice(handIdx, 1); p.discard.push(card);
+    const handPoke = handPokemon[fromHand[0]];
+    const hi = p.hand.findIndex(c => c === handPoke);
+    if (hi !== -1) p.deck.push(...p.hand.splice(hi, 1));
+    const deckPoke = deckPokemon[fromDeck[0]];
+    const di = p.deck.findIndex(c => c === deckPoke);
+    if (di !== -1) p.hand.push(...p.deck.splice(di, 1));
+    p.deck = shuffle(p.deck);
+    addLog(`P${player} used Pokémon Trader — traded ${handPoke.name} for ${deckPoke.name}.`, true);
+    renderAll();
+  },
+
+  // ── Pokémon Breeder ───────────────────────────────────────────────────────
+  // Play a Stage 2 directly onto a Basic, skipping Stage 1.
+  'Pokémon Breeder': async ({ player, p, card, handIdx }) => {
+    const stage2s = p.hand.filter((c, i) => i !== handIdx && c.subtypes?.includes('Stage 2'));
+    if (!stage2s.length) { showToast('No Stage 2 Pokémon in hand!', true); return; }
+    const picked = await openCardPicker({ title: 'Pokémon Breeder', subtitle: 'Choose a Stage 2 to play directly', cards: stage2s, maxSelect: 1 });
+    if (!picked) { showToast('Pokémon Breeder cancelled.'); return; }
+    const stage2 = stage2s[picked[0]];
+    const targets = [{ zone: 'active', card: p.active, idx: null }, ...p.bench.map((b, i) => ({ zone: 'bench', card: b, idx: i }))].filter(t => t.card?.supertype === 'Pokémon');
+    if (!targets.length) { showToast('No Pokémon on board to evolve!', true); return; }
+    p.hand.splice(handIdx, 1); p.discard.push(card);
+    const s2idx = p.hand.findIndex(c => c === stage2);
+    if (s2idx !== -1) p.hand.splice(s2idx, 1);
+    const doBreed = (t) => {
+      stage2.damage = t.card.damage || 0; stage2.attachedEnergy = t.card.attachedEnergy || []; stage2.status = null;
+      if (t.zone === 'active') p.active = stage2; else p.bench[t.idx] = stage2;
+      addLog(`P${player} used Pokémon Breeder — ${t.card.name} → ${stage2.name}!`, true);
+      renderAll();
+    };
+    if (targets.length === 1) { doBreed(targets[0]); return; }
+    const tpicked = await openCardPicker({ title: 'Pokémon Breeder — Target', subtitle: 'Choose which Pokémon to evolve', cards: targets.map(t => t.card), maxSelect: 1 });
+    if (tpicked && tpicked.length) doBreed(targets[tpicked[0]]);
+  },
+
+  // ── Pokémon Flute ─────────────────────────────────────────────────────────
+  // Put a Basic from opponent's discard onto their bench.
+  'Pokémon Flute': async ({ player, opp, oppP, consume }) => {
+    const basics = oppP.discard.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+    if (!basics.length) { showToast("No Basic Pokémon in opponent's discard!", true); return; }
+    if (oppP.bench.every(s => s !== null)) { showToast("Opponent's bench is full!", true); return; }
+    const picked = await openCardPicker({ title: "Pokémon Flute", subtitle: "Choose a Basic from opponent's discard", cards: basics, maxSelect: 1 });
+    if (!picked) { showToast('Pokémon Flute cancelled.'); return; }
+    consume();
+    const chosen = basics[picked[0]];
+    const di = oppP.discard.findIndex(c => c === chosen);
+    if (di !== -1) {
+      const moved = oppP.discard.splice(di, 1)[0];
+      moved.damage = 0; moved.attachedEnergy = []; moved.status = null;
+      oppP.bench[oppP.bench.findIndex(s => s === null)] = moved;
+      addLog(`P${player} used Pokémon Flute — ${moved.name} placed on opponent's bench.`, true);
+    }
+    renderAll();
+  },
+
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLIC API — replaces the inline playTrainer function
+// ─────────────────────────────────────────────────────────────────────────────
+async function playTrainer(player, handIdx) {
+  const p = G.players[player];
+  const opp = player === 1 ? 2 : 1;
+  const oppP = G.players[opp];
+  const card = p.hand[handIdx];
+  if (!card) return;
+  const name = card.name;
+
+  // Flash trainer card name for the opponent
+  showTrainerFlash(player, name);
+
+  // Headache block — opponent can't play Trainer cards this turn
+  if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
+    showToast(`Headache prevents playing Trainer cards this turn!`, true);
+    addLog(`P${player} tried to play ${name} but is blocked by Headache!`, true);
+    return;
+  }
+
+  // Helper: remove card from hand and discard it
+  const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
+
+  const handler = TRAINER_EFFECTS[name];
+  if (handler) {
+    await handler({ player, opp, p, oppP, card, handIdx, consume });
+    return;
+  }
+
+  // Fallback for any unimplemented trainer
+  const rules = card.rules?.[0] || '';
+  consume();
+  addLog(`P${player} played ${name}. (effect not yet automated)`, true);
+  showToast(`${name}: ${rules.substring(0, 60)}...`);
+  renderAll();
+}
+
 </script>
 <script>
 // ══════════════════════════════════════════════════════════════════════════════
