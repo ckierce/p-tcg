@@ -664,12 +664,30 @@ const TRAINER_EFFECTS = {
     if (!picked) { showToast('Pokémon Breeder cancelled.'); return; }
     const stage2 = stage2s[picked[0]];
 
-    // Trace evolution chain to find matching Basic name
-    const allCards = [...p.hand, ...p.discard, ...p.deck];
-    const stage1 = allCards.find(c => c.subtypes?.includes('Stage 1') && c.name === stage2.evolvesFrom);
-    const rootBasicName = stage1?.evolvesFrom || stage2.evolvesFrom;
+    // Find the root Basic name by looking up the Stage 1 in the global card database.
+    // We cannot rely on the Stage 1 being in the player's hand/discard/deck —
+    // Pokémon Breeder explicitly skips it.
+    const stage1Name = stage2.evolvesFrom; // e.g. "Nidorina" for Nidoqueen
+    let rootBasicName = null;
+    if (stage1Name && typeof CARD_DATA === 'object') {
+      // Search all cards in CARD_DATA for a Stage 1 with this name
+      const stage1Card = Object.values(CARD_DATA).find(c =>
+        c.name === stage1Name && c.subtypes?.includes('Stage 1')
+      );
+      rootBasicName = stage1Card?.evolvesFrom || null;
+    }
+    // Fallback: if CARD_DATA lookup failed, try player's own cards
+    if (!rootBasicName) {
+      const allPlayerCards = [...p.hand, ...p.discard, ...p.deck];
+      const stage1 = allPlayerCards.find(c => c.subtypes?.includes('Stage 1') && c.name === stage1Name);
+      rootBasicName = stage1?.evolvesFrom || null;
+    }
+    if (!rootBasicName) {
+      showToast(`Cannot determine the Basic Pokémon for ${stage2.name}!`, true);
+      return;
+    }
 
-    // Valid targets: matching Basic that wasn't played this turn
+    // Valid targets: matching Basic on the field that wasn't played this turn
     const allInPlay = [p.active, ...p.bench].filter(Boolean);
     const validTargets = allInPlay.filter(c =>
       c.supertype === 'Pokémon' &&
@@ -682,7 +700,7 @@ const TRAINER_EFFECTS = {
       const hasBasic = allInPlay.some(c => c.name === rootBasicName);
       showToast(hasBasic
         ? `${rootBasicName} was played this turn and can't be evolved yet!`
-        : `No matching Basic (${rootBasicName}) in play for ${stage2.name}!`, true);
+        : `No ${rootBasicName} in play to evolve into ${stage2.name}!`, true);
       return;
     }
     p.hand.splice(handIdx, 1); p.discard.push(card);
