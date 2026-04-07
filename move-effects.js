@@ -268,7 +268,7 @@ async function applyMoveEffects(player, atk, dmgDealt, myActive, oppActive) {
   // Handled in performAttack via pre-attack dmg override. Nothing extra here.
 
   // ── RAMPAGE post-attack confusion ──────────────────────────────────────────
-  if (/flip a coin[^.]*if tails[^.]*now confused \(after doing damage\)/i.test(text) && myActive) {
+  if (/if tails.*is now confused.*after doing damage/i.test(text) && myActive) {
     const heads = await flipCoin(`${name}: Tails = ${myActive.name} becomes Confused!`);
     if (!heads) {
       tryApplyStatus(myActive, 'confused');
@@ -444,7 +444,7 @@ async function applyMoveEffects(player, atk, dmgDealt, myActive, oppActive) {
   }
 
   // ── SPARK / DARK MIND (Pikachu, Gengar, Hypno) — 10 to chosen bench ─────────
-  if (/choose 1 of your opponent.s bench.*this attack does 10 damage to it/i.test(text)) {
+  if (/choose 1 of them and this attack does 10 damage to it/i.test(text)) {
     const oppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
     if (oppBench.length) {
       let targetIdx = 0;
@@ -758,7 +758,7 @@ async function applyMoveEffects(player, atk, dmgDealt, myActive, oppActive) {
   }
 
   // ── POUNCE (Persian) — if attacked next turn, reduce that damage by 10 ───────
-  if (/if the defending pok.*attacks persian.*damage done is reduced by 10/i.test(text) && myActive) {
+  if (/if the defending pok.*attacks persian.*(?:any )?damage done.*is reduced by 10/i.test(text) && myActive) {
     myActive.pounceActive = true;
     addLog(`${name}: ${myActive.name} is poised — incoming attack next turn does 10 less damage!`, true);
   }
