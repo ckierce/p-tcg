@@ -3480,11 +3480,16 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   }
 
   // Pattern 7: "Flip a number of coins equal to [something]. Does N damage × heads."
-  // e.g. Chansey Doubleslap ("flip a number of coins equal to the number of damage counters")
+  // Two variants:
+  //   a) "equal to the number of Energy attached" → use energyCount (e.g. Big Eggsplosion)
+  //   b) "equal to the number of damage counters"  → use opp damage / 10 (Chansey-style)
   const equalToMatch = text.match(/flip a number of coins equal to[^.]+/i);
   const timesHeadsMatch3 = text.match(/(\d+) damage.*times the number of heads/i);
   if (equalToMatch && timesHeadsMatch3) {
-    const numFlips7 = Math.max(1, Math.floor((oppActive?.damage || 0) / 10));
+    const equalToText = equalToMatch[0].toLowerCase();
+    const numFlips7 = /energy/i.test(equalToText)
+      ? Math.max(1, energyCount)
+      : Math.max(1, Math.floor(((G.players[player === 1 ? 2 : 1].active)?.damage || 0) / 10));
     const perFlip7 = parseInt(timesHeadsMatch3[1]);
     let heads7 = 0;
     for (let i = 0; i < numFlips7; i++) {
@@ -3536,6 +3541,21 @@ async function performAttack(player, atk) {
   }
 
   // ── Pre-attack checks (Dream Eater, Leek Slap, Smokescreen, Tail Wag/Leer immunity) ──
+
+  // Smokescreen / Sand-attack: if attacker is smokescreened, flip coin — tails = attack blocked
+  if (myActive?.smokescreened) {
+    const smokeHeads = await flipCoin(`${myActive.name} is Smokescreened! Heads = attack normally, Tails = attack fails`);
+    if (!smokeHeads) {
+      addLog(`${myActive.name}'s attack was blocked by Smokescreen! (TAILS)`, true);
+      myActive.smokescreened = false;
+      renderAll();
+      endTurn();
+      return;
+    }
+    addLog(`${myActive.name} broke through the Smokescreen! (HEADS)`, true);
+    myActive.smokescreened = false;
+  }
+
   if (typeof preAttackChecks === 'function') {
     const preResult = await preAttackChecks(player, atk, myActive, oppActive);
     if (preResult === 'block') { renderAll(); endTurn(); return; }
@@ -4268,18 +4288,25 @@ function endTurn() {
   G.stepInThisTurn = false;
   G.evolvedThisTurn = [];
 
-  // Clear per-turn attack debuff flags from all active Pokémon
-  for (const pNum of [1, 2]) {
-    const active = G.players[pNum].active;
-    if (!active) continue;
-    active.smokescreened = false;
-    active.cantRetreat = false;
-    active.attackReduction = 0;
-    active.disabledAttack = null;
-    active.defenderReduction = 0;
-    // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
-    // so we do NOT clear it here — it clears itself when the attack fires.
+  // Clear per-turn attack debuff flags.
+  // Effects applied to the OPPONENT's active last for one of their turns:
+  //   cantRetreat, attackReduction, disabledAttack — these are on G.players[G.turn].active
+  //   (the new current player, who was the defender last turn).
+  // smokescreened: cleared by performAttack itself after the flip.
+  // defender: on the defending player's active, clears at end of opponent's next turn (= now).
+  const nextActive = G.players[G.turn].active;
+  if (nextActive) {
+    nextActive.cantRetreat = false;
+    nextActive.attackReduction = 0;
+    nextActive.disabledAttack = null;
   }
+  const lastActive = G.players[prev].active;
+  if (lastActive) {
+    lastActive.defender = false;
+    lastActive.defenderReduction = 0;
+  }
+  // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
+  // so we do NOT clear it here — it clears itself when the attack fires.
   G.plusPowerActive = 0;
   G.pendingAction = null;
   clearHighlights();
