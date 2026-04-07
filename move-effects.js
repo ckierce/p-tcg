@@ -396,6 +396,15 @@ const MOVE_EFFECTS = {
     }
   },
 
+  // Boyfriends (Nidoqueen): 20 + 20 per Nidoking in play (active or bench)
+  'Boyfriends': {
+    modifyDamage: ({ player }) => {
+      const all = [G.players[player].active, ...G.players[player].bench].filter(Boolean);
+      const nidokings = all.filter(c => c.name === 'Nidoking').length;
+      return 20 + nidokings * 20;
+    }
+  },
+
   // Bind/Bubble/Bubblebeam/Body Slam/Freeze Dry/Ice Beam/Irongrip/Lick/
   // Nasty Goo/Psyshock/Star Freeze/String Shot/Stun Spore/Thunder Wave/
   // Tongue Wrap/Wrap: flip → paralyzed

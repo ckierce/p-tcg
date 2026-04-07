@@ -3411,8 +3411,9 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   }
 
   // Pattern 2: "Flip N coins. This attack does X damage times the number of heads."
-  // e.g. Jigglypuff Lullaby-ish, Electrode Tackle, many others
-  const flipNMatch = text.match(/flip (\d+|a) coin[s]?[^.]*times the number of heads/i);
+  // e.g. Slam, Doubleslap, Twineedle, Bonemerang, Comet Punch, Pin Missile, etc.
+  // NOTE: uses [\s\S]*? (not [^.]*) so it crosses the sentence-boundary period.
+  const flipNMatch = text.match(/flip (\d+|a) coin[s]?[\s\S]*?times the number of heads/i);
   const timesHeadsMatch2 = text.match(/does (\d+) damage times the number of heads/i);
   if (flipNMatch && timesHeadsMatch2) {
     const rawN = flipNMatch[1];
@@ -4016,8 +4017,12 @@ async function performAttack(player, atk) {
     }
   }
 
-  // Parse and apply status effects
-  const effects = parseStatusEffects(atk.text || '');
+  // Skip parseStatusEffects if move-effects.js handles this attack's status effects.
+  // We check applyMoveEffects (a named function, always visible cross-script) rather than
+  // MOVE_EFFECTS (the object, defined in a later script block and not yet in scope here).
+  const _handledByDispatch = typeof applyMoveEffects === 'function' &&
+    typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name];
+  const effects = _handledByDispatch ? [] : parseStatusEffects(atk.text || '');
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
@@ -8266,6 +8271,15 @@ const MOVE_EFFECTS = {
       if (!myActive) return;
       myActive.defender = true; myActive.defenderFull = true;
       addLog(`${atk.name}: ${myActive.name} fully protected next turn!`, true);
+    }
+  },
+
+  // Boyfriends (Nidoqueen): 20 + 20 per Nidoking in play (active or bench)
+  'Boyfriends': {
+    modifyDamage: ({ player }) => {
+      const all = [G.players[player].active, ...G.players[player].bench].filter(Boolean);
+      const nidokings = all.filter(c => c.name === 'Nidoking').length;
+      return 20 + nidokings * 20;
     }
   },
 
