@@ -3421,6 +3421,7 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
   const flipNMatch = text.match(/flip (\d+|a) coin[s]?[\s\S]*?times the number of heads/i);
   const timesHeadsMatch2 = text.match(/does (\d+) damage times the number of heads/i);
   if (flipNMatch && timesHeadsMatch2) {
+    const rawN = flipNMatch[1];
     const numFlips2 = rawN === 'a' ? 1 : parseInt(rawN);
     const perFlip2 = parseInt(timesHeadsMatch2[1]);
     let heads2 = 0;
