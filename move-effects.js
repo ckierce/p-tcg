@@ -463,6 +463,25 @@ const MOVE_EFFECTS = {
     }
   },
 
+  // Clamp (Cloyster): single flip — heads = full damage + Paralyzed; tails = 0 damage, no effect
+  // Must be in MOVE_EFFECTS so engine Pattern 3 (tails=no damage) doesn't fire a separate flip,
+  // and parseStatusEffects doesn't fire a third flip.
+  'Clamp': {
+    modifyDamage: async ({ atk }) => {
+      const heads = await flipCoin('Clamp: Heads = damage + Paralyzed, Tails = does nothing');
+      atk._clampHeads = heads;
+      return heads ? null : 0; // null = use base damage; 0 = no damage
+    },
+    postAttack: async ({ oppActive, atk }) => {
+      if (atk._clampHeads && oppActive) {
+        tryApplyStatus(oppActive, 'paralyzed');
+        addLog(`Clamp: HEADS — ${oppActive.name} is now Paralyzed!`, true);
+      } else {
+        addLog(`Clamp: TAILS — no damage, no effect.`);
+      }
+    }
+  },
+
   // Bind/Bubble/Bubblebeam/Body Slam/Freeze Dry/Ice Beam/Irongrip/Lick/
   // Nasty Goo/Psyshock/Star Freeze/String Shot/Stun Spore/Thunder Wave/
   // Tongue Wrap/Wrap: flip → paralyzed
