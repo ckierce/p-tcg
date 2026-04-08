@@ -2879,6 +2879,11 @@ function getActionsForCard(player, card, handIdx) {
 
 function playAsActive(player, handIdx) {
   closeActionMenu();
+  // During PROMOTE phase, the player must choose from their bench, not play from hand
+  if (G.phase === 'PROMOTE') {
+    showToast(`Choose a Benched Pokémon to promote — you cannot play from hand now!`, true);
+    return;
+  }
   const p = G.players[player];
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; card.status = null;
@@ -3121,7 +3126,11 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
       fn: retreatBlocked ? null : () => { attemptRetreat(player); closeActionMenu(); }
     });
 
-    // ── Pokémon Power actions (from pokemon-powers.js) ──
+  }
+
+  // ── Pokémon Power actions — own Pokémon, own turn, active OR bench ──────────
+  // Must be outside the active-only block so bench powers (Step In, Buzzap, etc.) work.
+  if (G.turn === player && G.phase === 'MAIN' && (myRole === null || player === myRole)) {
     if (typeof getFieldActionExtras === 'function') {
       actions.push(...getFieldActionExtras(player, zone, benchIdx, card));
     }
@@ -3839,7 +3848,11 @@ async function performAttack(player, atk) {
       myActive.damage = (myActive.damage || 0) + selfDmg;
       addLog(`${myActive.name} took ${selfDmg} recoil damage! (${myActive.damage}/${myActive.hp} HP)`);
     }
-    const myHp = parseInt(myActive.hp) || 0;
+    // Use same HP resolution as checkKO — fall back to CARD_DATA if hp is missing/zero
+    let myHp = parseInt(myActive.hp) || 0;
+    if (myHp === 0 && myActive.id && typeof CARD_DATA !== 'undefined') {
+      myHp = parseInt(CARD_DATA[myActive.id]?.hp) || 0;
+    }
     if (myHp > 0 && myActive.damage >= myHp) {
       attackerSelfKOd = true;
     }
@@ -4973,6 +4986,13 @@ function renderLog() {
 function showTab(tab) {
   document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
   document.getElementById(`tab-${tab}`)?.classList.add('active');
+  // On desktop the sidebar starts collapsed (0px). Auto-open it when user clicks a tab.
+  const board = document.getElementById('game-board');
+  const btn = document.getElementById('sidebar-toggle-btn');
+  if (board && !board.classList.contains('sidebar-open')) {
+    board.classList.add('sidebar-open');
+    if (btn) btn.textContent = 'LOG ◂';
+  }
   if (tab === 'log') renderLog();
   else if (tab === 'hand2') renderSidebarP2Hand();
   else if (tab === 'prizes') renderPrizesTab();
