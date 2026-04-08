@@ -833,6 +833,31 @@ html, body {
   align-self: center;
 }
 
+/* Collapsible hand toggle — mobile only */
+#hand-toggle-btn {
+  display: none; /* hidden on desktop */
+  background: none;
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 7px;
+  padding: 3px 8px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  align-self: center;
+  transition: border-color .15s, color .15s;
+}
+#hand-toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+#bottom-bar.hand-collapsed #hand-p1 {
+  display: none;
+}
+#bottom-bar.hand-collapsed {
+  max-height: none;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+}
+
 #hand-p1 {
   display: flex;
   flex-wrap: wrap;
@@ -1811,6 +1836,8 @@ html, body {
     --card-h-sm: clamp(62px,  17vw, 100px);
   }
 
+  #hand-toggle-btn { display: inline-block; }
+
   html, body { overflow: hidden; touch-action: manipulation; }
 
   /* Prevent double-tap zoom on all interactive elements */
@@ -2108,6 +2135,7 @@ html, body {
   #hand-p1 { max-height: 22vh; }
   .hand-card { width: 42px; }
   #player-prizes-panel { display: none; }
+  #hand-toggle-btn { display: inline-block; }
   #player-aux { display: none; }
 }
 </style>
@@ -2310,7 +2338,10 @@ html, body {
 
     <!-- Bottom hand bar -->
     <div id="bottom-bar">
-      <span class="hand-label" id="hand-label-p1">P1 HAND (0)</span>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%">
+        <span class="hand-label" id="hand-label-p1">P1 HAND (0)</span>
+        <button id="hand-toggle-btn" onclick="toggleHandCollapse()" title="Show/hide hand">HIDE ▾</button>
+      </div>
       <div id="hand-p1"></div>
     </div>
 
@@ -2901,9 +2932,24 @@ function playAsActive(player, handIdx) {
 function evolve(player, handIdx, zone, benchIdx) {
   closeActionMenu();
   const p = G.players[player];
-  const evoCard = p.hand.splice(handIdx, 1)[0];
   const target = zone === 'active' ? p.active : p.bench[benchIdx];
-  if (!target) { showToast('Target not found!', true); p.hand.splice(handIdx, 0, evoCard); return; }
+  if (!target) { showToast('Target not found!', true); return; }
+
+  // Guard: cannot evolve a Pokémon placed or evolved this turn
+  const evolvedUids = G.evolvedThisTurn || [];
+  if (evolvedUids.includes(target.uid)) {
+    showToast(`${target.name} was played this turn and cannot be evolved yet!`, true);
+    return;
+  }
+
+  // Guard: Aerodactyl's Prehistoric Power blocks all evolution
+  if (typeof prehistoricPowerActive === 'function' && prehistoricPowerActive()) {
+    showToast("Aerodactyl's Prehistoric Power prevents evolution!", true);
+    return;
+  }
+
+  // All guards passed — now remove card from hand
+  const evoCard = p.hand.splice(handIdx, 1)[0];
 
   // Carry over damage, energy, status from the base pokemon
   evoCard.damage = target.damage || 0;
@@ -4004,8 +4050,8 @@ async function performAttack(player, atk) {
         myActive.damage = (myActive.damage || 0) + 10;
         addLog(`Strikes Back! HEADS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
         const strikeKo = checkKO(opp, player, myActive, false);
-        if (strikeKo === 'win') { renderAll(); return; }
-        if (strikeKo === 'promote') { renderAll(); return; }
+        if (strikeKo === 'win') { renderWhenIdle(); return; }
+        if (strikeKo === 'promote') { renderWhenIdle(); return; }
       } else if (!strikesHeads) {
         addLog(`Strikes Back: TAILS — no counter-damage.`);
       }
@@ -4018,7 +4064,7 @@ async function performAttack(player, atk) {
         G.players[player].discard.push(myActive);
         G.players[player].active = null;
       }
-      renderAll(); return;
+      renderWhenIdle(); return;
     }
     if (koResult === 'promote') {
       // Process attacker self-KO first if it happened simultaneously
@@ -4027,7 +4073,7 @@ async function performAttack(player, atk) {
         G.players[player].discard.push(myActive);
         G.players[player].active = null;
       }
-      renderAll(); return;
+      renderWhenIdle(); return;
     }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
@@ -4258,7 +4304,7 @@ async function performAttack(player, atk) {
     if (myBenchLeft.length === 0) {
       G.started = false;
       showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
-      renderAll(); return;
+      renderWhenIdle(); return;
     } else if (myBenchLeft.length === 1) {
       const idx = G.players[player].bench.findIndex(s => s !== null);
       G.players[player].active = G.players[player].bench[idx];
@@ -4277,7 +4323,7 @@ async function performAttack(player, atk) {
       setMidline(`Player ${player}: choose a bench Pokémon to promote to Active!`);
       showPromoteBanner(player);
       addLog(`Player ${player} must choose a new Active Pokémon.`, true);
-      renderAll(); return; // endTurn fires inside resolvePromotion
+      renderWhenIdle(); return; // endTurn fires inside resolvePromotion
     }
   }
 
@@ -4289,8 +4335,10 @@ async function performAttack(player, atk) {
   }
 
   // Attack always ends the turn
-  renderAll();
-  endTurn();
+  renderWhenIdle();
+  // endTurn runs after the flash queue drains so board state matches the flash
+  _flashQueue.push({ fn: () => endTurn(), duration: 0 });
+  _runFlashQueue();
 }
 
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
@@ -4507,6 +4555,7 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
+    nextActive.smokescreened = false; // smokescreen lasts one opponent turn regardless of whether they attacked
     // Defender expires at end of the opponent's next turn — that's now (the new current player
     // was the defending player last turn; their defender expires as their turn begins).
     nextActive.defender = false;
@@ -5298,7 +5347,8 @@ function hidePromoteBanner() {
 }
 
 // ── Flash queue ───────────────────────────────────────────────────────────────
-// All flashes go through a single queue so they never overlap.
+// All flashes and deferred renders go through a single queue so they never overlap
+// and board state changes are visible at the same time as the flash that explains them.
 const _flashQueue = [];
 let _flashBusy = false;
 
@@ -5314,6 +5364,14 @@ function _queueFlash(fn, duration) {
   // Drop stale flashes if queue backs up — keep at most 3 pending
   if (_flashQueue.length > 3) _flashQueue.splice(0, _flashQueue.length - 3);
   _flashQueue.push({ fn, duration });
+  _runFlashQueue();
+}
+
+// Queue a renderAll() to fire after all currently-pending flashes have played.
+// Use this instead of renderAll() anywhere you want the board to update
+// in sync with the flash that explains the state change.
+function renderWhenIdle() {
+  _flashQueue.push({ fn: () => renderAll(), duration: 0 });
   _runFlashQueue();
 }
 
@@ -6604,6 +6662,13 @@ function toggleSidebar() {
   const btn = document.getElementById('sidebar-toggle-btn');
   const isOpen = board.classList.toggle('sidebar-open');
   btn.textContent = isOpen ? 'LOG ◂' : 'LOG ▸';
+}
+
+function toggleHandCollapse() {
+  const bar = document.getElementById('bottom-bar');
+  const btn = document.getElementById('hand-toggle-btn');
+  const collapsed = bar.classList.toggle('hand-collapsed');
+  btn.textContent = collapsed ? 'SHOW ▴' : 'HIDE ▾';
 }
 
 // ── Create room (P1) ──────────────────────────────
