@@ -4485,10 +4485,17 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
+    // Defender expires at end of the opponent's next turn — that's now (the new current player
+    // was the defending player last turn; their defender expires as their turn begins).
+    nextActive.defender = false;
+    nextActive.defenderFull = false;
+    nextActive.defenderThreshold = 0;
+    nextActive.defenderReduction = 0;
   }
   const lastActive = G.players[prev].active;
   if (lastActive) {
-    lastActive.defender = false;
+    // Clear flags that were set ON the previous player (attacker) during their turn
+    // defenderReduction is for moves like Scrunch/Harden that set it on self
     lastActive.defenderReduction = 0;
   }
   // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
