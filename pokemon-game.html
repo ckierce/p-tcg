@@ -1388,7 +1388,7 @@ html, body {
   display: none;
   position: fixed;
   top: 0; left: 0; right: 0;
-  z-index: 940;
+  z-index: 970;
   padding: 14px 20px;
   background: rgba(0,0,0,.92);
   border-bottom: 3px solid var(--warn);
@@ -3392,18 +3392,6 @@ function flipCoin(label, opts = {}) {
     // Shorter pre-delay if overlay is already showing (consecutive flips)
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
 
-    // Extend move flash to stay visible through the coin flip
-    const moveFlashEl = document.getElementById('move-flash');
-    if (moveFlashEl?.classList.contains('show')) {
-      const COIN_TOTAL = PRE_DELAY + 1000 + 1200 + 600; // pre + spin + result + buffer
-      const newUntil = Date.now() + COIN_TOTAL;
-      if (!moveFlashEl._moveFlashUntil || moveFlashEl._moveFlashUntil < newUntil) {
-        clearTimeout(moveFlashEl._flashTimer);
-        moveFlashEl._moveFlashUntil = newUntil;
-        moveFlashEl._flashTimer = setTimeout(() => moveFlashEl.classList.remove('show'), COIN_TOTAL);
-      }
-    }
-
     setTimeout(() => {
       coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
       const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
@@ -4280,6 +4268,7 @@ async function performAttack(player, atk) {
     } else {
       G.phase = 'PROMOTE';
       G.pendingPromotion = player;
+      _flashQueue.length = 0; // clear pending flashes so banner isn't buried
       for (let i = 0; i < 5; i++) {
         if (G.players[player].bench[i]) {
           document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
@@ -4384,6 +4373,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     // Multiple bench pokemon — pause for promotion choice
     G.phase = 'PROMOTE';
     G.pendingPromotion = owner;
+    _flashQueue.length = 0; // clear pending flashes so banner isn't buried
     // Highlight available bench slots for the KO'd player
     for (let i = 0; i < 5; i++) {
       if (G.players[owner].bench[i]) {
@@ -4425,6 +4415,25 @@ function endTurn() {
   if (G.phase === 'PROMOTE') {
     showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
     return;
+  }
+  // Safety: if any player has no active but still has bench Pokémon, they must promote first
+  for (const pNum of [1, 2]) {
+    if (!G.players[pNum].active && G.players[pNum].bench.some(s => s !== null)) {
+      G.phase = 'PROMOTE';
+      G.pendingPromotion = pNum;
+      // Clear pending flashes so the promote banner isn't immediately buried
+      _flashQueue.length = 0;
+      for (let i = 0; i < 5; i++) {
+        if (G.players[pNum].bench[i]) {
+          document.getElementById(`bench-p${pNum}-${i}`)?.classList.add('highlight');
+        }
+      }
+      setMidline(`Player ${pNum}: choose a bench Pokémon to promote to Active!`);
+      showPromoteBanner(pNum);
+      addLog(`Player ${pNum} must choose a new Active Pokémon.`, true);
+      renderAll();
+      return;
+    }
   }
   const prev = G.turn;
 
@@ -5288,12 +5297,28 @@ function hidePromoteBanner() {
   document.getElementById('promote-banner').classList.remove('show');
 }
 
-function showTurnFlash(player) {
-  const moveFlashEl = document.getElementById('move-flash');
-  const remaining = moveFlashEl?._moveFlashUntil ? moveFlashEl._moveFlashUntil - Date.now() : 0;
-  const delay = remaining > 0 ? remaining + 100 : 0;
+// ── Flash queue ───────────────────────────────────────────────────────────────
+// All flashes go through a single queue so they never overlap.
+const _flashQueue = [];
+let _flashBusy = false;
 
-  setTimeout(() => {
+function _runFlashQueue() {
+  if (_flashBusy || _flashQueue.length === 0) return;
+  _flashBusy = true;
+  const { fn, duration } = _flashQueue.shift();
+  fn();
+  setTimeout(() => { _flashBusy = false; _runFlashQueue(); }, duration + 80);
+}
+
+function _queueFlash(fn, duration) {
+  // Drop stale flashes if queue backs up — keep at most 3 pending
+  if (_flashQueue.length > 3) _flashQueue.splice(0, _flashQueue.length - 3);
+  _flashQueue.push({ fn, duration });
+  _runFlashQueue();
+}
+
+function showTurnFlash(player) {
+  _queueFlash(() => {
     const el = document.getElementById('turn-flash');
     const inner = document.getElementById('turn-flash-inner');
     const label = (vsComputer && player === 1) ? 'YOUR TURN'
@@ -5306,38 +5331,37 @@ function showTurnFlash(player) {
     void inner.offsetWidth;
     inner.style.animation = '';
     setTimeout(() => el.classList.remove('show'), 1300);
-  }, delay);
+  }, 1300);
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
-  const el = document.getElementById('move-flash');
-  const whoEl = document.getElementById('move-flash-who');
-  const attackerEl = document.getElementById('move-flash-attacker');
-  const moveEl = document.getElementById('move-flash-move');
-  const dmgEl = document.getElementById('move-flash-dmg');
+  const DURATION = 3000;
+  _queueFlash(() => {
+    const el = document.getElementById('move-flash');
+    const whoEl = document.getElementById('move-flash-who');
+    const attackerEl = document.getElementById('move-flash-attacker');
+    const moveEl = document.getElementById('move-flash-move');
+    const dmgEl = document.getElementById('move-flash-dmg');
 
-  const isOwnAttack = myRole !== null && attackingPlayer === myRole;
-  const label = isOwnAttack
-    ? 'YOUR ATTACK'
-    : (vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`);
-  whoEl.textContent = label;
-  attackerEl.textContent = attackerName.toUpperCase();
-  moveEl.textContent = moveName.toUpperCase();
-  dmgEl.textContent = dmg > 0
-    ? `${dmg} damage → ${targetName}${suffix ? '  ' + suffix : ''}`
-    : (suffix ? suffix : `→ ${targetName}`);
+    const isOwnAttack = myRole !== null && attackingPlayer === myRole;
+    whoEl.textContent = isOwnAttack ? 'YOUR ATTACK'
+      : (vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`);
+    attackerEl.textContent = attackerName.toUpperCase();
+    moveEl.textContent = moveName.toUpperCase();
+    dmgEl.textContent = dmg > 0
+      ? `${dmg} damage → ${targetName}${suffix ? '  ' + suffix : ''}`
+      : (suffix ? suffix : `→ ${targetName}`);
 
-  el.className = `show p${attackingPlayer}`;
+    el.className = `show p${attackingPlayer}`;
+    const inner = document.getElementById('move-flash-inner');
+    inner.style.animation = 'none';
+    void inner.offsetWidth;
+    inner.style.animation = '';
 
-  const inner = document.getElementById('move-flash-inner');
-  inner.style.animation = 'none';
-  void inner.offsetWidth;
-  inner.style.animation = '';
-
-  clearTimeout(el._flashTimer);
-  const MOVE_FLASH_DURATION = 3500;
-  el._moveFlashUntil = Date.now() + MOVE_FLASH_DURATION;
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
+    el._moveFlashUntil = Date.now() + DURATION;
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._moveFlashUntil = 0; }, DURATION);
+  }, DURATION);
 }
 
 // Show a move flash specifically for blocked/thwarted attacks
@@ -5345,31 +5369,26 @@ function showBlockedFlash(attackingPlayer, attackerName, moveName, reason) {
   showMoveFlash(attackingPlayer, attackerName, moveName, 0, '', `🚫 ${reason}`);
 }
 
-// General opponent action flash — reuses the move-flash overlay
-// verb: top small label e.g. "PLAYS", "RETREATS", "EVOLVES"
-// subject: large center text e.g. card name or pokemon name
-// detail: optional small bottom line
+// General action flash (retreat, trainer, evolve, etc.)
 function showActionFlash(player, verb, subject, detail) {
-  const el = document.getElementById('action-flash');
-  const whoEl = document.getElementById('action-flash-who');
-  const subjectEl = document.getElementById('action-flash-subject');
-  const detailEl = document.getElementById('action-flash-detail');
+  const DURATION = 2000;
+  _queueFlash(() => {
+    const el = document.getElementById('action-flash');
+    const isOwnAction = myRole !== null && player === myRole;
+    const who = isOwnAction ? `YOU ${verb}` : (vsComputer ? `🤖 COMPUTER ${verb}` : `PLAYER ${player} ${verb}`);
+    document.getElementById('action-flash-who').textContent = who;
+    document.getElementById('action-flash-subject').textContent = (subject || '').toUpperCase();
+    document.getElementById('action-flash-detail').textContent = detail || '';
 
-  const isOwnAction = myRole !== null && player === myRole;
-  const who = isOwnAction ? `YOU ${verb}` : (vsComputer ? `🤖 COMPUTER ${verb}` : `PLAYER ${player} ${verb}`);
-  whoEl.textContent = who;
-  subjectEl.textContent = (subject || '').toUpperCase();
-  detailEl.textContent = detail || '';
+    el.className = 'show';
+    const inner = document.getElementById('action-flash-inner');
+    inner.style.animation = 'none';
+    void inner.offsetWidth;
+    inner.style.animation = '';
 
-  el.className = 'show';
-
-  const inner = document.getElementById('action-flash-inner');
-  inner.style.animation = 'none';
-  void inner.offsetWidth;
-  inner.style.animation = '';
-
-  clearTimeout(el._flashTimer);
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), 2500);
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+  }, DURATION);
 }
 
 function showTrainerFlash(player, cardName) {
