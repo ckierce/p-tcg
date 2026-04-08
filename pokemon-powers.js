@@ -194,27 +194,42 @@ async function doDamageSwap(player) {
 
   const srcPicked = await openCardPicker({
     title: 'Damage Swap — Source',
-    subtitle: 'Choose a Pokémon to take a damage counter FROM',
+    subtitle: 'Choose a Pokémon to take damage counters FROM',
     cards: sources.map(x => x.card), maxSelect: 1
   });
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
 
+  // Ask how many counters to move (1 to all available)
+  const maxCounters = Math.floor((srcCard.damage || 0) / 10);
+  let numCounters = maxCounters;
+  if (maxCounters > 1) {
+    numCounters = await pickNumber(`How many damage counters to move from ${srcCard.name}?`, 1, maxCounters);
+    if (!numCounters) return;
+  }
+
   const dsts = all.filter(x => x.card !== srcCard);
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
-    subtitle: 'Choose a Pokémon to move the damage counter TO',
+    subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
     cards: dsts.map(x => x.card), maxSelect: 1
   });
   if (!dstPicked) return;
   const dstCard = dsts[dstPicked[0]].card;
 
-  srcCard.damage = (srcCard.damage || 0) - 10;
-  dstCard.damage = (dstCard.damage || 0) + 10;
-  addLog(`P${player} used Damage Swap — moved 10 damage from ${srcCard.name} to ${dstCard.name}.`, true);
+  // Card rule: cannot KO the destination Pokémon with Damage Swap
+  const dstHp = parseInt(dstCard.hp) || 0;
+  if ((dstCard.damage || 0) + numCounters * 10 >= dstHp) {
+    // Clamp to non-KO amount
+    const maxSafe = Math.floor((dstHp - (dstCard.damage || 0) - 1) / 10);
+    if (maxSafe <= 0) { showToast(`Can't move damage to ${dstCard.name} — would KO it!`, true); return; }
+    numCounters = maxSafe;
+    showToast(`Moving ${numCounters} counter${numCounters>1?'s':''} (can't KO ${dstCard.name}).`);
+  }
 
-  // Check if destination Pokémon is now KO'd
-  checkKO(player === 1 ? 2 : 1, player, dstCard, false);
+  srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
+  dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
+  addLog(`P${player} used Damage Swap — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${srcCard.name} to ${dstCard.name}.`, true);
   renderAll();
 }
 
@@ -395,22 +410,30 @@ async function doStrangeBehavior(player) {
   const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
 
-  // Card says "as long as you don't Knock Out Slowbro" — check before moving
-  const slowbroHp = parseInt(slowbro.hp) || 0;
-  if ((slowbro.damage || 0) + 10 >= slowbroHp) {
-    showToast("Can't use Strange Behavior — would Knock Out Slowbro!", true); return;
-  }
-
   const picked = await openCardPicker({
     title: 'Strange Behavior',
-    subtitle: `Choose a Pokémon to move 1 damage counter FROM (to Slowbro)`,
+    subtitle: 'Choose a Pokémon to move damage counters FROM (to Slowbro)',
     cards: sources, maxSelect: 1
   });
   if (!picked) return;
   const src = sources[picked[0]];
-  src.damage -= 10;
-  slowbro.damage = (slowbro.damage || 0) + 10;
-  addLog(`P${player} used Strange Behavior — moved 1 damage counter from ${src.name} to ${slowbro.name}.`, true);
+
+  // Ask how many counters to move, capped so Slowbro isn't KO'd
+  const maxFromSrc = Math.floor((src.damage || 0) / 10);
+  const slowbroHp = parseInt(slowbro.hp) || 0;
+  const maxSafe = Math.floor((slowbroHp - (slowbro.damage || 0) - 1) / 10);
+  const maxCounters = Math.min(maxFromSrc, maxSafe);
+  if (maxCounters <= 0) { showToast(`Can't move damage to Slowbro — would KO it!`, true); return; }
+
+  let numCounters = maxCounters;
+  if (maxCounters > 1) {
+    numCounters = await pickNumber(`How many damage counters to move from ${src.name} to Slowbro?`, 1, maxCounters);
+    if (!numCounters) return;
+  }
+
+  src.damage -= numCounters * 10;
+  slowbro.damage = (slowbro.damage || 0) + numCounters * 10;
+  addLog(`P${player} used Strange Behavior — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${src.name} to ${slowbro.name}.`, true);
   renderAll();
 }
 
@@ -584,61 +607,59 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
 
   const actions = [];
 
-  // Alakazam — Damage Swap (on any slot, since Alakazam could be active or bench)
-  if (damageSwapActive(player)) {
+  // Powers that appear on ANY slot (field-wide effects that any tap can trigger):
+  // Damage Swap (Alakazam) — triggers from any tap since it affects any own Pokémon
+  if (damageSwapActive(player) && isPowerActive(card, 'Damage Swap')) {
     actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
   }
 
-  // Venusaur — Energy Trans
-  if (energyTransActive(player)) {
+  // Energy Trans (Venusaur) — show on Venusaur's card
+  if (isPowerActive(card, 'Energy Trans')) {
     actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
   }
 
-  // Gengar — Curse (once per turn, Gengar on bench or active)
-  if (!G.cursedThisTurn) {
-    const p = G.players[player];
-    if ([p.active, ...p.bench].some(c => isPowerActive(c, 'Curse'))) {
-      actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
-    }
+  // Gengar — Curse: show ONLY on Gengar's own card, once per turn
+  if (!G.cursedThisTurn && isPowerActive(card, 'Curse')) {
+    actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
   }
 
-  // Clefable — Metronome (only from active slot)
+  // Clefable — Metronome: only when active (must be the attacker)
   if (zone === 'active' && isPowerActive(card, 'Metronome')) {
     actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
   }
 
-  // Electrode — Buzzap (only from bench slot)
+  // Electrode — Buzzap: only from bench slot, only Electrode's own card
   if (zone === 'bench' && isPowerActive(card, 'Buzzap')) {
     actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
   }
 
-  // Slowbro — Strange Behavior (from any slot)
-  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Strange Behavior'))) {
+  // Slowbro — Strange Behavior: show on Slowbro's card
+  if (isPowerActive(card, 'Strange Behavior')) {
     actions.push({ label: '🌀 Strange Behavior (Slowbro)', fn: () => { closeActionMenu(); doStrangeBehavior(player); } });
   }
 
-  // Venomoth — Shift (only from active slot)
+  // Venomoth — Shift: only when active
   if (zone === 'active' && isPowerActive(card, 'Shift')) {
     actions.push({ label: '🦋 Shift (Venomoth)', fn: () => { closeActionMenu(); doShift(player); } });
   }
 
-  // Dragonite — Step In (only from bench slot)
+  // Dragonite — Step In: only from bench slot
   if (zone === 'bench' && isPowerActive(card, 'Step In')) {
     actions.push({ label: '🐉 Step In (Dragonite)', fn: () => { closeActionMenu(); doStepIn(player, benchIdx); } });
   }
 
-  // Tentacool — Cowardice (from any slot)
+  // Tentacool — Cowardice: show on Tentacool's own card
   if (isPowerActive(card, 'Cowardice')) {
     actions.push({ label: '🌊 Cowardice (Tentacool)', fn: () => { closeActionMenu(); doCowardice(player); } });
   }
 
-  // Mankey — Peek (from any slot)
-  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Peek'))) {
+  // Mankey — Peek: show on Mankey's own card
+  if (isPowerActive(card, 'Peek')) {
     actions.push({ label: '👁 Peek (Mankey)', fn: () => { closeActionMenu(); doPeek(player); } });
   }
 
-  // Vileplume — Heal (from any slot)
-  if (!G.healedThisTurn && [G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Heal'))) {
+  // Vileplume — Heal: show on Vileplume's own card, once per turn
+  if (!G.healedThisTurn && isPowerActive(card, 'Heal')) {
     actions.push({ label: '🌸 Heal (Vileplume)', fn: async () => { closeActionMenu(); await doHeal(player); G.healedThisTurn = true; } });
   }
 

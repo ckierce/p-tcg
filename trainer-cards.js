@@ -51,15 +51,21 @@ const TRAINER_EFFECTS = {
 
   // ── Potion ────────────────────────────────────────────────────────────────
   // Remove up to 2 damage counters (20 damage) from 1 of your Pokémon (active or bench).
-  'Potion': async ({ player, p, consume }) => {
+  'Potion': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(c => c && (c.damage || 0) > 0);
     if (!targets.length) { showToast('No damaged Pokémon to heal!', true); return; }
-    consume();
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Potion', subtitle: 'Choose a Pokémon to heal (remove 20 damage)', cards: targets, maxSelect: 1 });
-      if (picked && picked.length) target = targets[picked[0]];
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target || (target.damage || 0) === 0) { showToast(`${target?.name || 'That Pokémon'} has no damage to heal!`, true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Potion', subtitle: 'Choose a Pokémon to heal (remove 20 damage)', cards: targets, maxSelect: 1 });
+        if (picked && picked.length) target = targets[picked[0]];
+      }
     }
+    consume();
     target.damage = Math.max(0, target.damage - 20);
     addLog(`P${player} used Potion — removed 20 damage from ${target.name}.`, true);
     renderAll();
@@ -68,19 +74,26 @@ const TRAINER_EFFECTS = {
   // ── Super Potion ──────────────────────────────────────────────────────────
   // Discard 1 energy from 1 of your Pokémon to remove 4 damage counters (40 damage) from it.
   // Can target active or bench. Player chooses which energy to discard.
-  'Super Potion': async ({ player, p, consume }) => {
+  'Super Potion': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(c => c && (c.damage || 0) > 0 && (c.attachedEnergy || []).length > 0);
     if (!targets.length) {
       const hasDamage = [p.active, ...p.bench].some(c => c && c.damage > 0);
       showToast(hasDamage ? 'Damaged Pokémon must have energy attached to use Super Potion!' : 'No damaged Pokémon to heal!', true);
       return;
     }
-    // Step 1: choose which Pokémon to heal
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Super Potion — Choose Pokémon', subtitle: 'Choose a Pokémon to heal (removes 40 damage, costs 1 energy)', cards: targets, maxSelect: 1 });
-      if (!picked?.length) { showToast('Super Potion cancelled.'); return; }
-      target = targets[picked[0]];
+    // Step 1: choose which Pokémon to heal (skip picker if drag-targeted)
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target || (target.damage || 0) === 0) { showToast(`${target?.name || 'That Pokémon'} has no damage to heal!`, true); return; }
+      if (!(target.attachedEnergy || []).length) { showToast(`${target.name} has no energy to discard!`, true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Super Potion — Choose Pokémon', subtitle: 'Choose a Pokémon to heal (removes 40 damage, costs 1 energy)', cards: targets, maxSelect: 1 });
+        if (!picked?.length) { showToast('Super Potion cancelled.'); return; }
+        target = targets[picked[0]];
+      }
     }
     // Step 2: choose which energy to discard
     let energyIdx = 0;
@@ -239,25 +252,36 @@ const TRAINER_EFFECTS = {
 
   // ── PlusPower ─────────────────────────────────────────────────────────────
   // Active Pokémon's next attack does +10 damage.
-  'PlusPower': async ({ player, p, consume }) => {
-    if (!p.active) { showToast('No Active Pokémon!', true); return; }
+  'PlusPower': async ({ player, p, consume, targetHint }) => {
+    // PlusPower card text: "attach to your Active Pokémon" — only valid on Active
+    // But via drag/drop we allow targeting any slot; warn if bench targeted
+    const target = targetHint
+      ? (targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx])
+      : p.active;
+    if (!target) { showToast('No Active Pokémon!', true); return; }
     consume();
-    p.active.plusPower = (p.active.plusPower || 0) + 10;
-    addLog(`P${player} attached PlusPower to ${p.active.name} (+10 damage next attack).`, true);
+    target.plusPower = (target.plusPower || 0) + 10;
+    addLog(`P${player} attached PlusPower to ${target.name} (+10 damage next attack).`, true);
     renderAll();
   },
 
   // ── Defender ─────────────────────────────────────────────────────────────
   // Attach Defender to 1 of your Pokémon (active or bench).
   // Damage from attacks reduced by 20 (after W/R) until end of opponent's next turn.
-  'Defender': async ({ player, p, consume }) => {
+  'Defender': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(Boolean);
     if (!targets.length) { showToast('No Pokémon to attach Defender to!', true); return; }
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Defender', subtitle: 'Choose a Pokémon to attach Defender to (-20 damage next attack)', cards: targets, maxSelect: 1 });
-      if (!picked?.length) { showToast('Defender cancelled.'); return; }
-      target = targets[picked[0]];
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target) { showToast('No Pokémon there!', true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Defender', subtitle: 'Choose a Pokémon to attach Defender to (-20 damage next attack)', cards: targets, maxSelect: 1 });
+        if (!picked?.length) { showToast('Defender cancelled.'); return; }
+        target = targets[picked[0]];
+      }
     }
     consume();
     target.defender = true;
@@ -750,7 +774,7 @@ const TRAINER_EFFECTS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API — replaces the inline playTrainer function
 // ─────────────────────────────────────────────────────────────────────────────
-async function playTrainer(player, handIdx) {
+async function playTrainer(player, handIdx, targetHint = null) {
   const p = G.players[player];
   const opp = player === 1 ? 2 : 1;
   const oppP = G.players[opp];
@@ -773,7 +797,7 @@ async function playTrainer(player, handIdx) {
 
   const handler = TRAINER_EFFECTS[name];
   if (handler) {
-    await handler({ player, opp, p, oppP, card, handIdx, consume });
+    await handler({ player, opp, p, oppP, card, handIdx, consume, targetHint });
     return;
   }
 

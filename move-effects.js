@@ -442,8 +442,15 @@ const MOVE_EFFECTS = {
     },
     postAttack: async ({ myActive, atk }) => {
       if (!atk._thrashHeads && myActive) {
-        myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        let recoil = 10;
+        if (myActive.defender) {
+          addLog(`${atk.name}: TAILS — Defender blocks Nidoking's 10 recoil!`);
+          recoil = 0;
+        }
+        if (recoil > 0) {
+          myActive.damage = (myActive.damage || 0) + recoil;
+          addLog(`${atk.name}: TAILS — ${myActive.name} takes ${recoil} recoil! (${myActive.damage}/${myActive.hp} HP)`, true);
+        }
       }
     }
   },
@@ -457,8 +464,12 @@ const MOVE_EFFECTS = {
     },
     postAttack: async ({ myActive, atk }) => {
       if (!atk._tpunchHeads && myActive) {
-        myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        if (myActive.defender) {
+          addLog(`${atk.name}: TAILS — Defender blocks Electabuzz's 10 recoil!`);
+        } else {
+          myActive.damage = (myActive.damage || 0) + 10;
+          addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        }
       }
     }
   },
@@ -615,7 +626,37 @@ const MOVE_EFFECTS = {
   },
 
   // Dark Mind (Gengar/Hypno): 10 to chosen opp bench
-  'Dark Mind': _benchDamage10(),
+  // Dark Mind (Gengar): 30 damage to Active + 10 to 1 chosen opponent bench Pokémon.
+  // Bench damage must fire EVEN IF the 30 damage KOs the Active (TCG rule).
+  // We handle this by setting a flag in preAttack and resolving bench damage there,
+  // before the main damage pipeline runs (so it always fires regardless of KO).
+  'Dark Mind': {
+    preAttack: async ({ opp, atk }) => {
+      const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+      if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return null; }
+      let target, slotIdx;
+      if (bench.length === 1) {
+        target = bench[0].s; slotIdx = bench[0].i;
+      } else {
+        const picked = await openCardPicker({
+          title: 'Dark Mind — Bench Damage',
+          subtitle: "Choose 1 of opponent's Benched Pokémon to deal 10 damage to",
+          cards: bench.map(x => x.s), maxSelect: 1
+        });
+        if (!picked?.length) { addLog(`${atk.name}: bench target cancelled.`); return null; }
+        target = bench[picked[0]].s; slotIdx = bench[picked[0]].i;
+      }
+      target.damage = (target.damage || 0) + 10;
+      addLog(`${atk.name}: 10 damage to ${target.name} on bench! (${target.damage}/${target.hp} HP)`, true);
+      const hp = parseInt(target.hp) || 0;
+      if (hp > 0 && target.damage >= hp) {
+        addLog(`${target.name} was knocked out!`, true);
+        G.players[opp].discard.push(target);
+        G.players[opp].bench[slotIdx] = null;
+      }
+      return null; // null = don't block the main attack
+    }
+  },
 
   // Destiny Bond (Gastly): mark self — KO attacker if KO'd next turn
   'Destiny Bond': {

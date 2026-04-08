@@ -608,6 +608,11 @@ html, body {
   box-shadow: 0 0 10px rgba(79,195,247,.5) !important;
   opacity: 1 !important;
 }
+.drag-valid-trainer {
+  border-color: #f6ad55 !important;
+  box-shadow: 0 0 10px rgba(246,173,85,.5) !important;
+  opacity: 1 !important;
+}
 .hand-card.dragging {
   opacity: .4;
   transform: scale(.95);
@@ -3369,6 +3374,34 @@ function closeCoinOverlay() {
   document.getElementById('coin-overlay')?.classList.remove('show');
 }
 
+// Prompts the player to pick a number between min and max (inclusive).
+// Returns a Promise that resolves to the chosen number, or null if cancelled.
+function pickNumber(title, min, max) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1200;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;';
+    const buttons = [];
+    for (let n = min; n <= max; n++) {
+      buttons.push(`<button onclick="this.closest('div').remove();window._pickNumberVal=${n}"
+        style="font-family:var(--font);font-size:10px;width:44px;height:44px;border-radius:50%;background:var(--surface2);border:2px solid var(--accent);color:var(--accent);cursor:pointer;font-weight:bold;">${n}</button>`);
+    }
+    overlay.innerHTML = `
+      <div style="font-family:var(--font);font-size:10px;color:var(--accent);text-align:center;max-width:300px;padding:0 20px">${title}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:280px;">${buttons.join('')}</div>
+      <button onclick="this.closest('div').remove();window._pickNumberVal=null"
+        style="font-family:var(--font);font-size:8px;padding:6px 16px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Cancel</button>`;
+    document.body.appendChild(overlay);
+    const interval = setInterval(() => {
+      if (window._pickNumberVal !== undefined) {
+        clearInterval(interval);
+        const v = window._pickNumberVal;
+        window._pickNumberVal = undefined;
+        resolve(v);
+      }
+    }, 50);
+  });
+}
+
 // ══════════════════════════════════════════════════
 // STATUS PARSING
 // ══════════════════════════════════════════════════
@@ -3528,8 +3561,16 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
     const heads = await flipCoin(`${atk.name}: Heads = no recoil, Tails = ${selfDmg} self-damage`);
     if (!heads) {
       // Apply self-damage now — KO check happens in caller
-      addLog(`${atk.name}: TAILS — ${myActive?.name || 'attacker'} takes ${selfDmg} recoil!`);
-      if (myActive) myActive.damage = (myActive.damage || 0) + selfDmg;
+      // Defender on the attacker reduces recoil by 20
+      let actualSelfDmg = selfDmg;
+      if (myActive?.defender && actualSelfDmg > 0) {
+        const reduced = Math.min(20, actualSelfDmg);
+        actualSelfDmg = Math.max(0, actualSelfDmg - 20);
+        addLog(`${atk.name}: TAILS — ${myActive.name} takes ${actualSelfDmg} recoil (Defender reduced by ${reduced})!`);
+      } else {
+        addLog(`${atk.name}: TAILS — ${myActive?.name || 'attacker'} takes ${actualSelfDmg} recoil!`);
+      }
+      if (myActive && actualSelfDmg > 0) myActive.damage = (myActive.damage || 0) + actualSelfDmg;
     }
     return baseDmg; // full damage to opponent regardless
   }
@@ -3570,11 +3611,13 @@ async function performAttack(player, atk) {
   if (myActive?.status === 'paralyzed') {
     addLog(`${myActive.name} is Paralyzed and cannot attack!`, true);
     showToast(`${myActive.name} is Paralyzed!`, true);
+    showBlockedFlash(player, myActive.name, atk.name, 'PARALYZED — cannot attack');
     return;
   }
   if (myActive?.status === 'asleep') {
     addLog(`${myActive.name} is Asleep and cannot attack!`, true);
     showToast(`${myActive.name} is Asleep!`, true);
+    showBlockedFlash(player, myActive.name, atk.name, 'ASLEEP — cannot attack');
     return;
   }
 
@@ -3602,6 +3645,7 @@ async function performAttack(player, atk) {
     const smokeHeads = await flipCoin(`${myActive.name} is Smokescreened! Heads = attack normally, Tails = attack fails`);
     if (!smokeHeads) {
       addLog(`${myActive.name}'s attack was blocked by Smokescreen! (TAILS)`, true);
+      showBlockedFlash(player, myActive.name, atk.name, 'SMOKESCREENED — attack failed');
       myActive.smokescreened = false;
       renderAll();
       endTurn();
@@ -3613,7 +3657,10 @@ async function performAttack(player, atk) {
 
   if (typeof preAttackChecks === 'function') {
     const preResult = await preAttackChecks(player, atk, myActive, oppActive);
-    if (preResult === 'block') { renderAll(); endTurn(); return; }
+    if (preResult === 'block') {
+      showBlockedFlash(player, myActive?.name || '?', atk.name, 'BLOCKED — attack failed');
+      renderAll(); endTurn(); return;
+    }
   }
 
   // Apply damage — check for coin-flip damage patterns first
@@ -3633,9 +3680,11 @@ async function performAttack(player, atk) {
 
   // (move flash fires after weakness/resistance is resolved, below)
 
-  // Resolve coin-flip damage if the attack text requires it
+  // Resolve coin-flip damage if the attack text requires it.
+  // Skip if MOVE_EFFECTS has a modifyDamage handler — that handler owns the flip.
+  const _hasModifyDamage = typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name]?.modifyDamage;
   const energyCount = (myActive?.attachedEnergy || []).length;
-  const coinDmg = await resolveCoinFlipDamage(atk, energyCount, myActive, player);
+  const coinDmg = _hasModifyDamage ? null : await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) dmg = coinDmg;
 
   // ── Pre-damage modifications (scaling attacks: Karate Chop, Flail, Rage, Super Fang, etc.) ──
@@ -3728,9 +3777,17 @@ async function performAttack(player, atk) {
   const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
   let attackerSelfKOd = false;
   if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
-    const selfDmg = parseInt(selfDmgTextMatch[1]);
-    myActive.damage = (myActive.damage || 0) + selfDmg;
-    addLog(`${myActive.name} took ${selfDmg} recoil damage! (${myActive.damage}/${myActive.hp} HP)`);
+    let selfDmg = parseInt(selfDmgTextMatch[1]);
+    // Defender on the attacker reduces self-damage by 20 (min 0)
+    if (myActive.defender && selfDmg > 0) {
+      const reduced = Math.min(20, selfDmg);
+      selfDmg = Math.max(0, selfDmg - 20);
+      addLog(`Defender reduces ${myActive.name}'s recoil by ${reduced} (${selfDmg} self-damage).`);
+    }
+    if (selfDmg > 0) {
+      myActive.damage = (myActive.damage || 0) + selfDmg;
+      addLog(`${myActive.name} took ${selfDmg} recoil damage! (${myActive.damage}/${myActive.hp} HP)`);
+    }
     const myHp = parseInt(myActive.hp) || 0;
     if (myHp > 0 && myActive.damage >= myHp) {
       attackerSelfKOd = true;
@@ -3823,16 +3880,19 @@ async function performAttack(player, atk) {
     }
     // Kabuto Armor: halve damage done to Kabuto (after W/R), rounded DOWN to nearest 10
     if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Kabuto Armor') && dmg > 0) {
+      const before = dmg;
       dmg = Math.floor(dmg / 20) * 10;
       addLog(`Kabuto Armor: damage halved to ${dmg}!`, true);
+      showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 KABUTO ARMOR (${before}→${dmg})`);
     }
     // Transparency (Haunter): flip — heads = prevent all effects including damage
     if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency') && dmg > 0) {
       const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
       if (transpHeads) {
         addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
+        showBlockedFlash(player, myActive?.name || '?', atk.name, `TRANSPARENCY — all effects prevented`);
         dmg = 0;
-        atk._transparencyBlocked = true; // signals parseStatusEffects loop to skip all effects
+        atk._transparencyBlocked = true;
       } else {
         addLog(`Transparency: TAILS — attack applies normally.`);
       }
@@ -3840,12 +3900,15 @@ async function performAttack(player, atk) {
     // Defender reduction — on the target, after weakness/resistance
     if (oppActive.defenderFull) {
       addLog(`${oppActive.name} is fully protected — all damage prevented!`);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} FULLY PROTECTED`);
       dmg = 0;
     } else if (oppActive.defenderThreshold && dmg <= oppActive.defenderThreshold) {
       addLog(`${oppActive.name} is protected — ${dmg} damage is blocked (≤${oppActive.defenderThreshold} threshold)!`);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} PROTECTED — damage blocked`);
       dmg = 0;
     } else if (hasInvisibleWall(oppActive) && dmg >= 30) {
       addLog(`${oppActive.name}'s Invisible Wall blocks ${dmg} damage!`, true);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `INVISIBLE WALL — ${dmg} damage blocked`);
       dmg = 0;
     } else if (oppActive.defender) {
       dmg = Math.max(0, dmg - 20);
@@ -4481,7 +4544,7 @@ function renderField(player) {
       } else {
         const card = p.active;
         if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-        const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, 26)).join('');
+        const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', 26), energyIcon('Colorless Energy', 26)] : [energyIcon(e.name, 26)]).join('');
         const dmg = damageCounters(card.damage, true);
         const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
         const oppPower1 = getPower(card);
@@ -4527,7 +4590,7 @@ function renderField(player) {
           const oppBenchH = slotEl.clientHeight || 56;
           const oppIconSize = Math.min(18, Math.max(10, Math.round(oppBenchW * 0.28)));
           const oppIconPlusgap = oppIconSize + 3;
-          const benchEnergyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, oppIconSize)).join('');
+          const benchEnergyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', oppIconSize), energyIcon('Colorless Energy', oppIconSize)] : [energyIcon(e.name, oppIconSize)]).join('');
           const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
             <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
@@ -4599,14 +4662,14 @@ function renderSlotP1(el, card) {
     : Math.min(18, Math.max(10, Math.round(slotW * 0.28)));
   const iconPlusgap = iconSize + 3;
 
-  const energyPips = (card.attachedEnergy || []).map(e => energyIcon(e.name, iconSize)).join('');
+  const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', iconSize), energyIcon('Colorless Energy', iconSize)] : [energyIcon(e.name, iconSize)]).join('');
   const energyStyle = `max-height:${slotH}px;max-width:none`;
   el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
 
   // Reserve right margin for energy columns so the next bench card is pushed right
   if (!isActive) {
-    const energyCount = (card.attachedEnergy || []).length;
+    const energyCount = (card.attachedEnergy || []).reduce((s,e) => s + (/double colorless/i.test(e.name||'')?2:1), 0);
     if (energyCount > 0) {
       const iconsPerCol = Math.max(1, Math.floor(slotH / iconPlusgap));
       const cols = Math.ceil(energyCount / iconsPerCol);
@@ -5152,17 +5215,16 @@ function showTurnFlash(player) {
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
-  // Only show for the opponent's moves (not your own)
-  const isOpponent = myRole !== null && attackingPlayer !== myRole;
-  if (!isOpponent) return;
-
   const el = document.getElementById('move-flash');
   const whoEl = document.getElementById('move-flash-who');
   const attackerEl = document.getElementById('move-flash-attacker');
   const moveEl = document.getElementById('move-flash-move');
   const dmgEl = document.getElementById('move-flash-dmg');
 
-  const label = vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`;
+  const isOwnAttack = myRole !== null && attackingPlayer === myRole;
+  const label = isOwnAttack
+    ? 'YOUR ATTACK'
+    : (vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`);
   whoEl.textContent = label;
   attackerEl.textContent = attackerName.toUpperCase();
   moveEl.textContent = moveName.toUpperCase();
@@ -5172,7 +5234,6 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName,
 
   el.className = `show p${attackingPlayer}`;
 
-  // Reset animation
   const inner = document.getElementById('move-flash-inner');
   inner.style.animation = 'none';
   void inner.offsetWidth;
@@ -5182,6 +5243,11 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName,
   const MOVE_FLASH_DURATION = 3500;
   el._moveFlashUntil = Date.now() + MOVE_FLASH_DURATION;
   el._flashTimer = setTimeout(() => el.classList.remove('show'), MOVE_FLASH_DURATION);
+}
+
+// Show a move flash specifically for blocked/thwarted attacks
+function showBlockedFlash(attackingPlayer, attackerName, moveName, reason) {
+  showMoveFlash(attackingPlayer, attackerName, moveName, 0, '', `🚫 ${reason}`);
 }
 
 // General opponent action flash — reuses the move-flash overlay
@@ -5639,6 +5705,11 @@ function executeDrop(dtype, dropEl, player, handIdx) {
     const rainDance = rainDanceActive(player) && isWaterEnergy;
     if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
     else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
+  } else if (dtype === 'trainer') {
+    // Trainer cards dragged onto a Pokémon slot (Defender, PlusPower, Potion, Super Potion)
+    // Pass a target hint so the trainer handler can skip its own target picker
+    const targetHint = zone === 'active' ? { zone: 'active', benchIdx: null } : { zone: 'bench', benchIdx };
+    playTrainer(player, handIdx, targetHint);
   } else if (dtype === 'heal') {
     playTrainer(player, handIdx);
   }
@@ -5703,6 +5774,18 @@ function onHandDragStart(e, player, handIdx) {
       }
     }
   }
+
+  // Draggable trainer cards: Defender, PlusPower, Potion, Super Potion
+  // Highlight own Pokémon slots as valid drop targets
+  if (!isSetup && card.supertype === 'Trainer') {
+    const isTargetedTrainer = /^(defender|pluspower|potion|super potion)$/i.test(card.name);
+    if (isTargetedTrainer) {
+      if (p.active) highlightSlot('active-p1', 'trainer');
+      for (let i = 0; i < 5; i++) {
+        if (p.bench[i]) highlightSlot(`bench-p1-${i}`, 'trainer');
+      }
+    }
+  }
 }
 
 function onHandDragEnd() {
@@ -5715,11 +5798,12 @@ function onHandDragEnd() {
 function highlightSlot(id, type) {
   const el = document.getElementById(id);
   if (!el) return;
-  el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal');
-  if (type === 'valid')  el.classList.add('drag-valid');
-  if (type === 'evolve') el.classList.add('drag-valid-evolve');
-  if (type === 'energy') el.classList.add('drag-valid-energy');
-  if (type === 'heal')   el.classList.add('drag-valid-heal');
+  el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal', 'drag-valid-trainer');
+  if (type === 'valid')   el.classList.add('drag-valid');
+  if (type === 'evolve')  el.classList.add('drag-valid-evolve');
+  if (type === 'energy')  el.classList.add('drag-valid-energy');
+  if (type === 'heal')    el.classList.add('drag-valid-heal');
+  if (type === 'trainer') el.classList.add('drag-valid-trainer');
   el.dataset.dragType = type;
 }
 
@@ -5736,7 +5820,8 @@ function wireDropTarget(el, zone, benchIdx) {
     if (_dragHandIdx === null) return;
     if (el.classList.contains('drag-valid') ||
         el.classList.contains('drag-valid-evolve') ||
-        el.classList.contains('drag-valid-energy')) {
+        el.classList.contains('drag-valid-energy') ||
+        el.classList.contains('drag-valid-trainer')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
     }
@@ -6924,27 +7009,42 @@ async function doDamageSwap(player) {
 
   const srcPicked = await openCardPicker({
     title: 'Damage Swap — Source',
-    subtitle: 'Choose a Pokémon to take a damage counter FROM',
+    subtitle: 'Choose a Pokémon to take damage counters FROM',
     cards: sources.map(x => x.card), maxSelect: 1
   });
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
 
+  // Ask how many counters to move (1 to all available)
+  const maxCounters = Math.floor((srcCard.damage || 0) / 10);
+  let numCounters = maxCounters;
+  if (maxCounters > 1) {
+    numCounters = await pickNumber(`How many damage counters to move from ${srcCard.name}?`, 1, maxCounters);
+    if (!numCounters) return;
+  }
+
   const dsts = all.filter(x => x.card !== srcCard);
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
-    subtitle: 'Choose a Pokémon to move the damage counter TO',
+    subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
     cards: dsts.map(x => x.card), maxSelect: 1
   });
   if (!dstPicked) return;
   const dstCard = dsts[dstPicked[0]].card;
 
-  srcCard.damage = (srcCard.damage || 0) - 10;
-  dstCard.damage = (dstCard.damage || 0) + 10;
-  addLog(`P${player} used Damage Swap — moved 10 damage from ${srcCard.name} to ${dstCard.name}.`, true);
+  // Card rule: cannot KO the destination Pokémon with Damage Swap
+  const dstHp = parseInt(dstCard.hp) || 0;
+  if ((dstCard.damage || 0) + numCounters * 10 >= dstHp) {
+    // Clamp to non-KO amount
+    const maxSafe = Math.floor((dstHp - (dstCard.damage || 0) - 1) / 10);
+    if (maxSafe <= 0) { showToast(`Can't move damage to ${dstCard.name} — would KO it!`, true); return; }
+    numCounters = maxSafe;
+    showToast(`Moving ${numCounters} counter${numCounters>1?'s':''} (can't KO ${dstCard.name}).`);
+  }
 
-  // Check if destination Pokémon is now KO'd
-  checkKO(player === 1 ? 2 : 1, player, dstCard, false);
+  srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
+  dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
+  addLog(`P${player} used Damage Swap — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${srcCard.name} to ${dstCard.name}.`, true);
   renderAll();
 }
 
@@ -7125,22 +7225,30 @@ async function doStrangeBehavior(player) {
   const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
 
-  // Card says "as long as you don't Knock Out Slowbro" — check before moving
-  const slowbroHp = parseInt(slowbro.hp) || 0;
-  if ((slowbro.damage || 0) + 10 >= slowbroHp) {
-    showToast("Can't use Strange Behavior — would Knock Out Slowbro!", true); return;
-  }
-
   const picked = await openCardPicker({
     title: 'Strange Behavior',
-    subtitle: `Choose a Pokémon to move 1 damage counter FROM (to Slowbro)`,
+    subtitle: 'Choose a Pokémon to move damage counters FROM (to Slowbro)',
     cards: sources, maxSelect: 1
   });
   if (!picked) return;
   const src = sources[picked[0]];
-  src.damage -= 10;
-  slowbro.damage = (slowbro.damage || 0) + 10;
-  addLog(`P${player} used Strange Behavior — moved 1 damage counter from ${src.name} to ${slowbro.name}.`, true);
+
+  // Ask how many counters to move, capped so Slowbro isn't KO'd
+  const maxFromSrc = Math.floor((src.damage || 0) / 10);
+  const slowbroHp = parseInt(slowbro.hp) || 0;
+  const maxSafe = Math.floor((slowbroHp - (slowbro.damage || 0) - 1) / 10);
+  const maxCounters = Math.min(maxFromSrc, maxSafe);
+  if (maxCounters <= 0) { showToast(`Can't move damage to Slowbro — would KO it!`, true); return; }
+
+  let numCounters = maxCounters;
+  if (maxCounters > 1) {
+    numCounters = await pickNumber(`How many damage counters to move from ${src.name} to Slowbro?`, 1, maxCounters);
+    if (!numCounters) return;
+  }
+
+  src.damage -= numCounters * 10;
+  slowbro.damage = (slowbro.damage || 0) + numCounters * 10;
+  addLog(`P${player} used Strange Behavior — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${src.name} to ${slowbro.name}.`, true);
   renderAll();
 }
 
@@ -7314,61 +7422,59 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
 
   const actions = [];
 
-  // Alakazam — Damage Swap (on any slot, since Alakazam could be active or bench)
-  if (damageSwapActive(player)) {
+  // Powers that appear on ANY slot (field-wide effects that any tap can trigger):
+  // Damage Swap (Alakazam) — triggers from any tap since it affects any own Pokémon
+  if (damageSwapActive(player) && isPowerActive(card, 'Damage Swap')) {
     actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
   }
 
-  // Venusaur — Energy Trans
-  if (energyTransActive(player)) {
+  // Energy Trans (Venusaur) — show on Venusaur's card
+  if (isPowerActive(card, 'Energy Trans')) {
     actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
   }
 
-  // Gengar — Curse (once per turn, Gengar on bench or active)
-  if (!G.cursedThisTurn) {
-    const p = G.players[player];
-    if ([p.active, ...p.bench].some(c => isPowerActive(c, 'Curse'))) {
-      actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
-    }
+  // Gengar — Curse: show ONLY on Gengar's own card, once per turn
+  if (!G.cursedThisTurn && isPowerActive(card, 'Curse')) {
+    actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
   }
 
-  // Clefable — Metronome (only from active slot)
+  // Clefable — Metronome: only when active (must be the attacker)
   if (zone === 'active' && isPowerActive(card, 'Metronome')) {
     actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
   }
 
-  // Electrode — Buzzap (only from bench slot)
+  // Electrode — Buzzap: only from bench slot, only Electrode's own card
   if (zone === 'bench' && isPowerActive(card, 'Buzzap')) {
     actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
   }
 
-  // Slowbro — Strange Behavior (from any slot)
-  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Strange Behavior'))) {
+  // Slowbro — Strange Behavior: show on Slowbro's card
+  if (isPowerActive(card, 'Strange Behavior')) {
     actions.push({ label: '🌀 Strange Behavior (Slowbro)', fn: () => { closeActionMenu(); doStrangeBehavior(player); } });
   }
 
-  // Venomoth — Shift (only from active slot)
+  // Venomoth — Shift: only when active
   if (zone === 'active' && isPowerActive(card, 'Shift')) {
     actions.push({ label: '🦋 Shift (Venomoth)', fn: () => { closeActionMenu(); doShift(player); } });
   }
 
-  // Dragonite — Step In (only from bench slot)
+  // Dragonite — Step In: only from bench slot
   if (zone === 'bench' && isPowerActive(card, 'Step In')) {
     actions.push({ label: '🐉 Step In (Dragonite)', fn: () => { closeActionMenu(); doStepIn(player, benchIdx); } });
   }
 
-  // Tentacool — Cowardice (from any slot)
+  // Tentacool — Cowardice: show on Tentacool's own card
   if (isPowerActive(card, 'Cowardice')) {
     actions.push({ label: '🌊 Cowardice (Tentacool)', fn: () => { closeActionMenu(); doCowardice(player); } });
   }
 
-  // Mankey — Peek (from any slot)
-  if ([G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Peek'))) {
+  // Mankey — Peek: show on Mankey's own card
+  if (isPowerActive(card, 'Peek')) {
     actions.push({ label: '👁 Peek (Mankey)', fn: () => { closeActionMenu(); doPeek(player); } });
   }
 
-  // Vileplume — Heal (from any slot)
-  if (!G.healedThisTurn && [G.players[player].active, ...G.players[player].bench].some(c => isPowerActive(c, 'Heal'))) {
+  // Vileplume — Heal: show on Vileplume's own card, once per turn
+  if (!G.healedThisTurn && isPowerActive(card, 'Heal')) {
     actions.push({ label: '🌸 Heal (Vileplume)', fn: async () => { closeActionMenu(); await doHeal(player); G.healedThisTurn = true; } });
   }
 
@@ -7430,15 +7536,21 @@ const TRAINER_EFFECTS = {
 
   // ── Potion ────────────────────────────────────────────────────────────────
   // Remove up to 2 damage counters (20 damage) from 1 of your Pokémon (active or bench).
-  'Potion': async ({ player, p, consume }) => {
+  'Potion': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(c => c && (c.damage || 0) > 0);
     if (!targets.length) { showToast('No damaged Pokémon to heal!', true); return; }
-    consume();
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Potion', subtitle: 'Choose a Pokémon to heal (remove 20 damage)', cards: targets, maxSelect: 1 });
-      if (picked && picked.length) target = targets[picked[0]];
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target || (target.damage || 0) === 0) { showToast(`${target?.name || 'That Pokémon'} has no damage to heal!`, true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Potion', subtitle: 'Choose a Pokémon to heal (remove 20 damage)', cards: targets, maxSelect: 1 });
+        if (picked && picked.length) target = targets[picked[0]];
+      }
     }
+    consume();
     target.damage = Math.max(0, target.damage - 20);
     addLog(`P${player} used Potion — removed 20 damage from ${target.name}.`, true);
     renderAll();
@@ -7447,19 +7559,26 @@ const TRAINER_EFFECTS = {
   // ── Super Potion ──────────────────────────────────────────────────────────
   // Discard 1 energy from 1 of your Pokémon to remove 4 damage counters (40 damage) from it.
   // Can target active or bench. Player chooses which energy to discard.
-  'Super Potion': async ({ player, p, consume }) => {
+  'Super Potion': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(c => c && (c.damage || 0) > 0 && (c.attachedEnergy || []).length > 0);
     if (!targets.length) {
       const hasDamage = [p.active, ...p.bench].some(c => c && c.damage > 0);
       showToast(hasDamage ? 'Damaged Pokémon must have energy attached to use Super Potion!' : 'No damaged Pokémon to heal!', true);
       return;
     }
-    // Step 1: choose which Pokémon to heal
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Super Potion — Choose Pokémon', subtitle: 'Choose a Pokémon to heal (removes 40 damage, costs 1 energy)', cards: targets, maxSelect: 1 });
-      if (!picked?.length) { showToast('Super Potion cancelled.'); return; }
-      target = targets[picked[0]];
+    // Step 1: choose which Pokémon to heal (skip picker if drag-targeted)
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target || (target.damage || 0) === 0) { showToast(`${target?.name || 'That Pokémon'} has no damage to heal!`, true); return; }
+      if (!(target.attachedEnergy || []).length) { showToast(`${target.name} has no energy to discard!`, true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Super Potion — Choose Pokémon', subtitle: 'Choose a Pokémon to heal (removes 40 damage, costs 1 energy)', cards: targets, maxSelect: 1 });
+        if (!picked?.length) { showToast('Super Potion cancelled.'); return; }
+        target = targets[picked[0]];
+      }
     }
     // Step 2: choose which energy to discard
     let energyIdx = 0;
@@ -7618,25 +7737,36 @@ const TRAINER_EFFECTS = {
 
   // ── PlusPower ─────────────────────────────────────────────────────────────
   // Active Pokémon's next attack does +10 damage.
-  'PlusPower': async ({ player, p, consume }) => {
-    if (!p.active) { showToast('No Active Pokémon!', true); return; }
+  'PlusPower': async ({ player, p, consume, targetHint }) => {
+    // PlusPower card text: "attach to your Active Pokémon" — only valid on Active
+    // But via drag/drop we allow targeting any slot; warn if bench targeted
+    const target = targetHint
+      ? (targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx])
+      : p.active;
+    if (!target) { showToast('No Active Pokémon!', true); return; }
     consume();
-    p.active.plusPower = (p.active.plusPower || 0) + 10;
-    addLog(`P${player} attached PlusPower to ${p.active.name} (+10 damage next attack).`, true);
+    target.plusPower = (target.plusPower || 0) + 10;
+    addLog(`P${player} attached PlusPower to ${target.name} (+10 damage next attack).`, true);
     renderAll();
   },
 
   // ── Defender ─────────────────────────────────────────────────────────────
   // Attach Defender to 1 of your Pokémon (active or bench).
   // Damage from attacks reduced by 20 (after W/R) until end of opponent's next turn.
-  'Defender': async ({ player, p, consume }) => {
+  'Defender': async ({ player, p, consume, targetHint }) => {
     const targets = [p.active, ...p.bench].filter(Boolean);
     if (!targets.length) { showToast('No Pokémon to attach Defender to!', true); return; }
-    let target = targets[0];
-    if (targets.length > 1) {
-      const picked = await openCardPicker({ title: 'Defender', subtitle: 'Choose a Pokémon to attach Defender to (-20 damage next attack)', cards: targets, maxSelect: 1 });
-      if (!picked?.length) { showToast('Defender cancelled.'); return; }
-      target = targets[picked[0]];
+    let target;
+    if (targetHint) {
+      target = targetHint.zone === 'active' ? p.active : p.bench[targetHint.benchIdx];
+      if (!target) { showToast('No Pokémon there!', true); return; }
+    } else {
+      target = targets[0];
+      if (targets.length > 1) {
+        const picked = await openCardPicker({ title: 'Defender', subtitle: 'Choose a Pokémon to attach Defender to (-20 damage next attack)', cards: targets, maxSelect: 1 });
+        if (!picked?.length) { showToast('Defender cancelled.'); return; }
+        target = targets[picked[0]];
+      }
     }
     consume();
     target.defender = true;
@@ -8129,7 +8259,7 @@ const TRAINER_EFFECTS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API — replaces the inline playTrainer function
 // ─────────────────────────────────────────────────────────────────────────────
-async function playTrainer(player, handIdx) {
+async function playTrainer(player, handIdx, targetHint = null) {
   const p = G.players[player];
   const opp = player === 1 ? 2 : 1;
   const oppP = G.players[opp];
@@ -8152,7 +8282,7 @@ async function playTrainer(player, handIdx) {
 
   const handler = TRAINER_EFFECTS[name];
   if (handler) {
-    await handler({ player, opp, p, oppP, card, handIdx, consume });
+    await handler({ player, opp, p, oppP, card, handIdx, consume, targetHint });
     return;
   }
 
@@ -8610,8 +8740,15 @@ const MOVE_EFFECTS = {
     },
     postAttack: async ({ myActive, atk }) => {
       if (!atk._thrashHeads && myActive) {
-        myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        let recoil = 10;
+        if (myActive.defender) {
+          addLog(`${atk.name}: TAILS — Defender blocks Nidoking's 10 recoil!`);
+          recoil = 0;
+        }
+        if (recoil > 0) {
+          myActive.damage = (myActive.damage || 0) + recoil;
+          addLog(`${atk.name}: TAILS — ${myActive.name} takes ${recoil} recoil! (${myActive.damage}/${myActive.hp} HP)`, true);
+        }
       }
     }
   },
@@ -8625,8 +8762,12 @@ const MOVE_EFFECTS = {
     },
     postAttack: async ({ myActive, atk }) => {
       if (!atk._tpunchHeads && myActive) {
-        myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        if (myActive.defender) {
+          addLog(`${atk.name}: TAILS — Defender blocks Electabuzz's 10 recoil!`);
+        } else {
+          myActive.damage = (myActive.damage || 0) + 10;
+          addLog(`${atk.name}: TAILS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp})`, true);
+        }
       }
     }
   },
@@ -8783,7 +8924,37 @@ const MOVE_EFFECTS = {
   },
 
   // Dark Mind (Gengar/Hypno): 10 to chosen opp bench
-  'Dark Mind': _benchDamage10(),
+  // Dark Mind (Gengar): 30 damage to Active + 10 to 1 chosen opponent bench Pokémon.
+  // Bench damage must fire EVEN IF the 30 damage KOs the Active (TCG rule).
+  // We handle this by setting a flag in preAttack and resolving bench damage there,
+  // before the main damage pipeline runs (so it always fires regardless of KO).
+  'Dark Mind': {
+    preAttack: async ({ opp, atk }) => {
+      const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+      if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return null; }
+      let target, slotIdx;
+      if (bench.length === 1) {
+        target = bench[0].s; slotIdx = bench[0].i;
+      } else {
+        const picked = await openCardPicker({
+          title: 'Dark Mind — Bench Damage',
+          subtitle: "Choose 1 of opponent's Benched Pokémon to deal 10 damage to",
+          cards: bench.map(x => x.s), maxSelect: 1
+        });
+        if (!picked?.length) { addLog(`${atk.name}: bench target cancelled.`); return null; }
+        target = bench[picked[0]].s; slotIdx = bench[picked[0]].i;
+      }
+      target.damage = (target.damage || 0) + 10;
+      addLog(`${atk.name}: 10 damage to ${target.name} on bench! (${target.damage}/${target.hp} HP)`, true);
+      const hp = parseInt(target.hp) || 0;
+      if (hp > 0 && target.damage >= hp) {
+        addLog(`${target.name} was knocked out!`, true);
+        G.players[opp].discard.push(target);
+        G.players[opp].bench[slotIdx] = null;
+      }
+      return null; // null = don't block the main attack
+    }
+  },
 
   // Destiny Bond (Gastly): mark self — KO attacker if KO'd next turn
   'Destiny Bond': {
