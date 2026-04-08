@@ -1115,7 +1115,7 @@ html, body {
 }
 .picker-card:hover { border-color: var(--border2); }
 .picker-card.selected { border-color: var(--accent); box-shadow: 0 0 6px rgba(232,200,74,.4); }
-.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: cover; }
+.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: contain; background: #111; }
 .picker-card-name {
   font-size: 5px; color: var(--muted);
   padding: 2px 3px;
@@ -1213,6 +1213,36 @@ html, body {
   backdrop-filter: blur(2px);
 }
 #move-flash.show { display: flex; }
+
+/* Action flash: non-attack events (retreat, trainer, evolve, energy attach) */
+/* Positioned bottom-center, no dark overlay, doesn't block attack flash */
+#action-flash {
+  display: none;
+  position: fixed;
+  bottom: 90px; left: 50%; transform: translateX(-50%);
+  z-index: 961;
+  pointer-events: none;
+  width: max-content; max-width: 90vw;
+}
+#action-flash.show { display: block; }
+#action-flash-inner {
+  font-family: var(--font);
+  text-align: center;
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.82);
+  border: 1px solid var(--border2);
+  animation: actionFlashAnim 2.5s ease-out forwards;
+}
+#action-flash-who { font-size: 6px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+#action-flash-subject { font-size: 11px; font-weight: bold; color: var(--accent); margin: 2px 0; }
+#action-flash-detail { font-size: 7px; color: var(--text2); }
+@keyframes actionFlashAnim {
+  0%   { opacity: 0; transform: translateY(6px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; }
+}
 #move-flash-inner {
   font-family: var(--font);
   text-align: center;
@@ -1993,7 +2023,7 @@ html, body {
   }
   #card-picker-modal .modal-box { width: 96vw !important; }
   #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
-  .picker-card img { width: 100%; aspect-ratio: 5/7; object-fit: cover; border-radius: 4px; }
+  .picker-card img { width: 100%; aspect-ratio: 5/7; object-fit: contain; background: #111; border-radius: 4px; }
   .picker-card-name { font-size: 5px; }
   .modal-title { font-size: 9px; }
   .modal-close-btn { font-size: 8px; padding: 10px 16px; min-height: 44px; }
@@ -2414,6 +2444,15 @@ html, body {
     <div id="move-flash-attacker"></div>
     <div id="move-flash-move"></div>
     <div id="move-flash-dmg"></div>
+  </div>
+</div>
+
+<!-- Action flash: non-attack notifications (retreat, trainer, evolve, attach energy) -->
+<div id="action-flash">
+  <div id="action-flash-inner">
+    <div id="action-flash-who"></div>
+    <div id="action-flash-subject"></div>
+    <div id="action-flash-detail"></div>
   </div>
 </div>
 
@@ -3192,27 +3231,39 @@ async function executeRetreat(player, benchIdx) {
   if (retreatCost > 0) {
     const attached = p.active.attachedEnergy || [];
 
-    // If only one energy card and it exactly covers the cost, auto-discard
-    const autoDiscard = attached.length === 1 ||
-      (attached.length > 0 && energyValue(attached) === retreatCost);
+    // Always show picker so player is reminded of the cost.
+    // Auto-select if there is genuinely no choice (exactly one card and it covers cost).
+    const noRealChoice = attached.length === 1 ||
+      (attached.length > 0 && energyValue(attached) === retreatCost && !attached.some(e => /double colorless/i.test(e.name || '')));
 
-    if (autoDiscard) {
-      // Automatically pick the minimum cards needed
+    if (noRealChoice) {
+      // Build toDiscard automatically but still show a brief confirmation
       let remaining = retreatCost;
       for (const e of attached) {
         if (remaining <= 0) break;
         toDiscard.push(e);
         remaining -= /double colorless/i.test(e.name || '') ? 2 : 1;
       }
-    } else {
-      // Let player pick which energy to discard
-      // Show picker; player selects cards until enough energy value is chosen
+      // Show picker pre-selected so player sees what will be discarded
       const picked = await openCardPicker({
-        title: `${p.active.name} — Retreat`,
-        subtitle: `Choose energy to discard (need ${retreatCost} energy value to pay retreat cost)`,
+        title: `${p.active.name} — Retreat Cost`,
+        subtitle: `Confirm: discard ${toDiscard.map(e => e.name).join(', ')} to retreat`,
         cards: attached,
         maxSelect: attached.length,
-        minValue: retreatCost,        // hint for the UI (not enforced by picker itself)
+      });
+      if (!picked || !picked.length) {
+        showToast('Retreat cancelled.', true);
+        G.pendingAction = null; clearHighlights();
+        return;
+      }
+      // Use auto-selected toDiscard (pre-computed above)
+    } else {
+      // Multiple options — let player choose
+      const picked = await openCardPicker({
+        title: `${p.active.name} — Retreat`,
+        subtitle: `Choose energy to discard (need ${retreatCost} energy value)`,
+        cards: attached,
+        maxSelect: attached.length,
       });
 
       if (!picked || !picked.length) {
@@ -3959,8 +4010,24 @@ async function performAttack(player, atk) {
       }
     }
 
-    if (koResult === 'win') { renderAll(); return; }
-    if (koResult === 'promote') { renderAll(); return; }
+    if (koResult === 'win') {
+      // Process attacker self-KO first if it happened simultaneously
+      if (attackerSelfKOd && myActive) {
+        addLog(`${myActive.name} was also knocked out by recoil!`, true);
+        G.players[player].discard.push(myActive);
+        G.players[player].active = null;
+      }
+      renderAll(); return;
+    }
+    if (koResult === 'promote') {
+      // Process attacker self-KO first if it happened simultaneously
+      if (attackerSelfKOd && myActive) {
+        addLog(`${myActive.name} was also knocked out by recoil!`, true);
+        G.players[player].discard.push(myActive);
+        G.players[player].active = null;
+      }
+      renderAll(); return;
+    }
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
     if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, 0);
@@ -3988,14 +4055,15 @@ async function performAttack(player, atk) {
     addLog(`${myActive.name} removed all damage counters!`, true);
   }
 
-  // ── Attack energy cost discard: "Discard N [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
   const discardCostMatch = (atk.text || '').match(
-    /discard (\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
   );
   if (discardCostMatch && myActive) {
-    const rawN = discardCostMatch[1];
-    const n = /^\d+$/.test(rawN) ? parseInt(rawN) : 1;
-    const discarded = myActive.attachedEnergy.splice(0, n);
+    const rawN = discardCostMatch[1].toLowerCase();
+    const discarded = rawN === 'all'
+      ? myActive.attachedEnergy.splice(0)
+      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
     G.players[player].discard.push(...discarded);
     addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
   }
@@ -5255,32 +5323,26 @@ function showBlockedFlash(attackingPlayer, attackerName, moveName, reason) {
 // subject: large center text e.g. card name or pokemon name
 // detail: optional small bottom line
 function showActionFlash(player, verb, subject, detail) {
-  const isOpponent = myRole !== null && player !== myRole;
-  if (!isOpponent) return;
+  const el = document.getElementById('action-flash');
+  const whoEl = document.getElementById('action-flash-who');
+  const subjectEl = document.getElementById('action-flash-subject');
+  const detailEl = document.getElementById('action-flash-detail');
 
-  const el = document.getElementById('move-flash');
-  const whoEl = document.getElementById('move-flash-who');
-  const attackerEl = document.getElementById('move-flash-attacker');
-  const moveEl = document.getElementById('move-flash-move');
-  const dmgEl = document.getElementById('move-flash-dmg');
+  const isOwnAction = myRole !== null && player === myRole;
+  const who = isOwnAction ? `YOU ${verb}` : (vsComputer ? `🤖 COMPUTER ${verb}` : `PLAYER ${player} ${verb}`);
+  whoEl.textContent = who;
+  subjectEl.textContent = (subject || '').toUpperCase();
+  detailEl.textContent = detail || '';
 
-  const who = vsComputer ? '🤖 COMPUTER' : `PLAYER ${player}`;
-  whoEl.textContent = `${who} ${verb}`;
-  attackerEl.textContent = '';
-  moveEl.textContent = (subject || '').toUpperCase();
-  dmgEl.textContent = detail || '';
+  el.className = 'show';
 
-  el.className = `show p${player}`;
-
-  const inner = document.getElementById('move-flash-inner');
+  const inner = document.getElementById('action-flash-inner');
   inner.style.animation = 'none';
   void inner.offsetWidth;
   inner.style.animation = '';
 
   clearTimeout(el._flashTimer);
-  const DURATION = 2000;
-  el._moveFlashUntil = Date.now() + DURATION;
-  el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+  el._flashTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
 function showTrainerFlash(player, cardName) {
