@@ -34,6 +34,9 @@
   --active-h:    clamp(182px, 25.2vw, 364px);
   --card-w-sm:   clamp(64px,  8vw,  110px);
   --card-h-sm:   clamp(90px,  11.2vw, 154px);
+  /* Prize card size: 2 cols × 3 rows must fit below midline alongside player zone */
+  --prize-w:     clamp(36px, 4.5vw, 62px);
+  --prize-h:     calc(var(--prize-w) * 1.4);
   /* Legacy aliases */
   --card-w:      var(--active-w);
   --card-h:      var(--active-h);
@@ -718,7 +721,6 @@ h1, h2, h3 { font-family: var(--font-title); }
   position: absolute;
   left: 10px;
   top: 50%;           /* anchored at midline */
-  bottom: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;   /* grow down from midline, not centered */
@@ -741,7 +743,6 @@ h1, h2, h3 { font-family: var(--font-title); }
   position: absolute;
   right: 10px;
   top: 50%;           /* anchored at midline */
-  bottom: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;   /* grow down from midline, not centered */
@@ -793,8 +794,8 @@ h1, h2, h3 { font-family: var(--font-title); }
 /* Player prizes — 2×3 grid */
 .prize-grid {
   display: grid;
-  grid-template-columns: repeat(2, var(--card-w-sm));
-  grid-template-rows: repeat(3, calc(var(--card-w-sm) * 1.4));
+  grid-template-columns: repeat(2, var(--prize-w));
+  grid-template-rows: repeat(3, var(--prize-h));
   gap: 4px;
 }
 
@@ -1837,6 +1838,8 @@ h1, h2, h3 { font-family: var(--font-title); }
     --active-h:  clamp(112px, 31vw, 168px);
     --card-w-sm: clamp(44px,  12vw,  72px);
     --card-h-sm: clamp(62px,  17vw, 100px);
+    --prize-w:   clamp(24px,  6vw,  38px);
+    --prize-h:   calc(var(--prize-w) * 1.4);
   }
 
   #hand-toggle-btn { display: inline-block; }
@@ -1904,15 +1907,15 @@ h1, h2, h3 { font-family: var(--font-title); }
   }
   #player-prizes-panel .panel-label { display: none; }
 
-  /* Prize pips — same style as opp prizes */
+  /* Prize grid — use responsive CSS variables */
   .prize-grid {
-    grid-template-columns: repeat(2, 13px);
-    grid-template-rows: repeat(3, 18px);
+    grid-template-columns: repeat(2, var(--prize-w));
+    grid-template-rows: repeat(3, var(--prize-h));
     gap: 3px;
   }
   .prize-slot {
-    width: 13px;
-    height: 18px;
+    width: var(--prize-w);
+    height: var(--prize-h);
     border-radius: 2px;
   }
   .prize-slot img { object-fit: cover; }  #player-aux {
@@ -1976,12 +1979,12 @@ h1, h2, h3 { font-family: var(--font-title); }
   /* Prizes — left column */
   .opp-prizes {
     grid-area: prizes;
-    grid-template-columns: repeat(2, 13px);
-    grid-template-rows: repeat(3, 18px);
+    grid-template-columns: repeat(2, var(--prize-w));
+    grid-template-rows: repeat(3, var(--prize-h));
     gap: 3px;
     align-self: center;
   }
-  .opp-prize-pip { width: 13px; height: 18px; border-radius: 2px; }
+  .opp-prize-pip { width: var(--prize-w); height: var(--prize-h); border-radius: 2px; }
 
   /* Deck + discard — right column, stacked */
   .opp-aux-row {
