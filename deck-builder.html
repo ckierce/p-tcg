@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pokémon TCG — Deck Builder</title>
+<style>
+:root {
+  --bg:         #1a3a2a;
+  --surface:    #1e4a32;
+  --surface2:   #245c3c;
+  --border:     #2d7a50;
+  --border2:    #3a9660;
+  --text:       #e8f0e0;
+  --muted:      #6a9c7a;
+  --accent:     #e8c84a;
+  --ok:         #48bb78;
+  --warn:       #ed8936;
+  --danger:     #f56565;
+  --font:       'Gill Sans', 'Gill Sans MT', Calibri, sans-serif;
+  --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
+  --radius:     4px;
+  --card-w:     150px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── HEADER ──────────────────────────────────────────────────────────────── */
+header {
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 100;
+}
+
+header h1 {
+  font-family: var(--font-title);
+  font-size: 15px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+header h1 span {
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: 3px;
+  display: block;
+  opacity: 0.7;
+}
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.deck-summary {
+  font-family: var(--font-title);
+  font-size: 9px;
+  color: var(--muted);
+  text-align: right;
+  letter-spacing: 1px;
+  margin-right: 4px;
+}
+.deck-summary strong {
+  color: var(--accent);
+  display: block;
+  font-size: 16px;
+  margin-bottom: 1px;
+}
+.deck-summary.full strong { color: var(--ok); }
+
+/* ── BUTTONS — mirror game board's lobby-btn / top-bar-btn ───────────────── */
+.btn {
+  font-family: var(--font);
+  font-size: 10px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border2);
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background: var(--surface2);
+  color: var(--text);
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: #f0d060; border-color: #f0d060; color: #000; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: var(--border);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--border2); }
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  font-size: 9px;
+  padding: 5px 10px;
+}
+.btn-danger:hover { background: rgba(245,101,101,.1); }
+
+a.btn { text-decoration: none; }
+
+/* ── LAYOUT ─────────────────────────────────────────────────────────────── */
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  height: calc(100vh - 53px);
+}
+
+/* ── LEFT: CARD BROWSER ──────────────────────────────────────────────────── */
+.browser {
+  overflow-y: auto;
+  padding: 16px 22px;
+  border-right: 1px solid var(--border);
+}
+
+.set-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.set-tab {
+  font-family: var(--font);
+  font-size: 10px;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.set-tab:hover { color: var(--text); border-color: var(--border2); }
+.set-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.search-wrap {
+  flex: 1;
+  min-width: 180px;
+  position: relative;
+}
+.search-wrap input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px 8px 32px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s;
+}
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap input::placeholder { color: var(--muted); }
+.search-wrap::before {
+  content: '🔍';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+select:focus { border-color: var(--accent); }
+
+.results-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.results-info {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .3px;
+}
+
+/* View toggle */
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  padding: 2px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+.view-btn {
+  width: 26px;
+  height: 24px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: all .15s;
+}
+.view-btn.active { background: var(--surface); color: var(--accent); }
+.view-btn:hover:not(.active) { color: var(--text); }
+
+/* ── CARD GRID ───────────────────────────────────────────────────────────── */
+.card-grid { display: block; }
+
+.card-grid-inner {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-w), 1fr));
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* Section / type headers */
+.grid-section-header {
+  font-family: var(--font-title);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 14px 0 7px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.grid-section-header:hover { color: var(--text); }
+
+.grid-type-header {
+  font-family: var(--font);
+  font-size: 11px;
+  color: var(--muted);
+  padding: 8px 0 5px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.grid-type-header:hover { color: var(--text); }
+
+.grid-section-count {
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+.collapse-arrow {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--muted);
+  transition: transform .2s;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.collapsible-group { overflow: hidden; }
+.collapsible-group.collapsed { display: none; }
+.section-collapsed .collapse-arrow { transform: rotate(-90deg); }
+
+/* Card tiles */
+.card-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .15s, border-color .15s;
+  position: relative;
+}
+.card-item:hover { transform: translateY(-2px); border-color: var(--accent); }
+.card-item.maxed { opacity: 0.35; pointer-events: none; }
+.card-item.in-deck { border-color: var(--accent); }
+.card-item.in-deck::after {
+  content: attr(data-count);
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background: var(--accent);
+  color: #000;
+  font-family: var(--font-title);
+  font-size: 9px;
+  font-weight: bold;
+  padding: 2px 5px;
+  border-radius: 3px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.card-img-wrap {
+  width: 100%;
+  aspect-ratio: 3/4.2;
+  overflow: hidden;
+  background: var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+.card-item:hover .card-img-wrap img { transform: scale(1.03); }
+.card-img-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+
+.card-info { padding: 6px 8px; border-top: 1px solid var(--border); }
+.card-name { font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+.card-type { font-size: 9px; color: var(--muted); }
+.card-set-badge {
+  font-family: var(--font-title);
+  font-size: 6px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: var(--surface2);
+  color: var(--muted);
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+
+.type-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+
+/* ── DESKTOP LIST VIEW ───────────────────────────────────────────────────── */
+.desktop-list .card-list-inner { gap: 4px; }
+.desktop-list .card-list-item { padding: 6px 10px; cursor: default; }
+.desktop-list .cli-thumb { width: 28px; height: 40px; }
+.desktop-list .cli-name { font-size: 12px; }
+.desktop-list .cli-add { width: 28px; height: 28px; font-size: 18px; border-radius: var(--radius); }
+.desktop-list .cli-more { display: none; }
+
+/* ── RIGHT: DECK PANEL ───────────────────────────────────────────────────── */
+.deck-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+}
+
+.deck-header {
+  padding: 13px 15px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.deck-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.deck-name-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  color: var(--text);
+  font-family: var(--font-title);
+  font-size: 10px;
+  outline: none;
+  transition: border-color .15s;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.deck-name-input:focus { border-color: var(--accent); }
+.deck-name-input::placeholder { color: var(--muted); }
+
+.deck-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+.stat-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 5px;
+  text-align: center;
+}
+.stat-box .stat-val { font-family: var(--font-title); font-size: 16px; color: var(--text); }
+.stat-box .stat-lbl { font-size: 9px; color: var(--muted); margin-top: 2px; letter-spacing: .3px; }
+
+.validation-strip {
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  font-size: 10px;
+  text-align: center;
+  display: none;
+  letter-spacing: .3px;
+}
+.validation-strip.show { display: block; }
+.validation-strip.ok  { background: rgba(72,187,120,.1);  color: var(--ok);   border: 1px solid rgba(72,187,120,.3); }
+.validation-strip.warn { background: rgba(237,137,54,.1); color: var(--warn); border: 1px solid rgba(237,137,54,.3); }
+
+.deck-list { flex: 1; overflow-y: auto; padding: 10px 13px; }
+
+.deck-group { margin-bottom: 13px; }
+.deck-group-label {
+  font-family: var(--font-title);
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.deck-card-row { display: flex; align-items: center; gap: 7px; padding: 4px 0; }
+.deck-card-img { width: 28px; height: 40px; border-radius: 3px; object-fit: cover; flex-shrink: 0; background: var(--surface2); }
+.deck-card-name { flex: 1; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+
+.qty-ctrl { display: flex; align-items: center; gap: 3px; }
+.qty-btn {
+  width: 20px; height: 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .1s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.qty-btn:hover { border-color: var(--accent); color: var(--accent); }
+.qty-num { font-family: var(--font-title); font-size: 10px; width: 14px; text-align: center; color: var(--accent); }
+
+.deck-actions {
+  padding: 11px 13px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 7px;
+}
+.deck-actions .btn { flex: 1; text-align: center; }
+
+.empty-deck { text-align: center; padding: 36px 16px; color: var(--muted); }
+.empty-deck .poke-emoji { font-size: 36px; margin-bottom: 10px; }
+.empty-deck p { font-family: var(--font-title); font-size: 9px; line-height: 2.2; letter-spacing: 1px; text-transform: uppercase; }
+
+/* ── LOADING / ERROR ─────────────────────────────────────────────────────── */
+.loading { text-align: center; padding: 60px 20px; color: var(--muted); }
+.loading .spinner {
+  font-family: var(--font-title);
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 3px;
+  animation: blink .8s step-end infinite;
+  display: block;
+  margin-bottom: 10px;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.error-msg { text-align: center; padding: 40px 20px; color: var(--danger); font-size: 13px; }
+
+/* ── TOAST — same style as game board ───────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(80px);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 9px 20px;
+  border-radius: var(--radius);
+  z-index: 1000;
+  transition: transform .25s ease;
+  white-space: nowrap;
+  letter-spacing: .3px;
+}
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.error { border-color: var(--danger); color: var(--danger); }
+
+/* ── MODAL ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.72);
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 22px;
+  width: 400px;
+  max-width: 90vw;
+}
+.modal h2 {
+  font-family: var(--font-title);
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.saved-deck-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-height: 280px; overflow-y: auto; }
+.saved-deck-item {
+  display: flex;
+  align-items: center;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  gap: 10px;
+  transition: border-color .15s;
+}
+.saved-deck-item:hover { border-color: var(--border2); }
+.saved-deck-item .d-name { flex: 1; font-size: 12px; color: var(--text); }
+.saved-deck-item .d-count { font-size: 10px; color: var(--muted); }
+.saved-deck-item .d-load {
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 5px 10px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+}
+.saved-deck-item .d-load:hover { background: #f0d060; }
+.saved-deck-item .d-del {
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.saved-deck-item .d-del:hover { background: rgba(245,101,101,.1); }
+.modal-close { width: 100%; }
+.no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
+
+/* ── MOBILE LIST ITEMS ───────────────────────────────────────────────────── */
+.card-list-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  position: relative;
+  transition: border-color .15s;
+}
+.card-list-item.in-deck { border-color: var(--accent); }
+.card-list-item.maxed { opacity: 0.4; }
+.card-list-item.maxed .cli-add { pointer-events: none; }
+
+.cli-thumb {
+  width: 32px; height: 46px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  overflow: hidden;
+}
+.cli-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.cli-info { flex: 1; min-width: 0; }
+.cli-name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cli-sub { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
+.cli-badge {
+  font-family: var(--font-title);
+  font-size: 6px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  background: var(--surface2);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.cli-deck-qty {
+  font-family: var(--font-title);
+  font-size: 9px;
+  color: var(--accent);
+  background: rgba(232,200,74,.1);
+  border: 1px solid rgba(232,200,74,.3);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  flex-shrink: 0;
+}
+.cli-add {
+  width: 32px; height: 32px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: rgba(232,200,74,.08);
+  color: var(--accent);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: background .15s, transform .1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.cli-add:active { background: rgba(232,200,74,.25); transform: scale(0.92); }
+.cli-more {
+  width: 26px; height: 32px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-list-section { margin-bottom: 4px; }
+.card-list-inner { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+
+/* ── ACTION SHEET ────────────────────────────────────────────────────────── */
+.action-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 300;
+  display: none;
+  align-items: flex-end;
+}
+.action-sheet-overlay.show { display: flex; }
+.action-sheet {
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-top: 1px solid var(--border2);
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+  animation: slideUp .2s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+.action-sheet-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.action-sheet-thumb {
+  width: 42px; height: 60px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--surface2);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+}
+.action-sheet-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.action-sheet-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.action-sheet-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.action-sheet-items { padding: 6px 0; }
+.action-sheet-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 13px 20px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background .1s;
+}
+.action-sheet-item:active { background: var(--surface2); }
+.action-sheet-item .asi-icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+.action-sheet-item.danger { color: var(--danger); }
+
+.action-sheet-cancel {
+  width: 100%;
+  padding: 13px;
+  background: var(--surface2);
+  border: none;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  -webkit-tap-highlight-color: transparent;
+}
+.action-sheet-cancel:hover { color: var(--text); }
+
+/* ── CARD ZOOM ───────────────────────────────────────────────────────────── */
+.card-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.85);
+  z-index: 400;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.card-zoom-overlay.show { display: flex; }
+.card-zoom-img {
+  max-width: min(340px, 90vw);
+  max-height: 85vh;
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(0,0,0,.8);
+  animation: zoomIn .18s ease;
+}
+@keyframes zoomIn { from { opacity: 0; transform: scale(0.88); } to { opacity: 1; transform: scale(1); } }
+
+/* ── MOBILE NAV BAR ─────────────────────────────────────────────────────── */
+.mobile-tabs {
+  display: none;
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  z-index: 150;
+}
+.mobile-tabs-inner {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  height: 54px;
+}
+.mobile-tab-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-title);
+  font-size: 7px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color .15s;
+  padding: 8px 0;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-tab-btn.active { color: var(--accent); }
+.mobile-tab-btn .tab-icon { font-size: 17px; line-height: 1; }
+
+.mobile-tab-badge {
+  position: absolute;
+  top: 5px; right: calc(50% - 22px);
+  background: var(--accent);
+  color: #000;
+  font-family: var(--font-title);
+  font-size: 7px;
+  font-weight: bold;
+  padding: 2px 4px;
+  border-radius: 3px;
+  min-width: 16px;
+  text-align: center;
+  display: none;
+}
+.mobile-tab-badge.visible { display: block; }
+
+/* ── SCROLLBAR ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
+@media (max-width: 800px) {
+  header { padding: 10px 14px; gap: 10px; flex-wrap: nowrap; }
+  header h1 { font-size: 10px; flex-shrink: 0; }
+  .header-right { gap: 5px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }
+  .deck-summary { display: none; }
+  .btn-ghost.hide-mobile { display: none; }
+  .btn { font-size: 8px; padding: 8px 10px; }
+
+  .layout { display: block; height: calc(100vh - 50px); position: relative; overflow: hidden; }
+  .browser {
+    position: absolute; inset: 0; bottom: 54px;
+    border-right: none; padding: 12px 10px;
+    transition: opacity .2s, transform .2s;
+  }
+  .deck-panel {
+    position: absolute; inset: 0; bottom: 54px;
+    max-height: none;
+    opacity: 0; pointer-events: none;
+    transform: translateX(20px);
+    transition: opacity .2s, transform .2s;
+  }
+  .browser.mobile-hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
+  .deck-panel.mobile-visible { opacity: 1; pointer-events: all; transform: translateX(0); }
+
+  .controls { gap: 6px; }
+  .search-wrap { min-width: 0; }
+  select { font-size: 12px; padding: 8px 9px; max-width: 105px; }
+
+  .set-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .set-tabs::-webkit-scrollbar { display: none; }
+  .set-tab { white-space: nowrap; flex-shrink: 0; font-size: 9px; }
+
+  :root { --card-w: 130px; }
+  .card-grid-inner { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+
+  .deck-header { padding: 12px 12px 10px; }
+  .stat-box .stat-val { font-size: 17px; }
+  .qty-btn { width: 28px; height: 28px; font-size: 17px; }
+  .deck-card-row { padding: 6px 0; }
+  .deck-actions { padding: 9px 12px 12px; }
+  .deck-actions .btn { padding: 11px 8px; font-size: 8px; }
+
+  .mobile-tabs { display: block; }
+  #view-toggle { display: none !important; }
+  .toast { bottom: 66px; }
+  .modal { padding: 18px 14px; }
+  .grid-section-header { font-size: 9px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pokémon TCG<span>Deck Builder</span></h1>
+  <div class="header-right">
+    <div class="deck-summary" id="deck-summary">
+      <strong>0 / 60</strong> cards
+    </div>
+    <button class="btn btn-ghost" id="mydecks-btn" onclick="openDecksModal()">My Decks</button>
+    <button class="btn btn-primary" onclick="saveDeck()">Save Deck</button>
+    <a href="pokemon-game.html" class="btn btn-ghost" style="text-decoration:none">▶ Play</a>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- CARD BROWSER -->
+  <div class="browser">
+    <div class="set-tabs">
+      <button class="set-tab active" data-set="">ALL SETS</button>
+      <button class="set-tab" data-set="base1">BASE SET</button>
+      <button class="set-tab" data-set="base2">JUNGLE</button>
+      <button class="set-tab" data-set="base3">FOSSIL</button>
+    </div>
+    <div class="controls">
+      <div class="search-wrap">
+        <input type="text" id="search" placeholder="Search cards..." oninput="filterCards()">
+      </div>
+      <select id="type-filter" onchange="filterCards()">
+        <option value="">All Types</option>
+        <option value="Pokémon">Pokémon</option>
+        <option value="Trainer">Trainer</option>
+        <option value="Energy">Energy</option>
+      </select>
+    </div>
+    <div class="results-row">
+      <div class="results-info" id="results-info"></div>
+      <div class="view-toggle" id="view-toggle" title="Toggle view">
+        <button class="view-btn active" id="vbtn-grid" onclick="setViewMode('grid')" title="Grid view">⊞</button>
+        <button class="view-btn" id="vbtn-list" onclick="setViewMode('list')" title="List view">☰</button>
+      </div>
+    </div>
+    <div class="card-grid" id="card-grid">
+      <div class="loading">
+        <span class="spinner">LOADING...</span>
+        <div style="font-size:12px;color:var(--muted)">Fetching card data…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DECK PANEL -->
+  <div class="deck-panel">
+    <div class="deck-header">
+      <div class="deck-name-row">
+        <input type="text" class="deck-name-input" id="deck-name" value="My Deck" placeholder="DECK NAME">
+      </div>
+      <div class="deck-stats">
+        <div class="stat-box"><div class="stat-val" id="stat-poke">0</div><div class="stat-lbl">Pokémon</div></div>
+        <div class="stat-box"><div class="stat-val" id="stat-trainer">0</div><div class="stat-lbl">Trainers</div></div>
+        <div class="stat-box"><div class="stat-val" id="stat-energy">0</div><div class="stat-lbl">Energy</div></div>
+      </div>
+      <div class="validation-strip" id="validation-strip"></div>
+    </div>
+    <div class="deck-list" id="deck-list">
+      <div class="empty-deck">
+        <div class="poke-emoji">🎴</div>
+        <p>Click cards<br>to add them<br>to your deck</p>
+      </div>
+    </div>
+    <div class="deck-actions">
+      <button class="btn btn-ghost" onclick="clearDeck()">Clear</button>
+      <button class="btn btn-primary" onclick="validateDeck(true)">Validate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Saved Decks Modal -->
+<div class="modal-overlay" id="decks-modal">
+  <div class="modal">
+    <h2>Saved Decks</h2>
+    <div class="saved-deck-list" id="saved-deck-list"></div>
+    <button class="btn btn-ghost modal-close" onclick="closeDecksModal()">Close</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Action Sheet -->
+<div class="action-sheet-overlay" id="action-sheet-overlay" onclick="if(event.target===this)closeActionSheet()">
+  <div class="action-sheet">
+    <div class="action-sheet-header">
+      <div class="action-sheet-thumb" id="as-thumb"></div>
+      <div>
+        <div class="action-sheet-title" id="as-title"></div>
+        <div class="action-sheet-sub" id="as-sub"></div>
+      </div>
+    </div>
+    <div class="action-sheet-items" id="as-items"></div>
+    <button class="action-sheet-cancel" onclick="closeActionSheet()">Cancel</button>
+  </div>
+</div>
+
+<!-- Card Zoom -->
+<div class="card-zoom-overlay" id="card-zoom-overlay" onclick="closeCardZoom()">
+  <img class="card-zoom-img" id="card-zoom-img" src="" alt="Card">
+</div>
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-tabs" id="mobile-tabs" aria-label="Mobile navigation">
+  <div class="mobile-tabs-inner">
+    <button class="mobile-tab-btn active" id="mob-browse-btn" onclick="mobileSwitchTab('browse')">
+      <span class="tab-icon">🃏</span>
+      Browse
+    </button>
+    <button class="mobile-tab-btn" id="mob-deck-btn" onclick="mobileSwitchTab('deck')">
+      <span class="tab-icon">📋</span>
+      Deck
+      <span class="mobile-tab-badge" id="mob-deck-badge"></span>
+    </button>
+  </div>
+</nav>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+// ─── FIREBASE ───────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyBw2KlsuxDum68R8H_ZehtEeWVlT-7zD9s",
+  authDomain: "p-tcg-a6b2c.firebaseapp.com",
+  databaseURL: "https://p-tcg-a6b2c-default-rtdb.firebaseio.com",
+  projectId: "p-tcg-a6b2c",
+  storageBucket: "p-tcg-a6b2c.firebasestorage.app",
+  messagingSenderId: "660283340232",
+  appId: "1:660283340232:web:68722a7b5f60de8cda7cfd"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ─── STATE ──────────────────────────────────────────────────────────────────
+const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil' };
+const MAX_COPIES = 4;
+const MAX_DECK = 60;
+
+function isSpecialEnergy(card) {
+  if (card.supertype !== 'Energy') return false;
+  if (card.subtypes && card.subtypes.includes('Basic')) return false;
+  return true;
+}
+function getMaxCopies(card) {
+  if (card.supertype !== 'Energy') return MAX_COPIES;
+  return isSpecialEnergy(card) ? MAX_COPIES : Infinity;
+}
+
+let allCards = [];
+let filteredCards = [];
+let deck = {};
+let activeSet = '';
+let viewMode = 'grid';
+const collapsedSections = new Set();
+
+function setViewMode(mode) {
+  viewMode = mode;
+  document.getElementById('vbtn-grid').classList.toggle('active', mode === 'grid');
+  document.getElementById('vbtn-list').classList.toggle('active', mode === 'list');
+  renderGrid();
+}
+
+function toggleSection(key) {
+  if (collapsedSections.has(key)) collapsedSections.delete(key);
+  else collapsedSections.add(key);
+  renderGrid();
+}
+
+// ─── FETCH ──────────────────────────────────────────────────────────────────
+async function fetchAllCards() {
+  const grid = document.getElementById('card-grid');
+  try {
+    const res = await fetch('cards.json');
+    if (!res.ok) throw new Error('cards.json not found');
+    allCards = await res.json();
+    filterCards();
+  } catch(e) {
+    grid.innerHTML = `<div class="error-msg">⚠️ Could not load cards.json.<br>Make sure it's in your repo.</div>`;
+  }
+}
+
+// ─── FILTER / RENDER ────────────────────────────────────────────────────────
+const TYPE_ORDER = ['Fire','Water','Grass','Lightning','Psychic','Fighting','Colorless','Darkness','Metal'];
+const TYPE_LABELS = {
+  Fire:'🔥 Fire', Water:'💧 Water', Grass:'🌿 Grass', Lightning:'⚡ Lightning',
+  Psychic:'🔮 Psychic', Fighting:'👊 Fighting', Colorless:'⭐ Colorless',
+  Darkness:'🌑 Darkness', Metal:'⚙️ Metal'
+};
+
+function cardEnergyType(c) {
+  return (c.types && c.types[0]) ? c.types[0] : 'Colorless';
+}
+
+function filterCards() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const typeF = document.getElementById('type-filter').value;
+  filteredCards = allCards.filter(c => {
+    const matchSet = !activeSet || c.set.id === activeSet;
+    const matchQ = !q || c.name.toLowerCase().includes(q);
+    const matchType = !typeF || c.supertype === typeF;
+    return matchSet && matchQ && matchType;
+  });
+  filteredCards.sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('results-info').textContent =
+    `${filteredCards.length} card${filteredCards.length !== 1 ? 's' : ''}`;
+  renderGrid();
+}
+
+function typeColor(types) {
+  const t = types && types[0] ? types[0].toLowerCase() : '';
+  const map = {
+    fire:'#ff6b35', water:'#4fc3f7', grass:'#66bb6a', lightning:'#ffd54f',
+    psychic:'#ce93d8', fighting:'#a1887f', colorless:'#90a4ae',
+    darkness:'#7986cb', metal:'#b0bec5',
+  };
+  return map[t] || '#90a4ae';
+}
+
+function typeEmoji(supertype) {
+  if (supertype === 'Energy') return '⚡';
+  if (supertype === 'Trainer') return '🎩';
+  return '🔴';
+}
+
+function cardHTML(c) {
+  const inDeck = deck[c.id];
+  const qty = inDeck ? inDeck.qty : 0;
+  const cardMax = getMaxCopies(c);
+  const atMax = qty >= cardMax;
+  const deckFull = deckTotal() >= MAX_DECK;
+  const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
+  const imgSrc = c.images?.small || '';
+  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-count="${qty}" onclick="addCard('${c.id}')" title="${c.name}">
+    <div class="card-img-wrap">
+      ${imgSrc
+        ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">`
+        : `<div class="card-img-placeholder">${typeEmoji(c.supertype)}</div>`}
+    </div>
+    <div class="card-info">
+      <div class="card-name">${c.name}</div>
+      <div class="card-meta">
+        <span class="card-type">
+          <span class="type-dot" style="background:${typeColor(c.types)}"></span>
+          ${c.supertype === 'Energy' ? 'Energy' : c.supertype === 'Trainer' ? 'Trainer' : cardEnergyType(c)}
+        </span>
+        <span class="card-set-badge">${SET_NAMES[c.set.id] || c.set.id}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderGrid() {
+  const grid = document.getElementById('card-grid');
+  if (!filteredCards.length) {
+    grid.innerHTML = `<div class="error-msg" style="padding:40px">No cards match your search.</div>`;
+    return;
+  }
+
+  const mobile = isMobileLayout();
+  const useList = mobile || viewMode === 'list';
+  const toggle = document.getElementById('view-toggle');
+  if (toggle) toggle.style.display = mobile ? 'none' : '';
+
+  const cardFn = useList ? cardListItemHTML : cardHTML;
+
+  function wrapCards(cards, collapseKey) {
+    if (collapsedSections.has(collapseKey)) return '';
+    if (useList) {
+      const cls = mobile ? 'card-list-inner' : 'card-list-inner desktop-list-inner';
+      return `<div class="${cls}">` + cards.map(cardFn).join('') + `</div>`;
+    }
+    return `<div class="card-grid-inner">` + cards.map(cardFn).join('') + `</div>`;
+  }
+
+  function pokeSort(arr) {
+    return arr.slice().sort((a, b) => {
+      const na = (a.nationalPokedexNumbers && a.nationalPokedexNumbers[0]) ?? Infinity;
+      const nb = (b.nationalPokedexNumbers && b.nationalPokedexNumbers[0]) ?? Infinity;
+      if (na !== nb) return na - nb;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  const pokemon  = filteredCards.filter(c => c.supertype === 'Pokémon');
+  const trainers = filteredCards.filter(c => c.supertype === 'Trainer');
+  const energies = filteredCards.filter(c => c.supertype === 'Energy');
+  let html = '';
+
+  if (pokemon.length) {
+    html += sectionHeader('Pokémon', pokemon.length, 'sec-pokemon');
+    if (!collapsedSections.has('sec-pokemon')) {
+      const byType = {};
+      pokemon.forEach(c => {
+        const t = cardEnergyType(c);
+        if (!byType[t]) byType[t] = [];
+        byType[t].push(c);
+      });
+      Object.keys(byType).forEach(t => { byType[t] = pokeSort(byType[t]); });
+      for (const t of TYPE_ORDER) {
+        if (!byType[t]) continue;
+        const tkey = 'type-' + t;
+        html += typeGroupHeader(t, typeColor([t]), byType[t].length, tkey);
+        html += wrapCards(byType[t], tkey);
+      }
+      Object.keys(byType).filter(t => !TYPE_ORDER.includes(t)).forEach(t => {
+        const tkey = 'type-' + t;
+        html += typeGroupHeader(t, typeColor([t]), byType[t].length, tkey);
+        html += wrapCards(byType[t], tkey);
+      });
+    }
+  }
+  if (trainers.length) {
+    html += sectionHeader('Trainers', trainers.length, 'sec-trainers');
+    html += wrapCards(trainers, 'sec-trainers');
+  }
+  if (energies.length) {
+    html += sectionHeader('Energy', energies.length, 'sec-energy');
+    html += wrapCards(energies, 'sec-energy');
+  }
+
+  grid.innerHTML = html;
+
+  if (!mobile && useList) {
+    grid.querySelectorAll('.card-list-inner').forEach(el => el.classList.add('desktop-list'));
+    grid.querySelectorAll('.cli-more').forEach(el => el.style.display = 'none');
+  }
+}
+
+function sectionHeader(label, count, key) {
+  const collapsed = collapsedSections.has(key);
+  return `<div class="grid-section-header${collapsed ? ' section-collapsed' : ''}" onclick="toggleSection('${key}')">
+    ${label} <span class="grid-section-count">${count}</span>
+    <span class="collapse-arrow">▼</span>
+  </div>`;
+}
+
+function typeGroupHeader(type, color, count, key) {
+  const collapsed = collapsedSections.has(key);
+  return `<div class="grid-type-header${collapsed ? ' section-collapsed' : ''}" onclick="toggleSection('${key}')">
+    <span class="type-dot" style="background:${color};width:9px;height:9px;display:inline-block;border-radius:50%;margin-right:6px;vertical-align:middle;flex-shrink:0"></span>
+    ${TYPE_LABELS[type] || type} <span class="grid-section-count">${count}</span>
+    <span class="collapse-arrow" style="font-size:8px">▼</span>
+  </div>`;
+}
+
+// ─── MOBILE LIST RENDERING ──────────────────────────────────────────────────
+function isMobileLayout() {
+  return window.innerWidth <= 800;
+}
+
+function cardLevel(c) {
+  if (c.supertype !== 'Pokémon') return null;
+  if (c.level) return `Lv.${c.level}`;
+  return null;
+}
+
+function cardListItemHTML(c) {
+  const inDeck = deck[c.id];
+  const qty = inDeck ? inDeck.qty : 0;
+  const cardMax = getMaxCopies(c);
+  const atMax = qty >= cardMax;
+  const deckFull = deckTotal() >= MAX_DECK;
+  const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
+  const imgSrc = c.images?.small || '';
+  const level = cardLevel(c);
+  const typeLabel = c.supertype === 'Energy' ? 'Energy'
+    : c.supertype === 'Trainer' ? 'Trainer'
+    : cardEnergyType(c);
+
+  return `<div class="card-list-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-id="${c.id}">
+    <div class="cli-thumb">
+      ${imgSrc ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">` : typeEmoji(c.supertype)}
+    </div>
+    <div class="cli-info">
+      <div class="cli-name">${c.name}</div>
+      <div class="cli-sub">
+        <span class="type-dot" style="background:${typeColor(c.types)};width:6px;height:6px;border-radius:50%;flex-shrink:0"></span>
+        ${level ? `${level} · ` : ''}${typeLabel}
+        <span class="cli-badge">${SET_NAMES[c.set.id] || c.set.id}</span>
+      </div>
+    </div>
+    ${qty > 0 ? `<span class="cli-deck-qty">×${qty}</span>` : ''}
+    <button class="cli-more" onclick="openActionSheet('${c.id}')" aria-label="More options">⋯</button>
+    <button class="cli-add" onclick="addCard('${c.id}')" aria-label="Add to deck">+</button>
+  </div>`;
+}
+
+// ─── ACTION SHEET ────────────────────────────────────────────────────────────
+let actionSheetCardId = null;
+
+function openActionSheet(cardId) {
+  const card = allCards.find(c => c.id === cardId);
+  if (!card) return;
+  actionSheetCardId = cardId;
+  const inDeck = deck[cardId];
+  const qty = inDeck ? inDeck.qty : 0;
+  const imgSrc = card.images?.small || '';
+  const level = cardLevel(card);
+  const typeLabel = card.supertype === 'Energy' ? 'Energy'
+    : card.supertype === 'Trainer' ? 'Trainer'
+    : cardEnergyType(card);
+  const cardMax = getMaxCopies(card);
+  const atMax = qty >= cardMax;
+
+  document.getElementById('as-thumb').innerHTML = imgSrc
+    ? `<img src="${imgSrc}" alt="${card.name}">` : typeEmoji(card.supertype);
+  document.getElementById('as-title').textContent = card.name;
+  document.getElementById('as-sub').textContent =
+    [level, typeLabel, SET_NAMES[card.set.id] || card.set.id].filter(Boolean).join(' · ');
+
+  let html = '';
+  if (!atMax && deckTotal() < MAX_DECK) {
+    html += `<div class="action-sheet-item" onclick="asAddCard()">
+      <span class="asi-icon">➕</span> Add to Deck${qty > 0 ? ` (×${qty} in deck)` : ''}
+    </div>`;
+  } else if (atMax) {
+    html += `<div class="action-sheet-item" style="opacity:0.4;cursor:default">
+      <span class="asi-icon">🚫</span> Max copies in deck (${qty}/${cardMax})
+    </div>`;
+  } else {
+    html += `<div class="action-sheet-item" style="opacity:0.4;cursor:default">
+      <span class="asi-icon">🚫</span> Deck is full (60/60)
+    </div>`;
+  }
+  if (qty > 0) {
+    html += `<div class="action-sheet-item danger" onclick="asRemoveCard()">
+      <span class="asi-icon">➖</span> Remove one (×${qty} in deck)
+    </div>`;
+  }
+  html += `<div class="action-sheet-item" onclick="asViewCard()">
+    <span class="asi-icon">🔍</span> View full card
+  </div>`;
+  document.getElementById('as-items').innerHTML = html;
+  document.getElementById('action-sheet-overlay').classList.add('show');
+}
+
+function closeActionSheet() {
+  document.getElementById('action-sheet-overlay').classList.remove('show');
+  actionSheetCardId = null;
+}
+function asAddCard()    { if (actionSheetCardId) { addCard(actionSheetCardId); closeActionSheet(); } }
+function asRemoveCard() { if (actionSheetCardId) { changeQty(actionSheetCardId, -1); closeActionSheet(); } }
+function asViewCard() {
+  if (!actionSheetCardId) return;
+  const card = allCards.find(c => c.id === actionSheetCardId);
+  if (!card) return;
+  const imgSrc = card.images?.large || card.images?.small || '';
+  if (!imgSrc) { showToast('No image available', true); closeActionSheet(); return; }
+  document.getElementById('card-zoom-img').src = imgSrc;
+  document.getElementById('card-zoom-overlay').classList.add('show');
+  closeActionSheet();
+}
+function closeCardZoom() {
+  document.getElementById('card-zoom-overlay').classList.remove('show');
+}
+
+// ─── DECK OPS ───────────────────────────────────────────────────────────────
+function deckTotal() {
+  return Object.values(deck).reduce((s, v) => s + v.qty, 0);
+}
+
+function addCard(id) {
+  const card = allCards.find(c => c.id === id);
+  if (!card) return;
+  const existing = deck[id];
+  const qty = existing ? existing.qty : 0;
+  const cardMax = getMaxCopies(card);
+  if (qty >= cardMax) { showToast(`Max ${cardMax} copies allowed!`, true); return; }
+  if (deckTotal() >= MAX_DECK) { showToast('Deck is full! (60 cards)', true); return; }
+  deck[id] = { card, qty: qty + 1 };
+  renderDeck(); renderGrid(); validateDeck(false);
+}
+
+function changeQty(id, delta) {
+  if (!deck[id]) return;
+  const card = deck[id].card;
+  const newQty = deck[id].qty + delta;
+  const cardMax = getMaxCopies(card);
+  if (delta > 0) {
+    if (newQty > cardMax) { showToast(`Max ${cardMax} copies!`, true); return; }
+    if (deckTotal() >= MAX_DECK) { showToast('Deck full!', true); return; }
+  }
+  if (newQty <= 0) { delete deck[id]; }
+  else { deck[id].qty = newQty; }
+  renderDeck(); renderGrid(); validateDeck(false);
+}
+
+function clearDeck() {
+  if (!Object.keys(deck).length) return;
+  deck = {};
+  renderDeck(); renderGrid(); updateHeader();
+  document.getElementById('validation-strip').className = 'validation-strip';
+}
+
+// ─── RENDER DECK ────────────────────────────────────────────────────────────
+function renderDeck() {
+  const list = document.getElementById('deck-list');
+  const entries = Object.values(deck);
+  if (!entries.length) {
+    list.innerHTML = `<div class="empty-deck"><div class="poke-emoji">🎴</div><p>Click cards<br>to add them<br>to your deck</p></div>`;
+    updateHeader(); updateStats(0,0,0); return;
+  }
+  const groups = { 'Pokémon': [], 'Trainer': [], 'Energy': [] };
+  entries.forEach(e => {
+    const g = e.card.supertype;
+    if (groups[g]) groups[g].push(e); else groups['Trainer'].push(e);
+  });
+  Object.values(groups).forEach(g => g.sort((a,b) => a.card.name.localeCompare(b.card.name)));
+  let html = '';
+  for (const [label, cards] of Object.entries(groups)) {
+    if (!cards.length) continue;
+    const groupTotal = cards.reduce((s,c) => s+c.qty, 0);
+    html += `<div class="deck-group"><div class="deck-group-label">${label} (${groupTotal})</div>`;
+    cards.forEach(({card, qty}) => {
+      const img = card.images?.small;
+      html += `<div class="deck-card-row">
+        ${img
+          ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy">`
+          : `<div class="deck-card-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">${typeEmoji(card.supertype)}</div>`}
+        <span class="deck-card-name">${card.name}</span>
+        <div class="qty-ctrl">
+          <button class="qty-btn" onclick="changeQty('${card.id}', -1)">−</button>
+          <span class="qty-num">${qty}</span>
+          <button class="qty-btn" onclick="changeQty('${card.id}', 1)">+</button>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  list.innerHTML = html;
+  const poke    = groups['Pokémon'].reduce((s,c)=>s+c.qty,0);
+  const trainer = groups['Trainer'].reduce((s,c)=>s+c.qty,0);
+  const energy  = groups['Energy'].reduce((s,c)=>s+c.qty,0);
+  updateStats(poke, trainer, energy);
+  updateHeader();
+}
+
+function updateStats(p, t, e) {
+  document.getElementById('stat-poke').textContent = p;
+  document.getElementById('stat-trainer').textContent = t;
+  document.getElementById('stat-energy').textContent = e;
+}
+
+function updateHeader() {
+  const total = deckTotal();
+  const summary = document.getElementById('deck-summary');
+  summary.innerHTML = `<strong>${total} / 60</strong>cards`;
+  summary.className = 'deck-summary' + (total >= MAX_DECK ? ' full' : '');
+  updateMobileBadge();
+}
+
+// ─── VALIDATE ───────────────────────────────────────────────────────────────
+function validateDeck(showResult) {
+  const total = deckTotal();
+  const issues = [];
+  if (total < MAX_DECK) issues.push(`Need ${MAX_DECK - total} more card${MAX_DECK - total !== 1 ? 's' : ''}`);
+  if (total > MAX_DECK) issues.push(`${total - MAX_DECK} cards over limit`);
+  const pokemon = Object.values(deck).filter(e => e.card.supertype === 'Pokémon');
+  const basics  = pokemon.filter(e => e.card.subtypes && e.card.subtypes.includes('Basic'));
+  if (!basics.length) issues.push('Need at least 1 Basic Pokémon');
+  const strip = document.getElementById('validation-strip');
+  if (showResult || total > 0) {
+    if (!issues.length) {
+      strip.textContent = '✓ Deck is valid and ready to play!';
+      strip.className = 'validation-strip show ok';
+    } else {
+      strip.textContent = issues[0];
+      strip.className = 'validation-strip show warn';
+    }
+  }
+  return issues.length === 0;
+}
+
+// ─── SAVE / LOAD (Firebase) ──────────────────────────────────────────────────
+async function saveDeck() {
+  const name = document.getElementById('deck-name').value.trim() || 'My Deck';
+  if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
+  showToast('Saving…');
+  const deckData = {
+    name,
+    savedAt: Date.now(),
+    deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [
+      id, {
+        cardId: id, qty,
+        name: card.name,
+        supertype: card.supertype,
+        img: card.images?.small || '',
+        subtypes: card.subtypes || [],
+        hp: card.hp || '',
+        attacks: card.attacks || [],
+        types: card.types || []
+      }
+    ]))
+  };
+  const key = name.replace(/[.#$[\]]/g, '_');
+  await db.ref(`decks/${key}`).set(deckData);
+  showToast(`"${name}" saved!`);
+}
+
+async function openDecksModal() {
+  const list = document.getElementById('saved-deck-list');
+  list.innerHTML = `<div class="no-saved">Loading…</div>`;
+  document.getElementById('decks-modal').classList.add('show');
+  try {
+    const snap = await db.ref('decks').once('value');
+    const saved = snap.val() || {};
+    const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
+    if (!entries.length) {
+      list.innerHTML = `<div class="no-saved">No saved decks yet.</div>`;
+    } else {
+      list.innerHTML = entries.map(d => {
+        const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
+        return `<div class="saved-deck-item">
+          <div>
+            <div class="d-name">${d.name}</div>
+            <div class="d-count">${total} cards</div>
+          </div>
+          <button class="d-load" onclick="loadDeck('${encodeURIComponent(d.name)}')">Load</button>
+          <button class="d-del"  onclick="deleteDeck('${encodeURIComponent(d.name)}')">Del</button>
+        </div>`;
+      }).join('');
+    }
+  } catch(e) {
+    list.innerHTML = `<div class="no-saved" style="color:var(--danger)">Could not connect to Firebase.</div>`;
+  }
+}
+
+function closeDecksModal() {
+  document.getElementById('decks-modal').classList.remove('show');
+}
+
+async function loadDeck(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const key = name.replace(/[.#$[\]]/g, '_');
+  const snap = await db.ref(`decks/${key}`).once('value');
+  const d = snap.val();
+  if (!d) { showToast('Deck not found', true); return; }
+  deck = {};
+  Object.values(d.deck).forEach(entry => {
+    const full = allCards.find(c => c.id === entry.cardId);
+    if (full) {
+      deck[entry.cardId] = { card: full, qty: entry.qty };
+    } else {
+      deck[entry.cardId] = {
+        qty: entry.qty,
+        card: {
+          id: entry.cardId, name: entry.name, supertype: entry.supertype,
+          images: { small: entry.img }, subtypes: entry.subtypes || [],
+          hp: entry.hp || '', attacks: entry.attacks || [], types: entry.types || []
+        }
+      };
+    }
+  });
+  document.getElementById('deck-name').value = name;
+  renderDeck(); renderGrid(); validateDeck(false);
+  closeDecksModal();
+  showToast(`"${name}" loaded!`);
+}
+
+async function deleteDeck(encodedName) {
+  const name = decodeURIComponent(encodedName);
+  const key = name.replace(/[.#$[\]]/g, '_');
+  await db.ref(`decks/${key}`).remove();
+  openDecksModal();
+  showToast(`"${name}" deleted.`);
+}
+
+// ─── UI HELPERS ──────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (isError ? ' error' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), 2200);
+}
+
+document.querySelectorAll('.set-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.set-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    activeSet = tab.dataset.set;
+    filterCards();
+  });
+});
+
+document.getElementById('decks-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeDecksModal();
+});
+
+// ─── MOBILE TAB SWITCHING ────────────────────────────────────────────────────
+function mobileSwitchTab(tab) {
+  const browser   = document.querySelector('.browser');
+  const deckPanel = document.querySelector('.deck-panel');
+  const browseBtn = document.getElementById('mob-browse-btn');
+  const deckBtn   = document.getElementById('mob-deck-btn');
+  if (tab === 'browse') {
+    browser.classList.remove('mobile-hidden');
+    deckPanel.classList.remove('mobile-visible');
+    browseBtn.classList.add('active');
+    deckBtn.classList.remove('active');
+  } else {
+    browser.classList.add('mobile-hidden');
+    deckPanel.classList.add('mobile-visible');
+    deckBtn.classList.add('active');
+    browseBtn.classList.remove('active');
+  }
+}
+
+function updateMobileBadge() {
+  const total = deckTotal();
+  const badge = document.getElementById('mob-deck-badge');
+  if (!badge) return;
+  if (total > 0) { badge.textContent = total; badge.classList.add('visible'); }
+  else { badge.classList.remove('visible'); }
+}
+
+// Flash deck tab on mobile when card added
+const _origAddCard = addCard;
+window.addCard = function(id) {
+  const prev = deckTotal();
+  _origAddCard(id);
+  if (window.innerWidth <= 800 && deckTotal() > prev) {
+    const btn = document.getElementById('mob-deck-btn');
+    if (btn) {
+      btn.style.color = 'var(--accent)';
+      setTimeout(() => { if (!btn.classList.contains('active')) btn.style.color = ''; }, 500);
+    }
+  }
+};
+
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderGrid, 150);
+});
+
+fetchAllCards();
+</script>
+</body>
+</html>
