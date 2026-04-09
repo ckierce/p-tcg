@@ -2173,7 +2173,7 @@ h1, h2, h3 { font-family: var(--font-title); }
       <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
-      <a class="setup-back" href="index.html">← Back to Deck Builder</a>
+      <a class="setup-back" href="deck-builder.html">← Back to Deck Builder</a>
     </div>
   </div>
 
@@ -2580,7 +2580,7 @@ async function openLoadModal(player) {
     const saved = snap.val() || {};
     const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
     if (!entries.length) {
-      list.innerHTML = `<div class="no-saved">No saved decks. <a href="index.html" style="color:var(--accent)">Build one first →</a></div>`;
+      list.innerHTML = `<div class="no-saved">No saved decks. <a href="deck-builder.html" style="color:var(--accent)">Build one first →</a></div>`;
     } else {
       list.innerHTML = entries.map(d => {
         const total = Object.values(d.deck).reduce((s,c) => s + c.qty, 0);
