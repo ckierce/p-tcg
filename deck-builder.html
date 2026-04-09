@@ -1519,20 +1519,36 @@ async function renderFolderList() {
   try {
     const snap = await db.ref('decks').once('value');
     const data = snap.val() || {};
-    const folders = Object.keys(data).sort();
-    if (!folders.length) {
+    if (!Object.keys(data).length) {
       list.innerHTML = `<div class="no-saved">No folders yet. Save a deck to create one.</div>`;
       return;
     }
-    list.innerHTML = folders.map(fKey => {
-      const folderData = data[fKey];
-      // folder node: values are deck objects (have a .deck property)
-      const deckCount = Object.values(folderData).filter(v => v && v.deck).length;
-      const displayName = Object.values(folderData).find(v => v && v.folder)?.folder || fKey;
+    // A node is a legacy flat deck if it has a .deck property directly.
+    // A node is a folder if its children are deck objects.
+    function isLegacyDeck(node) { return node && typeof node === 'object' && node.deck && node.name; }
+    function isFolderNode(node) { return node && typeof node === 'object' && !node.deck; }
+
+    // Group legacy decks under a synthetic "Uncategorized" folder
+    const folders = {}; // fKey -> { displayName, decks: [] }
+    for (const [fKey, node] of Object.entries(data)) {
+      if (isLegacyDeck(node)) {
+        // Legacy flat deck — slot into Uncategorized
+        if (!folders['_uncategorized']) folders['_uncategorized'] = { displayName: 'Uncategorized', decks: [] };
+        folders['_uncategorized'].decks.push(node);
+      } else if (isFolderNode(node)) {
+        const children = Object.values(node).filter(v => isLegacyDeck(v));
+        const displayName = children.find(v => v.folder)?.folder || fKey;
+        folders[fKey] = { displayName, decks: children };
+      }
+    }
+    const folderKeys = Object.keys(folders).sort();
+    list.innerHTML = folderKeys.map(fKey => {
+      const { displayName, decks } = folders[fKey];
+      const icon = fKey === '_uncategorized' ? '📂' : '📁';
       return `<div class="saved-deck-item" style="cursor:pointer" onclick="openFolder('${encodeURIComponent(fKey)}','${encodeURIComponent(displayName)}')">
         <div>
-          <div class="d-name">📁 ${displayName}</div>
-          <div class="d-count">${deckCount} deck${deckCount !== 1 ? 's' : ''}</div>
+          <div class="d-name">${icon} ${displayName}</div>
+          <div class="d-count">${decks.length} deck${decks.length !== 1 ? 's' : ''}</div>
         </div>
         <span style="color:var(--muted);font-size:18px">›</span>
       </div>`;
@@ -1556,9 +1572,19 @@ async function openFolder(encodedFKey, encodedDisplayName) {
   newFolderBtn.style.display = 'none';
   list.innerHTML = `<div class="no-saved">Loading…</div>`;
   try {
-    const snap = await db.ref(`decks/${fKey}`).once('value');
-    const data = snap.val() || {};
-    const entries = Object.values(data).filter(v => v && v.deck).sort((a,b) => b.savedAt - a.savedAt);
+    let entries = [];
+    if (fKey === '_uncategorized') {
+      // Legacy flat decks live directly under decks/
+      const snap = await db.ref('decks').once('value');
+      const data = snap.val() || {};
+      entries = Object.values(data).filter(v => v && typeof v === 'object' && v.deck && v.name)
+                  .sort((a,b) => b.savedAt - a.savedAt);
+    } else {
+      const snap = await db.ref(`decks/${fKey}`).once('value');
+      const data = snap.val() || {};
+      entries = Object.values(data).filter(v => v && typeof v === 'object' && v.deck && v.name)
+                  .sort((a,b) => b.savedAt - a.savedAt);
+    }
     if (!entries.length) {
       list.innerHTML = `<div class="no-saved">No decks in this folder.</div>`;
       return;
@@ -1602,7 +1628,10 @@ function closeDecksModal() {
 async function loadDeck(encodedFKey, encodedName) {
   const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
-  const snap = await db.ref(`decks/${fKey}/${fbKey(name)}`).once('value');
+  const path = fKey === '_uncategorized'
+    ? `decks/${fbKey(name)}`
+    : `decks/${fKey}/${fbKey(name)}`;
+  const snap = await db.ref(path).once('value');
   const d = snap.val();
   if (!d) { showToast('Deck not found', true); return; }
   deck = {};
@@ -1631,7 +1660,10 @@ async function loadDeck(encodedFKey, encodedName) {
 async function deleteDeck(encodedFKey, encodedName) {
   const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
-  await db.ref(`decks/${fKey}/${fbKey(name)}`).remove();
+  const path = fKey === '_uncategorized'
+    ? `decks/${fbKey(name)}`
+    : `decks/${fKey}/${fbKey(name)}`;
+  await db.ref(path).remove();
   openFolder(encodedFKey, encodeURIComponent(currentFolderName || fKey));
   showToast(`"${name}" deleted.`);
 }

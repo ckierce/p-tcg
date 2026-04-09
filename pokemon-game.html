@@ -2578,20 +2578,33 @@ async function openLoadModal(player) {
   try {
     const snap = await db.ref('decks').once('value');
     const data = snap.val() || {};
-    const folders = Object.keys(data).sort();
-    if (!folders.length) {
+    if (!Object.keys(data).length) {
       list.innerHTML = `<div class="no-saved">No saved decks. <a href="deck-builder.html" style="color:var(--accent)">Build one first →</a></div>`;
     } else {
-      // Render folder list; clicking a folder expands it inline
+      function isLegacyDeck(node) { return node && typeof node === 'object' && node.deck && node.name; }
+
+      // Build folder map — legacy flat decks go into _uncategorized
+      const folders = {};
+      for (const [fKey, node] of Object.entries(data)) {
+        if (isLegacyDeck(node)) {
+          if (!folders['_uncategorized']) folders['_uncategorized'] = { displayName: 'Uncategorized', decks: [] };
+          folders['_uncategorized'].decks.push(node);
+        } else if (node && typeof node === 'object' && !node.deck) {
+          const children = Object.values(node).filter(v => isLegacyDeck(v));
+          const displayName = children.find(v => v.folder)?.folder || fKey;
+          folders[fKey] = { displayName, decks: children };
+        }
+      }
+
       function renderFolders() {
-        list.innerHTML = folders.map(fKey => {
-          const folderData = data[fKey];
-          const deckCount = Object.values(folderData).filter(v => v && v.deck).length;
-          const displayName = Object.values(folderData).find(v => v && v.folder)?.folder || fKey;
+        const folderKeys = Object.keys(folders).sort();
+        list.innerHTML = folderKeys.map(fKey => {
+          const { displayName, decks } = folders[fKey];
+          const icon = fKey === '_uncategorized' ? '📂' : '📁';
           return `<div class="modal-deck-item" data-fkey="${escapeAttr(fKey)}" data-fname="${escapeAttr(displayName)}">
             <div>
-              <div class="d-name">📁 ${escapeHtml(displayName)}</div>
-              <div class="d-count">${deckCount} deck${deckCount !== 1 ? 's' : ''}</div>
+              <div class="d-name">${icon} ${escapeHtml(displayName)}</div>
+              <div class="d-count">${decks.length} deck${decks.length !== 1 ? 's' : ''}</div>
             </div>
             <span style="color:var(--muted);font-size:18px">›</span>
           </div>`;
@@ -2600,10 +2613,11 @@ async function openLoadModal(player) {
           el.addEventListener('click', () => renderDeckList(el.dataset.fkey, el.dataset.fname));
         });
       }
+
       function renderDeckList(fKey, displayName) {
-        const entries = Object.values(data[fKey]).filter(v => v && v.deck).sort((a,b) => b.savedAt - a.savedAt);
-        list.innerHTML = `
-          <div class="modal-deck-item" style="border-color:var(--border);color:var(--muted);cursor:pointer" onclick="(${renderFolders.toString()})()">
+        const entries = (folders[fKey]?.decks || []).sort((a,b) => b.savedAt - a.savedAt);
+        list.innerHTML =
+          `<div class="modal-deck-item" style="border-color:var(--border);color:var(--muted);cursor:pointer" onclick="(${renderFolders.toString()})()">
             <div class="d-name">← ${escapeHtml(displayName)}</div>
           </div>` +
           (entries.length ? entries.map(d => {
@@ -2650,7 +2664,10 @@ async function loadDeck(fKey, deckName) {
   closeLoadModal();
   showToast(`Loading ${deckName}...`);
   try {
-    const snap = await db.ref(`decks/${fKey}/${key}`).once('value');
+    const path = fKey === '_uncategorized'
+      ? `decks/${key}`
+      : `decks/${fKey}/${key}`;
+    const snap = await db.ref(path).once('value');
     const d = snap.val();
     if (!d) { showToast('Deck not found', true); return; }
     const flat = [];
