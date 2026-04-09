@@ -322,8 +322,7 @@ async function doCurse(player) {
     src = oppWithDamage[picked[0]];
   }
 
-  // Step 2: choose destination (any other opponent Pokémon)
-  // Grey out any that would be KO'd by receiving 1 more damage counter
+  // Step 2: choose destination — grey out any that would be KO'd by 1 counter
   const dests = oppAll.filter(c => c !== src);
   let dst = dests[0];
   if (dests.length > 1) {
