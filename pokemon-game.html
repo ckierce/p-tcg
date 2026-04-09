@@ -1154,25 +1154,6 @@ html, body {
   display: none;
 }
 .picker-card.selected .sel-badge { display: block; }
-.picker-card.dimmed { opacity: .35; cursor: not-allowed; pointer-events: none; }
-.picker-card-zone {
-  position: absolute; top: 2px; left: 2px; z-index: 2;
-  font-size: 5px; font-weight: bold; padding: 1px 3px; border-radius: 2px;
-  background: rgba(0,0,0,.75); color: var(--accent); pointer-events: none;
-}
-.picker-card-dots {
-  display: flex; flex-wrap: wrap; gap: 2px; padding: 2px 3px;
-  background: rgba(0,0,0,.5); align-items: center;
-}
-.picker-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: #111; border: 1.5px solid rgba(255,255,255,.55);
-  box-shadow: 0 1px 2px rgba(0,0,0,.8); flex-shrink: 0;
-}
-.picker-card-energy {
-  display: flex; flex-wrap: wrap; gap: 1px; padding: 2px 3px;
-  background: rgba(0,0,0,.4); align-items: center;
-}
 
 /* ── CARD VIEW MODAL (click to view) ─────────────────────── */
 #card-detail {
@@ -3164,11 +3145,9 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
         const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
         const isLeekSlapUsed = card.leekSlapUsed && /can't use this attack again as long as/i.test(atk.text || '');
-        const isDreamEaterBlocked = /dream eater/i.test(atk.name) && opp.active?.status !== 'asleep';
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isDreamEaterBlocked;
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed;
         const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
-                         isDreamEaterBlocked ? `${costStr} · opp must be Asleep` :
                          canAfford ? `${costStr} · ${dmg} dmg` :
                          `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`;
         actions.push({
@@ -3494,18 +3473,16 @@ function closeCoinOverlay() {
 function pickNumber(title, min, max) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
-    const overlayId = '_pickNumberOverlay_' + Date.now();
-    overlay.id = overlayId;
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1200;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;';
     const buttons = [];
     for (let n = min; n <= max; n++) {
-      buttons.push(`<button onclick="document.getElementById('${overlayId}').remove();window._pickNumberVal=${n}"
+      buttons.push(`<button onclick="this.closest('div').remove();window._pickNumberVal=${n}"
         style="font-family:var(--font);font-size:10px;width:44px;height:44px;border-radius:50%;background:var(--surface2);border:2px solid var(--accent);color:var(--accent);cursor:pointer;font-weight:bold;">${n}</button>`);
     }
     overlay.innerHTML = `
       <div style="font-family:var(--font);font-size:10px;color:var(--accent);text-align:center;max-width:300px;padding:0 20px">${title}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:280px;">${buttons.join('')}</div>
-      <button onclick="document.getElementById('${overlayId}').remove();window._pickNumberVal=null"
+      <button onclick="this.closest('div').remove();window._pickNumberVal=null"
         style="font-family:var(--font);font-size:8px;padding:6px 16px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Cancel</button>`;
     document.body.appendChild(overlay);
     const interval = setInterval(() => {
@@ -4063,20 +4040,16 @@ async function performAttack(player, atk) {
     const koResult = checkKO(player, opp, oppActive, false);
 
     // ── Strikes Back (Machamp) ────────────────────────────────────
-    // Fires whenever Machamp takes damage, even if KO'd.
-    // Not usable if Machamp is Asleep, Confused, or Paralyzed.
+    // Whenever Machamp takes damage, deal 10 automatic damage to the attacker.
+    // No coin flip. Not usable if Machamp is Asleep, Confused, or Paralyzed.
     if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
         oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
-      const strikesHeads = await flipCoin(`Strikes Back! (${oppActive.name}) — Heads = 10 damage to ${myActive?.name || 'attacker'}`);
-      if (strikesHeads && myActive) {
-        // Card says: no Weakness or Resistance — flat 10 damage to attacker
+      if (myActive) {
         myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`Strikes Back! HEADS — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
+        addLog(`Strikes Back! (${oppActive.name}) — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
         const strikeKo = checkKO(opp, player, myActive, false);
         if (strikeKo === 'win') { renderWhenIdle(); return; }
         if (strikeKo === 'promote') { renderWhenIdle(); return; }
-      } else if (!strikesHeads) {
-        addLog(`Strikes Back: TAILS — no counter-damage.`);
       }
     }
 
@@ -5564,22 +5537,11 @@ let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
-// Build cardMeta array for openCardPicker — zone badge + disabled flag.
-// activeCard: the player's active Pokémon reference (to detect ACTIVE vs BENCH).
-// disabledFn: optional fn(card) => bool — true to grey out that card.
-function buildPokemonMeta(cards, activeCard, disabledFn) {
-  return cards.map(card => ({
-    zone: card === activeCard ? 'ACTIVE' : 'BENCH',
-    disabled: disabledFn ? disabledFn(card) : false,
-  }));
-}
-
-function openCardPicker({ title, subtitle, cards, maxSelect = 1, cardMeta = [] }) {
-  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid non-disabled card
+function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
+  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
   if (vsComputer && G.turn === 2) {
     if (!cards || !cards.length) return Promise.resolve(null);
-    const firstValid = cards.findIndex((_, i) => !cardMeta[i]?.disabled);
-    return Promise.resolve(firstValid >= 0 ? [firstValid] : null);
+    return Promise.resolve([0]); // AI always picks first option
   }
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
@@ -5591,49 +5553,14 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1, cardMeta = [] }
     document.getElementById('card-picker-confirm').disabled = maxSelect > 0;
 
     const grid = document.getElementById('card-picker-grid');
-    grid.innerHTML = cards.map((card, i) => {
-      const meta = cardMeta[i] || {};
-      const dimClass = meta.disabled ? ' dimmed' : '';
-      const clickAttr = meta.disabled ? '' : `onclick="event.stopPropagation();togglePickerCard(${i})"`;
-
-      // Zone badge (ACTIVE / BENCH)
-      const zoneBadge = meta.zone
-        ? `<div class="picker-card-zone">${meta.zone}</div>` : '';
-
-      // Damage dots — cap at 12, scale row to fit ~74px card width
-      const dots = Math.min(12, Math.floor((card.damage || 0) / 10));
-      let dotRow = '';
-      if (dots > 0) {
-        const naturalW = dots * 9 - 2; // 7px dot + 2px gap, minus trailing gap
-        const maxW = 72;
-        const scaleStr = naturalW > maxW
-          ? `transform:scale(${(maxW / naturalW).toFixed(3)});transform-origin:left center;display:inline-flex;`
-          : '';
-        dotRow = `<div class="picker-card-dots"><div style="display:flex;flex-wrap:wrap;gap:2px;${scaleStr}">${'<div class="picker-dot"></div>'.repeat(dots)}</div></div>`;
-      }
-
-      // Energy icons — scale icon size to fit ~74px width
-      const energyList = (card.attachedEnergy || []).flatMap(e =>
-        /double colorless/i.test(e.name || '') ? [e.name, e.name] : [e.name]
-      );
-      let energyRow = '';
-      if (energyList.length > 0) {
-        const maxW = 72;
-        const rawSz = 12;
-        const naturalW = energyList.length * (rawSz + 1) - 1;
-        const sz = naturalW > maxW ? Math.floor(rawSz * maxW / naturalW) : rawSz;
-        const icons = energyList.map(n => energyIcon(n, Math.max(6, sz))).join('');
-        energyRow = `<div class="picker-card-energy">${icons}</div>`;
-      }
-
-      return `<div class="picker-card${dimClass}" id="picker-card-${i}" ${clickAttr}>
-        ${zoneBadge}
+    grid.innerHTML = cards.map((card, i) => `
+      <div class="picker-card" id="picker-card-${i}"
+        onclick="event.stopPropagation();togglePickerCard(${i})">
         <img src="${card.images?.small || ''}" alt="${card.name}">
         <div class="picker-card-name">${card.name}</div>
-        ${dotRow}${energyRow}
         <div class="sel-badge">✓</div>
-      </div>`;
-    }).join('');
+      </div>
+    `).join('');
 
     document.getElementById('card-picker-modal').classList.add('show');
   });
@@ -7249,13 +7176,10 @@ async function doDamageSwap(player) {
   const sources = all.filter(x => (x.card.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon have damage counters to move!', true); return; }
 
-  const srcCards = sources.map(x => x.card);
   const srcPicked = await openCardPicker({
     title: 'Damage Swap — Source',
     subtitle: 'Choose a Pokémon to take damage counters FROM',
-    cards: srcCards,
-    cardMeta: buildPokemonMeta(srcCards, p.active),
-    maxSelect: 1
+    cards: sources.map(x => x.card), maxSelect: 1
   });
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
@@ -7268,23 +7192,24 @@ async function doDamageSwap(player) {
     if (!numCounters) return;
   }
 
-  // Destination: grey out any that would be KO'd by numCounters
   const dsts = all.filter(x => x.card !== srcCard);
-  const dstCards = dsts.map(x => x.card);
-  const validDsts = dstCards.filter(c => (c.damage || 0) + numCounters * 10 < (parseInt(c.hp) || 0));
-  if (!validDsts.length) {
-    showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
-    return;
-  }
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
     subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
-    cards: dstCards,
-    cardMeta: buildPokemonMeta(dstCards, p.active, c => (c.damage || 0) + numCounters * 10 >= (parseInt(c.hp) || 0)),
-    maxSelect: 1
+    cards: dsts.map(x => x.card), maxSelect: 1
   });
   if (!dstPicked) return;
   const dstCard = dsts[dstPicked[0]].card;
+
+  // Card rule: cannot KO the destination Pokémon with Damage Swap
+  const dstHp = parseInt(dstCard.hp) || 0;
+  if ((dstCard.damage || 0) + numCounters * 10 >= dstHp) {
+    // Clamp to non-KO amount
+    const maxSafe = Math.floor((dstHp - (dstCard.damage || 0) - 1) / 10);
+    if (maxSafe <= 0) { showToast(`Can't move damage to ${dstCard.name} — would KO it!`, true); return; }
+    numCounters = maxSafe;
+    showToast(`Moving ${numCounters} counter${numCounters>1?'s':''} (can't KO ${dstCard.name}).`);
+  }
 
   srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
   dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
@@ -7366,24 +7291,20 @@ async function doCurse(player) {
     const picked = await openCardPicker({
       title: 'Curse — Source',
       subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
-      cards: oppWithDamage,
-      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
-      maxSelect: 1
+      cards: oppWithDamage, maxSelect: 1
     });
     if (!picked) return;
     src = oppWithDamage[picked[0]];
   }
 
-  // Step 2: choose destination — grey out any that would be KO'd by 1 counter
+  // Step 2: choose destination (any other opponent Pokémon)
   const dests = oppAll.filter(c => c !== src);
   let dst = dests[0];
   if (dests.length > 1) {
     const picked = await openCardPicker({
       title: 'Curse — Destination',
       subtitle: "Choose an opponent Pokémon to move the damage counter TO",
-      cards: dests,
-      cardMeta: buildPokemonMeta(dests, opp.active, c => (c.damage || 0) + 10 >= (parseInt(c.hp) || 0)),
-      maxSelect: 1
+      cards: dests, maxSelect: 1
     });
     if (!picked) return;
     dst = dests[picked[0]];
