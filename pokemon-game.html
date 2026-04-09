@@ -967,17 +967,27 @@ h1, h2, h3 { font-family: var(--font-title); }
 #sidebar-content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
 /* Log entries */
-.game-log { display: flex; flex-direction: column; gap: 4px; }
+.game-log { display: flex; flex-direction: column; gap: 3px; padding: 4px; }
+.log-turn-header {
+  font-size: 8px;
+  color: var(--border2);
+  text-align: center;
+  letter-spacing: 1px;
+  padding: 6px 0 2px;
+  text-transform: uppercase;
+}
 .log-entry {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
-  padding: 4px 6px;
+  padding: 4px 8px;
   border-left: 2px solid var(--border);
-  line-height: 1.7;
+  line-height: 1.6;
+  border-radius: 0 3px 3px 0;
 }
 .log-entry.important {
   color: var(--text);
   border-left-color: var(--accent);
+  background: rgba(232,200,74,.04);
 }
 .log-turn {
   color: var(--border2);
@@ -2359,7 +2369,7 @@ h1, h2, h3 { font-family: var(--font-title); }
       <button class="sidebar-tab" id="tab-prizes" onclick="showTab('prizes')">PRIZES</button>
     </div>
     <div id="sidebar-content">
-      <div style="font-size: 11px;color:var(--muted);text-align:center;padding:20px">Game log will appear here</div>
+
     </div>
   </div>
 
@@ -5030,17 +5040,30 @@ function clearHighlights() {
 // ══════════════════════════════════════════════════
 function addLog(msg, important = false) {
   G.log.unshift({ msg, important, turn: G.turnNum });
-  if (document.getElementById('tab-log')?.classList.contains('active')) renderLog();
+  // Re-render only if sidebar is open and log tab is active
+  const board = document.getElementById('game-board');
+  const logTabActive = document.getElementById('tab-log')?.classList.contains('active');
+  const sidebarOpen = board?.classList.contains('sidebar-open');
+  if (logTabActive && sidebarOpen) renderLog();
 }
 
 function renderLog() {
   const container = document.getElementById('sidebar-content');
-  container.innerHTML = `<div class="game-log">` +
-    G.log.slice(0, 40).map(e =>
-      `<div class="log-entry ${e.important ? 'important' : ''}">
-        <span class="log-turn">T${e.turn}</span> ${e.msg}
-      </div>`
-    ).join('') + `</div>`;
+  if (!G.log || G.log.length === 0) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--muted);text-align:center;padding:20px">No actions logged yet.</div>';
+    return;
+  }
+  let html = '<div class="game-log">';
+  let lastTurn = null;
+  G.log.forEach(e => {
+    if (e.turn !== lastTurn) {
+      html += `<div class="log-turn-header">— Turn ${e.turn} —</div>`;
+      lastTurn = e.turn;
+    }
+    html += `<div class="log-entry${e.important ? ' important' : ''}">${e.msg}</div>`;
+  });
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 // ══════════════════════════════════════════════════
@@ -6671,6 +6694,15 @@ function toggleSidebar() {
   const btn = document.getElementById('sidebar-toggle-btn');
   const isOpen = board.classList.toggle('sidebar-open');
   btn.textContent = isOpen ? 'LOG ◂' : 'LOG ▸';
+  if (isOpen) {
+    // Ensure log tab is active and freshly rendered
+    const activeTab = document.querySelector('.sidebar-tab.active');
+    if (!activeTab || activeTab.id === 'tab-log') {
+      document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-log')?.classList.add('active');
+    }
+    renderLog();
+  }
 }
 
 function toggleHandCollapse() {
