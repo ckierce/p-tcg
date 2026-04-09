@@ -1129,6 +1129,9 @@ h1, h2, h3 { font-family: var(--font-title); }
   cursor: pointer;
 }
 .modal-deck-item:hover { border-color: var(--accent); }
+.modal-back-item { border-color: var(--border); color: var(--muted); }
+.modal-back-item:hover { border-color: var(--border2); color: var(--text); }
+.modal-back-item .d-name { color: var(--muted); }
 .d-name { font-size: 12px; color: var(--text); margin-bottom: 3px; }
 .d-count { font-size: 9px; color: var(--muted); }
 
@@ -2617,7 +2620,7 @@ async function openLoadModal(player) {
       function renderDeckList(fKey, displayName) {
         const entries = (folders[fKey]?.decks || []).sort((a,b) => b.savedAt - a.savedAt);
         list.innerHTML =
-          `<div class="modal-deck-item" style="border-color:var(--border);color:var(--muted);cursor:pointer" onclick="(${renderFolders.toString()})()">
+          `<div class="modal-deck-item modal-back-item">
             <div class="d-name">← ${escapeHtml(displayName)}</div>
           </div>` +
           (entries.length ? entries.map(d => {
@@ -2630,6 +2633,7 @@ async function openLoadModal(player) {
               <span style="color:var(--muted);font-size:18px">›</span>
             </div>`;
           }).join('') : `<div class="no-saved">No decks in this folder.</div>`);
+        list.querySelector('.modal-back-item').addEventListener('click', () => renderFolders());
         list.querySelectorAll('.modal-deck-item[data-name]').forEach(el => {
           el.addEventListener('click', () => loadDeck(el.dataset.fkey, el.dataset.name));
         });
