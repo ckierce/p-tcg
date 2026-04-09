@@ -3473,18 +3473,16 @@ function closeCoinOverlay() {
 function pickNumber(title, min, max) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
-    const overlayId = '_pickNumberOverlay_' + Date.now();
-    overlay.id = overlayId;
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1200;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;';
     const buttons = [];
     for (let n = min; n <= max; n++) {
-      buttons.push(`<button onclick="document.getElementById('${overlayId}').remove();window._pickNumberVal=${n}"
+      buttons.push(`<button onclick="this.closest('div').remove();window._pickNumberVal=${n}"
         style="font-family:var(--font);font-size:10px;width:44px;height:44px;border-radius:50%;background:var(--surface2);border:2px solid var(--accent);color:var(--accent);cursor:pointer;font-weight:bold;">${n}</button>`);
     }
     overlay.innerHTML = `
       <div style="font-family:var(--font);font-size:10px;color:var(--accent);text-align:center;max-width:300px;padding:0 20px">${title}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:280px;">${buttons.join('')}</div>
-      <button onclick="document.getElementById('${overlayId}').remove();window._pickNumberVal=null"
+      <button onclick="this.closest('div').remove();window._pickNumberVal=null"
         style="font-family:var(--font);font-size:8px;padding:6px 16px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Cancel</button>`;
     document.body.appendChild(overlay);
     const interval = setInterval(() => {
@@ -4609,7 +4607,16 @@ function endTurn() {
 // ══════════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════════
+// Shift all non-null bench cards left so there are never gaps.
+function compactBench(player) {
+  const bench = G.players[player].bench;
+  const filled = bench.filter(s => s !== null);
+  for (let i = 0; i < bench.length; i++) bench[i] = filled[i] || null;
+}
+
 function renderAll() {
+  compactBench(1);
+  compactBench(2);
   renderHands();
   renderField(1);
   renderField(2);
