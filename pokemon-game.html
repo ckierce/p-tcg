@@ -5438,7 +5438,11 @@ function showActionFlash(player, verb, subject, detail) {
   _queueFlash(() => {
     const el = document.getElementById('action-flash');
     const isOwnAction = myRole !== null && player === myRole;
-    const who = isOwnAction ? `YOU ${verb}` : (vsComputer ? `🤖 COMPUTER ${verb}` : `PLAYER ${player} ${verb}`);
+    // verb is stored as third-person (PLAYS, BENCHES, EVOLVES…)
+    // For "YOU" we want base form: strip trailing S (PLAYS→PLAY, BENCHES→BENCH, RETREATS→RETREAT)
+    const baseVerb = verb.replace(/ES$/i, '').replace(/S$/i, '');
+    const displayVerb = isOwnAction ? baseVerb : verb;
+    const who = isOwnAction ? `YOU ${displayVerb}` : (vsComputer ? `🤖 COMPUTER ${displayVerb}` : `PLAYER ${player} ${displayVerb}`);
     document.getElementById('action-flash-who').textContent = who;
     document.getElementById('action-flash-subject').textContent = (subject || '').toUpperCase();
     document.getElementById('action-flash-detail').textContent = detail || '';
