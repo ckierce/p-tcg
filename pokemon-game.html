@@ -7,27 +7,27 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Pokémon TCG — Game Board</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
 
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #0f1117;
-  --surface:   #181c27;
-  --surface2:  #222638;
-  --border:    #2e3350;
-  --border2:   #3d4468;
-  --text:      #d0d4e8;
-  --muted:     #5a607a;
+  --bg:        #1a3a2a;
+  --surface:   #1e4a32;
+  --surface2:  #245c3c;
+  --border:    #2d7a50;
+  --border2:   #3a9660;
+  --text:      #e8f0e0;
+  --muted:     #6a9c7a;
   --accent:    #e8c84a;
   --p1color:   #5b9cf6;
   --p2color:   #f56565;
   --ok:        #48bb78;
   --warn:      #ed8936;
-  --font:      'Press Start 2P', monospace;
+  --font:      'Gil Sans', 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif;
+  --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
 
   /* Fluid card sizing — active is the hero, bench is supporting */
   --active-w:    clamp(130px, 18vw, 260px);
@@ -50,6 +50,7 @@ html, body {
   line-height: 1.5;
   overflow: hidden;
 }
+h1, h2, h3 { font-family: var(--font-title); }
 
 /* ── SETUP SCREEN ─────────────────────────────────────────── */
 #setup-screen {
@@ -63,6 +64,7 @@ html, body {
 
 #setup-screen h1 {
   font-size: 16px;
+  font-family: var(--font-title);
   color: var(--accent);
   letter-spacing: 2px;
   text-align: center;
@@ -232,6 +234,7 @@ html, body {
   gap: 8px;
   min-height: 0;
   position: relative;
+  background: radial-gradient(ellipse at center, #2a6e40 0%, #1a4828 60%, #122e1c 100%);
 }
 
 /* ── OPPONENT ZONE — horizontal strip, active centered ────── */
@@ -283,8 +286,9 @@ html, body {
 
 .opp-deck-count {
   font-size: 8px;
-  color: var(--muted);
+  color: #fff;
   white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
 }
 
 /* Opp hand indicator */
@@ -372,7 +376,7 @@ html, body {
 }
 .opp-prize-pip {
   width: 16px; height: 22px;
-  background: var(--surface2);
+  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
   border: 1px solid var(--border);
   border-radius: 2px;
 }
@@ -390,7 +394,7 @@ html, body {
   height: 78px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--surface2);
+  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -752,7 +756,7 @@ html, body {
   height: var(--card-h-sm);
   border: 1px solid var(--p1color);
   border-radius: 5px;
-  background: var(--surface2);
+  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -763,11 +767,12 @@ html, body {
 
 #deck-count-p1 {
   font-size: 11px;
-  color: var(--p1color);
+  color: #fff;
   line-height: 1;
   margin-bottom: 3px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
 }
-#deck-count-p1 span { font-size: 6px; color: var(--muted); display: block; margin-top: 2px; }
+#deck-count-p1 span { font-size: 6px; color: #ddd; display: block; margin-top: 2px; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
 
 .player-discard-slot {
   width: var(--card-w-sm);
@@ -803,11 +808,9 @@ html, body {
   justify-content: center;
 }
 .prize-slot img { width: 100%; height: 100%; object-fit: cover; }
-.prize-slot.face-down { background: var(--surface2); }
+.prize-slot.face-down { background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat; }
 .prize-slot.face-down::after {
-  content: '?';
-  font-size: 9px;
-  color: var(--muted);
+  content: '';
 }
 .prize-slot.gone { opacity: .15; }
 
@@ -1389,7 +1392,7 @@ html, body {
 }
 #turn-flash.show { display: flex; }
 #turn-flash-inner {
-  font-family: var(--font);
+  font-family: var(--font-title);
   font-size: 18px;
   letter-spacing: 3px;
   padding: 20px 40px;
@@ -1913,7 +1916,6 @@ html, body {
     border-radius: 2px;
   }
   .prize-slot img { object-fit: cover; }
-  .prize-slot.face-down::after { font-size: 7px; }
 
   #player-aux {
     right: 2px;
@@ -4905,9 +4907,8 @@ function renderSidebarP2Hand() {
     sideHand.map((card, i) => {
       if (!showFaceUp) {
         // Face-down card back
-        return `<div class="hand-card face-down" style="background:var(--surface2);border-color:var(--border);">
-          <div style="aspect-ratio:5/7;display:flex;align-items:center;justify-content:center;font-size:18px;">🂠</div>
-          <div class="hand-card-info"><div class="hand-card-name">???</div></div>
+        return `<div class="hand-card face-down" style="background:var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;border-color:var(--border);">
+          <div class="hand-card-info" style="background:transparent;"><div class="hand-card-name" style="opacity:0">???</div></div>
         </div>`;
       }
       const imgSrc = card.images?.small || '';
