@@ -192,10 +192,13 @@ async function doDamageSwap(player) {
   const sources = all.filter(x => (x.card.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon have damage counters to move!', true); return; }
 
+  const srcCards = sources.map(x => x.card);
   const srcPicked = await openCardPicker({
     title: 'Damage Swap — Source',
     subtitle: 'Choose a Pokémon to take damage counters FROM',
-    cards: sources.map(x => x.card), maxSelect: 1
+    cards: srcCards,
+    cardMeta: buildPokemonMeta(srcCards, p.active),
+    maxSelect: 1
   });
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
@@ -209,23 +212,27 @@ async function doDamageSwap(player) {
   }
 
   const dsts = all.filter(x => x.card !== srcCard);
+  const dstCards = dsts.map(x => x.card);
+  const validDsts = dstCards.filter(c => {
+    const hp = parseInt(c.hp) || 0;
+    return (c.damage || 0) + numCounters * 10 < hp;
+  });
+  if (!validDsts.length) {
+    showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
+    return;
+  }
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
     subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
-    cards: dsts.map(x => x.card), maxSelect: 1
+    cards: dstCards,
+    cardMeta: buildPokemonMeta(dstCards, p.active, c => {
+      const hp = parseInt(c.hp) || 0;
+      return (c.damage || 0) + numCounters * 10 >= hp;
+    }),
+    maxSelect: 1
   });
   if (!dstPicked) return;
   const dstCard = dsts[dstPicked[0]].card;
-
-  // Card rule: cannot KO the destination Pokémon with Damage Swap
-  const dstHp = parseInt(dstCard.hp) || 0;
-  if ((dstCard.damage || 0) + numCounters * 10 >= dstHp) {
-    // Clamp to non-KO amount
-    const maxSafe = Math.floor((dstHp - (dstCard.damage || 0) - 1) / 10);
-    if (maxSafe <= 0) { showToast(`Can't move damage to ${dstCard.name} — would KO it!`, true); return; }
-    numCounters = maxSafe;
-    showToast(`Moving ${numCounters} counter${numCounters>1?'s':''} (can't KO ${dstCard.name}).`);
-  }
 
   srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
   dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
@@ -307,20 +314,28 @@ async function doCurse(player) {
     const picked = await openCardPicker({
       title: 'Curse — Source',
       subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
-      cards: oppWithDamage, maxSelect: 1
+      cards: oppWithDamage,
+      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
+      maxSelect: 1
     });
     if (!picked) return;
     src = oppWithDamage[picked[0]];
   }
 
   // Step 2: choose destination (any other opponent Pokémon)
+  // Grey out any that would be KO'd by receiving 1 more damage counter
   const dests = oppAll.filter(c => c !== src);
   let dst = dests[0];
   if (dests.length > 1) {
     const picked = await openCardPicker({
       title: 'Curse — Destination',
       subtitle: "Choose an opponent Pokémon to move the damage counter TO",
-      cards: dests, maxSelect: 1
+      cards: dests,
+      cardMeta: buildPokemonMeta(dests, opp.active, c => {
+        const hp = parseInt(c.hp) || 0;
+        return (c.damage || 0) + 10 >= hp;
+      }),
+      maxSelect: 1
     });
     if (!picked) return;
     dst = dests[picked[0]];

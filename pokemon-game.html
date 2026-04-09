@@ -1154,6 +1154,21 @@ html, body {
   display: none;
 }
 .picker-card.selected .sel-badge { display: block; }
+.picker-card.dimmed { opacity: .35; cursor: not-allowed; }
+.picker-card.dimmed:hover { border-color: var(--border); }
+.picker-card-meta {
+  font-size: 5px; color: var(--fg);
+  padding: 2px 3px 3px;
+  background: rgba(0,0,0,.6);
+  line-height: 1.4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.picker-card-zone {
+  position: absolute; top: 2px; left: 2px;
+  font-size: 5px; font-weight: bold; padding: 1px 3px; border-radius: 2px;
+  background: rgba(0,0,0,.7); color: var(--accent);
+  pointer-events: none;
+}
 
 /* ── CARD VIEW MODAL (click to view) ─────────────────────── */
 #card-detail {
@@ -4607,16 +4622,7 @@ function endTurn() {
 // ══════════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════════
-// Shift all non-null bench cards left so there are never gaps.
-function compactBench(player) {
-  const bench = G.players[player].bench;
-  const filled = bench.filter(s => s !== null);
-  for (let i = 0; i < bench.length; i++) bench[i] = filled[i] || null;
-}
-
 function renderAll() {
-  compactBench(1);
-  compactBench(2);
   renderHands();
   renderField(1);
   renderField(2);
@@ -5550,11 +5556,12 @@ let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
-function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
-  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
+function openCardPicker({ title, subtitle, cards, maxSelect = 1, cardMeta = [] }) {
+  // In VS Computer mode, if it's the AI's turn, auto-pick the first valid non-disabled card
   if (vsComputer && G.turn === 2) {
     if (!cards || !cards.length) return Promise.resolve(null);
-    return Promise.resolve([0]); // AI always picks first option
+    const firstValid = cards.findIndex((_, i) => !cardMeta[i]?.disabled);
+    return Promise.resolve(firstValid >= 0 ? [firstValid] : null);
   }
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
@@ -5566,14 +5573,22 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     document.getElementById('card-picker-confirm').disabled = maxSelect > 0;
 
     const grid = document.getElementById('card-picker-grid');
-    grid.innerHTML = cards.map((card, i) => `
-      <div class="picker-card" id="picker-card-${i}"
-        onclick="event.stopPropagation();togglePickerCard(${i})">
-        <img src="${card.images?.small || ''}" alt="${card.name}">
-        <div class="picker-card-name">${card.name}</div>
-        <div class="sel-badge">✓</div>
-      </div>
-    `).join('');
+    grid.innerHTML = cards.map((card, i) => {
+      const meta = cardMeta[i] || {};
+      const dimClass = meta.disabled ? ' dimmed' : '';
+      const clickHandler = meta.disabled ? '' : `onclick="event.stopPropagation();togglePickerCard(${i})"`;
+      const zoneBadge = meta.zone ? `<div class="picker-card-zone">${meta.zone}</div>` : '';
+      const metaLine = meta.detail ? `<div class="picker-card-meta">${meta.detail}</div>` : '';
+      return `
+        <div class="picker-card${dimClass}" id="picker-card-${i}" ${clickHandler}>
+          ${zoneBadge}
+          <img src="${card.images?.small || ''}" alt="${card.name}">
+          <div class="picker-card-name">${card.name}</div>
+          ${metaLine}
+          <div class="sel-badge">✓</div>
+        </div>
+      `;
+    }).join('');
 
     document.getElementById('card-picker-modal').classList.add('show');
   });
@@ -7176,6 +7191,27 @@ function getDittoTransformStats(player) {
 
 // Alakazam — Damage Swap
 // Move 1 damage counter from one of your Pokémon to another.
+// Build cardMeta for openCardPicker — shows zone (ACTIVE/BENCH), damage counters, energy count.
+// activeCard: reference to the player's active Pokémon (to detect zone).
+// disabledFn: optional function(card) => bool — returns true to grey out that card.
+function buildPokemonMeta(cards, activeCard, disabledFn) {
+  return cards.map(card => {
+    const zone = card === activeCard ? 'ACTIVE' : 'BENCH';
+    const counters = Math.floor((card.damage || 0) / 10);
+    const energy = (card.attachedEnergy || []).length;
+    const hp = parseInt(card.hp) || 0;
+    const parts = [];
+    if (counters > 0) parts.push(`💥 ${counters} ctr (${card.damage}/${hp} HP)`);
+    else parts.push(`HP: ${hp}`);
+    if (energy > 0) parts.push(`⚡ ${energy} nrg`);
+    return {
+      zone,
+      detail: parts.join(' · '),
+      disabled: disabledFn ? disabledFn(card) : false,
+    };
+  });
+}
+
 async function doDamageSwap(player) {
   if (!damageSwapActive(player)) { showToast('Alakazam not in play!', true); return; }
   if (isMukActive())             { showToast("Muk's Toxic Gas suppresses Damage Swap!", true); return; }
@@ -7189,10 +7225,13 @@ async function doDamageSwap(player) {
   const sources = all.filter(x => (x.card.damage || 0) >= 10);
   if (!sources.length) { showToast('No Pokémon have damage counters to move!', true); return; }
 
+  const srcCards = sources.map(x => x.card);
   const srcPicked = await openCardPicker({
     title: 'Damage Swap — Source',
     subtitle: 'Choose a Pokémon to take damage counters FROM',
-    cards: sources.map(x => x.card), maxSelect: 1
+    cards: srcCards,
+    cardMeta: buildPokemonMeta(srcCards, p.active),
+    maxSelect: 1
   });
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
@@ -7205,24 +7244,29 @@ async function doDamageSwap(player) {
     if (!numCounters) return;
   }
 
+  // Destination: all others; grey out any that would be KO'd by numCounters
   const dsts = all.filter(x => x.card !== srcCard);
+  const dstCards = dsts.map(x => x.card);
+  const validDsts = dstCards.filter(c => {
+    const hp = parseInt(c.hp) || 0;
+    return (c.damage || 0) + numCounters * 10 < hp;
+  });
+  if (!validDsts.length) {
+    showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
+    return;
+  }
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
     subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
-    cards: dsts.map(x => x.card), maxSelect: 1
+    cards: dstCards,
+    cardMeta: buildPokemonMeta(dstCards, p.active, c => {
+      const hp = parseInt(c.hp) || 0;
+      return (c.damage || 0) + numCounters * 10 >= hp;
+    }),
+    maxSelect: 1
   });
   if (!dstPicked) return;
   const dstCard = dsts[dstPicked[0]].card;
-
-  // Card rule: cannot KO the destination Pokémon with Damage Swap
-  const dstHp = parseInt(dstCard.hp) || 0;
-  if ((dstCard.damage || 0) + numCounters * 10 >= dstHp) {
-    // Clamp to non-KO amount
-    const maxSafe = Math.floor((dstHp - (dstCard.damage || 0) - 1) / 10);
-    if (maxSafe <= 0) { showToast(`Can't move damage to ${dstCard.name} — would KO it!`, true); return; }
-    numCounters = maxSafe;
-    showToast(`Moving ${numCounters} counter${numCounters>1?'s':''} (can't KO ${dstCard.name}).`);
-  }
 
   srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
   dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
@@ -7304,20 +7348,28 @@ async function doCurse(player) {
     const picked = await openCardPicker({
       title: 'Curse — Source',
       subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
-      cards: oppWithDamage, maxSelect: 1
+      cards: oppWithDamage,
+      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
+      maxSelect: 1
     });
     if (!picked) return;
     src = oppWithDamage[picked[0]];
   }
 
   // Step 2: choose destination (any other opponent Pokémon)
+  // Grey out any that would be KO'd by receiving 1 more damage counter
   const dests = oppAll.filter(c => c !== src);
   let dst = dests[0];
   if (dests.length > 1) {
     const picked = await openCardPicker({
       title: 'Curse — Destination',
       subtitle: "Choose an opponent Pokémon to move the damage counter TO",
-      cards: dests, maxSelect: 1
+      cards: dests,
+      cardMeta: buildPokemonMeta(dests, opp.active, c => {
+        const hp = parseInt(c.hp) || 0;
+        return (c.damage || 0) + 10 >= hp;
+      }),
+      maxSelect: 1
     });
     if (!picked) return;
     dst = dests[picked[0]];
