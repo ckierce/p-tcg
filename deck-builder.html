@@ -957,7 +957,11 @@ select:focus { border-color: var(--accent); }
 <!-- Saved Decks Modal -->
 <div class="modal-overlay" id="decks-modal">
   <div class="modal">
-    <h2>Saved Decks</h2>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <button class="btn btn-ghost" id="modal-back-btn" onclick="modalGoBack()" style="display:none;padding:6px 10px;font-size:11px">← Back</button>
+      <h2 style="margin-bottom:0" id="modal-title">Folders</h2>
+      <button class="btn btn-ghost" id="modal-new-folder-btn" onclick="modalNewFolder()" style="margin-left:auto;font-size:9px;padding:6px 10px">+ New Folder</button>
+    </div>
     <div class="saved-deck-list" id="saved-deck-list"></div>
     <button class="btn btn-ghost modal-close" onclick="closeDecksModal()">Close</button>
   </div>
@@ -1457,13 +1461,27 @@ function validateDeck(showResult) {
   return issues.length === 0;
 }
 
-// ─── SAVE / LOAD (Firebase) ──────────────────────────────────────────────────
+// ─── SAVE / LOAD (Firebase, folder-aware) ────────────────────────────────────
+let currentFolder = null;       // fKey currently open in modal
+let currentFolderName = null;   // display name of open folder
+let lastUsedFolder = '';        // remembered across saves
+
+function fbKey(str) { return str.replace(/[.#$[\]]/g, '_'); }
+
 async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim() || 'My Deck';
   if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
+
+  // Prompt for folder
+  const folder = prompt('Save to folder:', lastUsedFolder || 'My Decks');
+  if (folder === null) return; // cancelled
+  const folderName = folder.trim() || 'My Decks';
+  lastUsedFolder = folderName;
+
   showToast('Saving…');
   const deckData = {
     name,
+    folder: folderName,
     savedAt: Date.now(),
     deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [
       id, {
@@ -1478,47 +1496,113 @@ async function saveDeck() {
       }
     ]))
   };
-  const key = name.replace(/[.#$[\]]/g, '_');
-  await db.ref(`decks/${key}`).set(deckData);
-  showToast(`"${name}" saved!`);
+  await db.ref(`decks/${fbKey(folderName)}/${fbKey(name)}`).set(deckData);
+  showToast(`"${name}" saved to ${folderName}!`);
 }
 
+// ── Modal: folder list ────────────────────────────────────────────────────────
 async function openDecksModal() {
-  const list = document.getElementById('saved-deck-list');
-  list.innerHTML = `<div class="no-saved">Loading…</div>`;
+  currentFolder = null;
   document.getElementById('decks-modal').classList.add('show');
+  await renderFolderList();
+}
+
+async function renderFolderList() {
+  const list  = document.getElementById('saved-deck-list');
+  const title = document.getElementById('modal-title');
+  const back  = document.getElementById('modal-back-btn');
+  const newFolderBtn = document.getElementById('modal-new-folder-btn');
+  title.textContent = 'Folders';
+  back.style.display = 'none';
+  newFolderBtn.style.display = '';
+  list.innerHTML = `<div class="no-saved">Loading…</div>`;
   try {
     const snap = await db.ref('decks').once('value');
-    const saved = snap.val() || {};
-    const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
-    if (!entries.length) {
-      list.innerHTML = `<div class="no-saved">No saved decks yet.</div>`;
-    } else {
-      list.innerHTML = entries.map(d => {
-        const total = Object.values(d.deck).reduce((s,c)=>s+c.qty,0);
-        return `<div class="saved-deck-item">
-          <div>
-            <div class="d-name">${d.name}</div>
-            <div class="d-count">${total} cards</div>
-          </div>
-          <button class="d-load" onclick="loadDeck('${encodeURIComponent(d.name)}')">Load</button>
-          <button class="d-del"  onclick="deleteDeck('${encodeURIComponent(d.name)}')">Del</button>
-        </div>`;
-      }).join('');
+    const data = snap.val() || {};
+    const folders = Object.keys(data).sort();
+    if (!folders.length) {
+      list.innerHTML = `<div class="no-saved">No folders yet. Save a deck to create one.</div>`;
+      return;
     }
+    list.innerHTML = folders.map(fKey => {
+      const folderData = data[fKey];
+      // folder node: values are deck objects (have a .deck property)
+      const deckCount = Object.values(folderData).filter(v => v && v.deck).length;
+      const displayName = Object.values(folderData).find(v => v && v.folder)?.folder || fKey;
+      return `<div class="saved-deck-item" style="cursor:pointer" onclick="openFolder('${encodeURIComponent(fKey)}','${encodeURIComponent(displayName)}')">
+        <div>
+          <div class="d-name">📁 ${displayName}</div>
+          <div class="d-count">${deckCount} deck${deckCount !== 1 ? 's' : ''}</div>
+        </div>
+        <span style="color:var(--muted);font-size:18px">›</span>
+      </div>`;
+    }).join('');
   } catch(e) {
     list.innerHTML = `<div class="no-saved" style="color:var(--danger)">Could not connect to Firebase.</div>`;
   }
 }
 
-function closeDecksModal() {
-  document.getElementById('decks-modal').classList.remove('show');
+async function openFolder(encodedFKey, encodedDisplayName) {
+  const fKey = decodeURIComponent(encodedFKey);
+  const displayName = decodeURIComponent(encodedDisplayName);
+  currentFolder = fKey;
+  currentFolderName = displayName;
+  const list  = document.getElementById('saved-deck-list');
+  const title = document.getElementById('modal-title');
+  const back  = document.getElementById('modal-back-btn');
+  const newFolderBtn = document.getElementById('modal-new-folder-btn');
+  title.textContent = displayName;
+  back.style.display = '';
+  newFolderBtn.style.display = 'none';
+  list.innerHTML = `<div class="no-saved">Loading…</div>`;
+  try {
+    const snap = await db.ref(`decks/${fKey}`).once('value');
+    const data = snap.val() || {};
+    const entries = Object.values(data).filter(v => v && v.deck).sort((a,b) => b.savedAt - a.savedAt);
+    if (!entries.length) {
+      list.innerHTML = `<div class="no-saved">No decks in this folder.</div>`;
+      return;
+    }
+    list.innerHTML = entries.map(d => {
+      const total = Object.values(d.deck).reduce((s,c)=>s+c.qty, 0);
+      return `<div class="saved-deck-item">
+        <div>
+          <div class="d-name">${d.name}</div>
+          <div class="d-count">${total} cards</div>
+        </div>
+        <button class="d-load" onclick="loadDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Load</button>
+        <button class="d-del"  onclick="deleteDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Del</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="no-saved" style="color:var(--danger)">Could not connect to Firebase.</div>`;
+  }
 }
 
-async function loadDeck(encodedName) {
+function modalGoBack() {
+  currentFolder = null;
+  currentFolderName = null;
+  renderFolderList();
+}
+
+function modalNewFolder() {
+  const name = prompt('New folder name:');
+  if (!name || !name.trim()) return;
+  lastUsedFolder = name.trim();
+  showToast(`Folder "${name.trim()}" ready — save a deck to create it.`);
+  closeDecksModal();
+}
+
+function closeDecksModal() {
+  document.getElementById('decks-modal').classList.remove('show');
+  currentFolder = null;
+  currentFolderName = null;
+}
+
+async function loadDeck(encodedFKey, encodedName) {
+  const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
-  const key = name.replace(/[.#$[\]]/g, '_');
-  const snap = await db.ref(`decks/${key}`).once('value');
+  const snap = await db.ref(`decks/${fKey}/${fbKey(name)}`).once('value');
   const d = snap.val();
   if (!d) { showToast('Deck not found', true); return; }
   deck = {};
@@ -1538,16 +1622,17 @@ async function loadDeck(encodedName) {
     }
   });
   document.getElementById('deck-name').value = name;
+  lastUsedFolder = d.folder || fKey;
   renderDeck(); renderGrid(); validateDeck(false);
   closeDecksModal();
   showToast(`"${name}" loaded!`);
 }
 
-async function deleteDeck(encodedName) {
+async function deleteDeck(encodedFKey, encodedName) {
+  const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
-  const key = name.replace(/[.#$[\]]/g, '_');
-  await db.ref(`decks/${key}`).remove();
-  openDecksModal();
+  await db.ref(`decks/${fKey}/${fbKey(name)}`).remove();
+  openFolder(encodedFKey, encodeURIComponent(currentFolderName || fKey));
   showToast(`"${name}" deleted.`);
 }
 

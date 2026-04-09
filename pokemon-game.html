@@ -2577,24 +2577,50 @@ async function openLoadModal(player) {
   document.getElementById('load-modal').classList.add('show');
   try {
     const snap = await db.ref('decks').once('value');
-    const saved = snap.val() || {};
-    const entries = Object.values(saved).sort((a,b) => b.savedAt - a.savedAt);
-    if (!entries.length) {
+    const data = snap.val() || {};
+    const folders = Object.keys(data).sort();
+    if (!folders.length) {
       list.innerHTML = `<div class="no-saved">No saved decks. <a href="deck-builder.html" style="color:var(--accent)">Build one first →</a></div>`;
     } else {
-      list.innerHTML = entries.map(d => {
-        const total = Object.values(d.deck).reduce((s,c) => s + c.qty, 0);
-        return `<div class="modal-deck-item" data-name="${escapeAttr(d.name)}">
-          <div>
-            <div class="d-name">${escapeHtml(d.name)}</div>
-            <div class="d-count">${total} cards</div>
-          </div>
-          <span style="color:var(--muted);font-size:18px">›</span>
-        </div>`;
-      }).join('');
-      list.querySelectorAll('.modal-deck-item').forEach(el => {
-        el.addEventListener('click', () => loadDeck(el.dataset.name));
-      });
+      // Render folder list; clicking a folder expands it inline
+      function renderFolders() {
+        list.innerHTML = folders.map(fKey => {
+          const folderData = data[fKey];
+          const deckCount = Object.values(folderData).filter(v => v && v.deck).length;
+          const displayName = Object.values(folderData).find(v => v && v.folder)?.folder || fKey;
+          return `<div class="modal-deck-item" data-fkey="${escapeAttr(fKey)}" data-fname="${escapeAttr(displayName)}">
+            <div>
+              <div class="d-name">📁 ${escapeHtml(displayName)}</div>
+              <div class="d-count">${deckCount} deck${deckCount !== 1 ? 's' : ''}</div>
+            </div>
+            <span style="color:var(--muted);font-size:18px">›</span>
+          </div>`;
+        }).join('');
+        list.querySelectorAll('.modal-deck-item').forEach(el => {
+          el.addEventListener('click', () => renderDeckList(el.dataset.fkey, el.dataset.fname));
+        });
+      }
+      function renderDeckList(fKey, displayName) {
+        const entries = Object.values(data[fKey]).filter(v => v && v.deck).sort((a,b) => b.savedAt - a.savedAt);
+        list.innerHTML = `
+          <div class="modal-deck-item" style="border-color:var(--border);color:var(--muted);cursor:pointer" onclick="(${renderFolders.toString()})()">
+            <div class="d-name">← ${escapeHtml(displayName)}</div>
+          </div>` +
+          (entries.length ? entries.map(d => {
+            const total = Object.values(d.deck).reduce((s,c) => s + c.qty, 0);
+            return `<div class="modal-deck-item" data-fkey="${escapeAttr(fKey)}" data-name="${escapeAttr(d.name)}">
+              <div>
+                <div class="d-name">${escapeHtml(d.name)}</div>
+                <div class="d-count">${total} cards</div>
+              </div>
+              <span style="color:var(--muted);font-size:18px">›</span>
+            </div>`;
+          }).join('') : `<div class="no-saved">No decks in this folder.</div>`);
+        list.querySelectorAll('.modal-deck-item[data-name]').forEach(el => {
+          el.addEventListener('click', () => loadDeck(el.dataset.fkey, el.dataset.name));
+        });
+      }
+      renderFolders();
     }
   } catch(e) {
     list.innerHTML = `<div class="no-saved" style="color:var(--p2color)">Could not connect to Firebase.</div>`;
@@ -2617,14 +2643,14 @@ function closeLoadModal() {
   document.getElementById('load-modal').classList.remove('show');
 }
 
-async function loadDeck(deckName) {
+async function loadDeck(fKey, deckName) {
   const p = loadingForPlayer;
   if (!p) { showToast('Select a player first', true); return; }
   const key = deckName.replace(/[.#$[\]]/g, '_');
   closeLoadModal();
   showToast(`Loading ${deckName}...`);
   try {
-    const snap = await db.ref(`decks/${key}`).once('value');
+    const snap = await db.ref(`decks/${fKey}/${key}`).once('value');
     const d = snap.val();
     if (!d) { showToast('Deck not found', true); return; }
     const flat = [];
@@ -2644,7 +2670,7 @@ async function loadDeck(deckName) {
       }
     }
     if (!flat.length) { showToast('Deck appears empty!', true); return; }
-    G.players[p].deckData = { name: deckName };
+    G.players[p].deckData = { name: deckName, folderKey: fKey };
     G.players[p].deck = shuffle([...flat]);
     G.players[p].hand = [];
     G.players[p].active = null;
@@ -2657,10 +2683,7 @@ async function loadDeck(deckName) {
       statusEl.style.color = p === 1 ? 'var(--p1color)' : 'var(--p2color)';
       document.querySelector(`.setup-player.p${p}`)?.classList.add('loaded');
     }
-    // In networked mode, only P1 can enable start (once both ready via Firebase listener)
-    // start button enabled via Firebase listener (checkBothReady)
-    // Broadcast deck readiness to opponent
-    broadcastDeckReady(p, deckName);
+    broadcastDeckReady(p, deckName, fKey);
     showToast(`${deckName} loaded for Player ${p}!`, false, 'ok');
     updateDeckCounts();
   } catch(e) {
@@ -2687,7 +2710,7 @@ async function startGame() {
       showToast('Loading P2 deck...', false);
       const saved = loadingForPlayer;
       loadingForPlayer = 2;
-      await loadDeck(data.p2DeckName);
+      await loadDeck(data.p2DeckFolder || '', data.p2DeckName);
       loadingForPlayer = saved;
     }
   }
@@ -6662,8 +6685,8 @@ function aiDoPromotion() {
 // Patch loadDeck to detect VS CPU deck load completion
 {
   const _origLoad = loadDeck;
-  loadDeck = async function(deckName) {
-    await _origLoad(deckName);
+  loadDeck = async function(fKey, deckName) {
+    await _origLoad(fKey, deckName);
     if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
       checkVsCpuReady();
     }
@@ -6805,11 +6828,12 @@ async function joinRoom() {
 }
 
 // Called after P1 or P2 loads their deck — broadcast readiness
-async function broadcastDeckReady(playerNum, deckName) {
+async function broadcastDeckReady(playerNum, deckName, folderKey) {
   if (!gameRef) return;
   const update = {};
   update[`p${playerNum}Ready`] = true;
   update[`p${playerNum}DeckName`] = deckName;
+  update[`p${playerNum}DeckFolder`] = folderKey || '';
   await gameRef.update(update);
 }
 
