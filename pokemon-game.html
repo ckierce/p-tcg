@@ -3313,12 +3313,14 @@ async function executeRetreat(player, benchIdx) {
       }
       // Use auto-selected toDiscard (pre-computed above)
     } else {
-      // Multiple options — let player choose
+      // Multiple options — let player choose.
+      // Cap maxSelect at retreatCost: worst case is all basic energy at 1 each,
+      // so you never need to select more cards than the cost value.
       const picked = await openCardPicker({
         title: `${p.active.name} — Retreat`,
         subtitle: `Choose energy to discard (need ${retreatCost} energy value)`,
         cards: attached,
-        maxSelect: attached.length,
+        maxSelect: retreatCost,
       });
 
       if (!picked || !picked.length) {
@@ -3331,6 +3333,11 @@ async function executeRetreat(player, benchIdx) {
       const chosenValue = energyValue(toDiscard);
       if (chosenValue < retreatCost) {
         showToast(`Not enough energy selected (${chosenValue} of ${retreatCost} needed). Retreat cancelled.`, true);
+        G.pendingAction = null; clearHighlights();
+        return;
+      }
+      if (chosenValue > retreatCost) {
+        showToast(`Too much energy selected (${chosenValue} of ${retreatCost} needed). Retreat cancelled.`, true);
         G.pendingAction = null; clearHighlights();
         return;
       }
