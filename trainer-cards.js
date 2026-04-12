@@ -405,7 +405,7 @@ const TRAINER_EFFECTS = {
     const energy = p.deck.filter(c => c.supertype === 'Energy' && !/double colorless/i.test(c.name));
     if (!energy.length) { showToast('No basic energy in deck!', true); return; }
     const picked = await openCardPicker({ title: 'Energy Search', subtitle: 'Choose 1 basic energy from your deck', cards: energy, maxSelect: 1 });
-    if (!picked) { return; }
+    if (!picked) { renderAll(); return; }
     consume();
     const found = energy[picked[0]];
     const i = p.deck.findIndex(c => c === found);
