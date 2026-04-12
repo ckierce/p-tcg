@@ -1175,6 +1175,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: rgba(0,0,0,.5);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.picker-card-meta {
+  font-size: 7px; color: var(--text2);
+  padding: 1px 3px;
+  background: rgba(0,0,0,.4);
+  display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+}
 .picker-card .sel-badge {
   position: absolute; top: 2px; right: 2px;
   background: var(--accent); color: #000;
@@ -3528,7 +3534,7 @@ function flipCoin(label, opts = {}) {
     const heads = Math.random() < 0.5;
     const endDeg = heads ? 1440 : 1620;
 
-    // If coin overlay isn't already showing, clear any pending flashes so coin is never obscured
+    // Clear any active flashes so coin flip is never obscured
     if (!overlay.classList.contains('show')) {
       _flashQueue.length = 0;
       _flashBusy = false;
@@ -3864,10 +3870,13 @@ async function performAttack(player, atk) {
 
   // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
   // Detect by text pattern OR by known attack names that have this effect.
-  const doubleNextMatch = (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
+  // Skip if MOVE_EFFECTS already handles this via postAttack (e.g. Scyther's Swords Dance)
+  const _hasDoublePostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+  const doubleNextMatch = !_hasDoublePostAttack && (
+    (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
     || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
     || (atk.text || '').match(/double(?:\s+the)?\s+damage[^.]*next turn/i)
-    || /^swords dance$/i.test(atk.name || '');  // name-based fallback
+    || /^swords dance$/i.test(atk.name || ''));  // name-based fallback
   if (doubleNextMatch && myActive && dmg === 0) {
     myActive.nextAttackDouble = true;
     addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
@@ -5670,14 +5679,23 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     // so cards aren't too narrow to read
     const cols = cards.length > 10 ? 3 : cards.length > 4 ? 4 : Math.max(1, cards.length);
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    grid.innerHTML = cards.map((card, i) => `
-      <div class="picker-card" id="picker-card-${i}"
-        onclick="event.stopPropagation();togglePickerCard(${i})">
-        <img src="${card.images?.small || ''}" alt="${card.name}">
-        <div class="picker-card-name">${card.name}</div>
-        <div class="sel-badge">✓</div>
-      </div>
-    `).join('');
+    grid.innerHTML = cards.map((card, i) => {
+      const energy = (card.attachedEnergy || []);
+      const energyHtml = energy.length
+        ? `<div class="picker-card-meta">${energy.map(e => energyIcon(e.name, 12)).join('')}</div>`
+        : '';
+      const dmg = card.damage ? `<div class="picker-card-meta" style="color:var(--p2color)">${card.damage} dmg</div>` : '';
+      const status = card.status ? `<div class="picker-card-meta" style="color:var(--accent)">${statusEmoji(card.status)} ${card.status}</div>` : '';
+      return `
+        <div class="picker-card" id="picker-card-${i}"
+          onclick="event.stopPropagation();togglePickerCard(${i})">
+          <img src="${card.images?.small || ''}" alt="${card.name}">
+          <div class="picker-card-name">${card.name}</div>
+          ${energyHtml}${dmg}${status}
+          <div class="sel-badge">✓</div>
+        </div>
+      `;
+    }).join('');
 
     document.getElementById('card-picker-modal').classList.add('show');
   });
@@ -7109,6 +7127,7 @@ setMidline('Load decks and press Start Game');
 window.addEventListener('beforeunload', () => {
   if (gameRef) { gameRef.remove().catch(() => {}); }
 });
+</script>
 </script>
 <script src="pokemon-powers.js"></script>
 <script src="trainer-cards.js"></script>

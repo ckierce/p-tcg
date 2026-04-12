@@ -241,6 +241,7 @@ const TRAINER_EFFECTS = {
     const doGust = ({ s, i }) => {
       consume();
       const old = oppP.active;
+      if (old?.status) { addLog(`${old.name}'s ${old.status} cleared on being benched.`); old.status = null; }
       oppP.active = s; oppP.bench[i] = old;
       addLog(`P${player} used Gust of Wind — opponent's ${oppP.active.name} forced to Active.`, true);
       renderAll();
