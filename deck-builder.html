@@ -142,28 +142,7 @@ a.btn { text-decoration: none; }
   border-right: 1px solid var(--border);
 }
 
-.set-tabs {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
 
-.set-tab {
-  font-family: var(--font);
-  font-size: 10px;
-  padding: 6px 14px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all .15s;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-.set-tab:hover { color: var(--text); border-color: var(--border2); }
-.set-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
 
 .controls {
   display: flex;
@@ -858,9 +837,6 @@ select:focus { border-color: var(--accent); }
   .search-wrap { min-width: 0; }
   select { font-size: 12px; padding: 8px 9px; max-width: 105px; }
 
-  .set-tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-  .set-tabs::-webkit-scrollbar { display: none; }
-  .set-tab { white-space: nowrap; flex-shrink: 0; font-size: 9px; }
 
   :root { --card-w: 130px; }
   .card-grid-inner { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
@@ -889,19 +865,14 @@ select:focus { border-color: var(--accent); }
       <strong>0 / 60</strong> cards
     </div>
     <button class="btn btn-ghost hide-mobile" id="mydecks-btn" onclick="openDecksModal()">My Decks</button>
-    <a href="pokemon-game.html" class="btn btn-ghost" style="text-decoration:none">▶ Go to Game</a>
+    <a href="pokemon-game.html" class="btn btn-primary" style="text-decoration:none">▶ Go to Game</a>
   </div>
 </header>
 
 <div class="layout">
   <!-- CARD BROWSER -->
   <div class="browser">
-    <div class="set-tabs">
-      <button class="set-tab active" data-set="">ALL SETS</button>
-      <button class="set-tab" data-set="base1">BASE SET</button>
-      <button class="set-tab" data-set="base2">JUNGLE</button>
-      <button class="set-tab" data-set="base3">FOSSIL</button>
-    </div>
+
     <div class="controls">
       <div class="search-wrap">
         <input type="text" id="search" placeholder="Search cards..." oninput="filterCards()">
@@ -1043,7 +1014,7 @@ function getMaxCopies(card) {
 let allCards = [];
 let filteredCards = [];
 let deck = {};
-let activeSet = '';
+
 let viewMode = 'grid';
 const collapsedSections = new Set();
 
@@ -1089,10 +1060,10 @@ function filterCards() {
   const q = document.getElementById('search').value.toLowerCase();
   const typeF = document.getElementById('type-filter').value;
   filteredCards = allCards.filter(c => {
-    const matchSet = !activeSet || c.set.id === activeSet;
+
     const matchQ = !q || c.name.toLowerCase().includes(q);
     const matchType = !typeF || c.supertype === typeF;
-    return matchSet && matchQ && matchType;
+    return matchQ && matchType;
   });
   filteredCards.sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('results-info').textContent =
@@ -1785,14 +1756,7 @@ function showToast(msg, isError = false) {
   toastTimer = setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), 2200);
 }
 
-document.querySelectorAll('.set-tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.set-tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    activeSet = tab.dataset.set;
-    filterCards();
-  });
-});
+
 
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
