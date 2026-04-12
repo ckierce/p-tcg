@@ -1181,6 +1181,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: rgba(0,0,0,.4);
   display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
 }
+.picker-card-meta .damage-counters {
+  position: static;
+  padding: 0;
+}
 .picker-card .sel-badge {
   position: absolute; top: 2px; right: 2px;
   background: var(--accent); color: #000;
@@ -5730,9 +5734,9 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     grid.innerHTML = cards.map((card, i) => {
       const energy = (card.attachedEnergy || []);
       const energyHtml = energy.length
-        ? `<div class="picker-card-meta">${energy.map(e => energyIcon(e.name, 12)).join('')}</div>`
+        ? `<div class="picker-card-meta">${energy.flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', 12), energyIcon('Colorless Energy', 12)] : [energyIcon(e.name, 12)]).join('')}</div>`
         : '';
-      const dmg = card.damage ? `<div class="picker-card-meta" style="color:var(--p2color)">${card.damage} dmg</div>` : '';
+      const dmg = card.damage ? `<div class="picker-card-meta">${damageCounters(card.damage)}</div>` : '';
       const status = card.status ? `<div class="picker-card-meta" style="color:var(--accent)">${statusEmoji(card.status)} ${card.status}</div>` : '';
       return `
         <div class="picker-card" id="picker-card-${i}"
