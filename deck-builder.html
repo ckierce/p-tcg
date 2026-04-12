@@ -1487,11 +1487,17 @@ async function pickSaveFolder() {
   try {
     const snap = await db.ref('decks').once('value');
     const val = snap.val();
-    if (val) existingFolders = Object.keys(val).map(k => {
-      // Try to get display name from any child deck's folder field
-      const children = Object.values(val[k]);
-      return (children[0] && children[0].folder) ? children[0].folder : k;
-    });
+    if (val) {
+      for (const [k, node] of Object.entries(val)) {
+        // Skip legacy top-level decks (they have a .deck and .name field directly)
+        if (node && typeof node === 'object' && node.deck && node.name) continue;
+        // It's a folder — get display name from a child deck's .folder field if available
+        const children = Object.values(node).filter(v => v && v.name);
+        const displayName = children.find(v => v.folder)?.folder || k;
+        existingFolders.push(displayName);
+      }
+      existingFolders.sort();
+    }
   } catch(e) { /* offline — continue with empty list */ }
 
   return new Promise(resolve => {
