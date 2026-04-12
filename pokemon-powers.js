@@ -202,7 +202,6 @@ async function doDamageSwap(player) {
     title: 'Damage Swap — Source',
     subtitle: 'Choose a Pokémon to take damage counters FROM',
     cards: srcCards,
-    cardMeta: buildPokemonMeta(srcCards, p.active),
     maxSelect: 1
   });
   if (!srcPicked) return;
@@ -230,10 +229,6 @@ async function doDamageSwap(player) {
     title: 'Damage Swap — Destination',
     subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
     cards: dstCards,
-    cardMeta: buildPokemonMeta(dstCards, p.active, c => {
-      const hp = parseInt(c.hp) || 0;
-      return (c.damage || 0) + numCounters * 10 >= hp;
-    }),
     maxSelect: 1
   });
   if (!dstPicked) return;
@@ -327,7 +322,6 @@ async function doCurse(player) {
       title: 'Curse — Source',
       subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
       cards: oppWithDamage,
-      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
       maxSelect: 1
     });
     if (!picked) return;
@@ -342,10 +336,6 @@ async function doCurse(player) {
       title: 'Curse — Destination',
       subtitle: "Choose an opponent Pokémon to move the damage counter TO",
       cards: dests,
-      cardMeta: buildPokemonMeta(dests, opp.active, c => {
-        const hp = parseInt(c.hp) || 0;
-        return (c.damage || 0) + 10 >= hp;
-      }),
       maxSelect: 1
     });
     if (!picked) return;
@@ -634,8 +624,8 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
   const actions = [];
 
   // Powers that appear on ANY slot (field-wide effects that any tap can trigger):
-  // Damage Swap (Alakazam) — triggers from any tap since it affects any own Pokémon
-  if (damageSwapActive(player) && isPowerActive(card, 'Damage Swap')) {
+  // Damage Swap (Alakazam) — triggers from any own Pokémon tap, not just Alakazam
+  if (damageSwapActive(player)) {
     actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
   }
 
