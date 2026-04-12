@@ -5726,6 +5726,8 @@ function cancelCardPick() {
   document.getElementById('card-picker-modal').classList.remove('show');
   hideCardDetail();
   if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
+  G.pendingAction = null;
+  renderAll();
 }
 
 // ══════════════════════════════════════════════════
