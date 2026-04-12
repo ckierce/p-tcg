@@ -724,12 +724,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge, spans from midline to bottom of active card */
+/* Prizes — fixed to left edge; top/max-height set dynamically by positionSidePanels() */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  top: 50%;                              /* anchored at midline */
-  max-height: calc(var(--active-h) / 2); /* panels start at midline so only half the active height is below */
+  top: 50%;                              /* fallback; overridden by JS */
+  max-height: calc(var(--active-h) / 2); /* fallback; overridden by JS */
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
@@ -747,12 +747,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, spans from midline to bottom of active card */
+/* Deck + discard — fixed to right edge; top/max-height set dynamically by positionSidePanels() */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;                              /* anchored at midline */
-  max-height: calc(var(--active-h) / 2); /* panels start at midline so only half the active height is below */
+  top: 50%;                              /* fallback; overridden by JS */
+  max-height: calc(var(--active-h) / 2); /* fallback; overridden by JS */
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
@@ -4791,6 +4791,22 @@ function endTurn() {
 // ══════════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════════
+function positionSidePanels() {
+  const active = document.getElementById('active-p1');
+  const fieldBody = document.getElementById('field-body');
+  const prizes = document.getElementById('player-prizes-panel');
+  const aux = document.getElementById('player-aux');
+  if (!active || !fieldBody || !prizes || !aux) return;
+  const fbRect = fieldBody.getBoundingClientRect();
+  const actRect = active.getBoundingClientRect();
+  const panelTop = actRect.top + actRect.height / 2 - fbRect.top;
+  const panelHeight = actRect.height / 2;
+  prizes.style.top = panelTop + 'px';
+  prizes.style.maxHeight = panelHeight + 'px';
+  aux.style.top = panelTop + 'px';
+  aux.style.maxHeight = panelHeight + 'px';
+}
+
 function renderAll() {
   document.body.dataset.phase = G.phase || 'SETUP';
   renderHands();
@@ -4812,6 +4828,8 @@ function renderAll() {
   } else if (vsComputer) {
     applyRoleVisibility();
   }
+  // Position side panels relative to active card geometry
+  requestAnimationFrame(positionSidePanels);
 }
 
 function updatePerspectiveLabels() {
