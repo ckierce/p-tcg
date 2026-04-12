@@ -790,9 +790,6 @@ async function playTrainer(player, handIdx, targetHint = null) {
   if (!card) return;
   const name = card.name;
 
-  // Flash trainer card name for the opponent
-  showTrainerFlash(player, name);
-
   // Headache block — opponent can't play Trainer cards this turn
   if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
     showToast(`Headache prevents playing Trainer cards this turn!`, true);
@@ -800,8 +797,12 @@ async function playTrainer(player, handIdx, targetHint = null) {
     return;
   }
 
-  // Helper: remove card from hand and discard it
-  const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
+  // Helper: remove card from hand and discard it — flash only fires on actual play
+  const consume = () => {
+    showTrainerFlash(player, name);
+    p.hand.splice(handIdx, 1);
+    p.discard.push(card);
+  };
 
   const handler = TRAINER_EFFECTS[name];
   if (handler) {
