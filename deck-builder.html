@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Pokémon TCG — Deck Builder</title>
 <style>
 :root {
@@ -782,6 +782,7 @@ select:focus { border-color: var(--accent); }
   background: var(--bg);
   border-top: 1px solid var(--border);
   z-index: 150;
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 .mobile-tabs-inner {
   display: grid;
@@ -839,12 +840,12 @@ select:focus { border-color: var(--accent); }
 
   .layout { display: block; height: calc(100vh - 50px); position: relative; overflow: hidden; }
   .browser {
-    position: absolute; inset: 0; bottom: 54px;
+    position: absolute; inset: 0; bottom: calc(54px + env(safe-area-inset-bottom, 0px));
     border-right: none; padding: 12px 10px;
     transition: opacity .2s, transform .2s;
   }
   .deck-panel {
-    position: absolute; inset: 0; bottom: 54px;
+    position: absolute; inset: 0; bottom: calc(54px + env(safe-area-inset-bottom, 0px));
     max-height: none;
     opacity: 0; pointer-events: none;
     transform: translateX(20px);
