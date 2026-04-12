@@ -241,54 +241,61 @@ async function doDamageSwap(player) {
 }
 
 // Venusaur — Energy Trans
-// Move 1 Grass energy from one of your Grass Pokémon to another.
+// Move any number of Grass energies freely between your Pokémon (one at a time).
 async function doEnergyTrans(player) {
   if (!energyTransActive(player)) { showToast('Venusaur not in play!', true); return; }
   if (isMukActive())              { showToast("Muk's Toxic Gas suppresses Energy Trans!", true); return; }
   const p = G.players[player];
 
-  const all = [p.active, ...p.bench].filter(Boolean);
-  const withGrass = all.filter(c => (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
-  if (!withGrass.length) { showToast('No Grass Energy to move!', true); return; }
+  let movedCount = 0;
+  while (true) {
+    const all = [p.active, ...p.bench].filter(Boolean);
+    const withGrass = all.filter(c => (c.attachedEnergy || []).some(e => /grass/i.test(e.name)));
+    if (!withGrass.length) {
+      if (movedCount === 0) showToast('No Grass Energy to move!', true);
+      break;
+    }
 
-  const srcPicked = await openCardPicker({
-    title: 'Energy Trans — Source',
-    subtitle: 'Choose a Pokémon to take Grass Energy FROM',
-    cards: withGrass, maxSelect: 1
-  });
-  if (!srcPicked) return;
-  const srcCard = withGrass[srcPicked[0]];
-
-  const grassOnSrc = srcCard.attachedEnergy.filter(e => /grass/i.test(e.name));
-  let energyCard = grassOnSrc[0];
-  if (grassOnSrc.length > 1) {
-    const ePicked = await openCardPicker({
-      title: 'Energy Trans — Which Energy',
-      subtitle: 'Choose which Grass Energy to move',
-      cards: grassOnSrc, maxSelect: 1
+    const srcPicked = await openCardPicker({
+      title: 'Energy Trans — Source',
+      subtitle: movedCount > 0 ? 'Move another? Choose source Pokémon, or Cancel to finish.' : 'Choose a Pokémon to take Grass Energy FROM',
+      cards: withGrass, maxSelect: 1
     });
-    if (!ePicked) return;
-    energyCard = grassOnSrc[ePicked[0]];
-  }
+    if (!srcPicked) break; // Cancel = done
+    const srcCard = withGrass[srcPicked[0]];
 
-  const dsts = all.filter(c => c !== srcCard);
-  if (!dsts.length) { showToast('No other Pokémon to attach Grass Energy to!', true); return; }
+    const grassOnSrc = srcCard.attachedEnergy.filter(e => /grass/i.test(e.name));
+    let energyCard = grassOnSrc[0];
+    if (grassOnSrc.length > 1) {
+      const ePicked = await openCardPicker({
+        title: 'Energy Trans — Which Energy',
+        subtitle: 'Choose which Grass Energy to move',
+        cards: grassOnSrc, maxSelect: 1
+      });
+      if (!ePicked) break;
+      energyCard = grassOnSrc[ePicked[0]];
+    }
 
-  const dstPicked = await openCardPicker({
-    title: 'Energy Trans — Destination',
-    subtitle: 'Choose a Pokémon to attach Grass Energy TO',
-    cards: dsts, maxSelect: 1
-  });
-  if (!dstPicked) return;
-  const dstCard = dsts[dstPicked[0]];
+    const dsts = all.filter(c => c !== srcCard);
+    if (!dsts.length) { showToast('No other Pokémon to attach Grass Energy to!', true); break; }
 
-  const idx = srcCard.attachedEnergy.findIndex(e => e === energyCard);
-  if (idx !== -1) {
-    srcCard.attachedEnergy.splice(idx, 1);
-    dstCard.attachedEnergy = dstCard.attachedEnergy || [];
-    dstCard.attachedEnergy.push(energyCard);
-    addLog(`P${player} used Energy Trans — moved Grass Energy from ${srcCard.name} to ${dstCard.name}.`, true);
-    renderAll();
+    const dstPicked = await openCardPicker({
+      title: 'Energy Trans — Destination',
+      subtitle: 'Choose a Pokémon to attach Grass Energy TO',
+      cards: dsts, maxSelect: 1
+    });
+    if (!dstPicked) break;
+    const dstCard = dsts[dstPicked[0]];
+
+    const idx = srcCard.attachedEnergy.findIndex(e => e === energyCard);
+    if (idx !== -1) {
+      srcCard.attachedEnergy.splice(idx, 1);
+      dstCard.attachedEnergy = dstCard.attachedEnergy || [];
+      dstCard.attachedEnergy.push(energyCard);
+      movedCount++;
+      addLog(`P${player} used Energy Trans — moved Grass Energy from ${srcCard.name} to ${dstCard.name}.`, true);
+      renderAll();
+    }
   }
 }
 

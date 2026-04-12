@@ -323,18 +323,26 @@ const TRAINER_EFFECTS = {
   'Super Energy Removal': async ({ player, opp, p, oppP, consume }) => {
     const oppHasEnergy = [oppP.active, ...oppP.bench].some(c => c?.attachedEnergy?.length);
     if (!oppHasEnergy) { showToast("Opponent has no energy!", true); return; }
-    if (!p.active?.attachedEnergy?.length) { showToast("Must discard 1 of your energy first!", true); return; }
-    // Step 1: discard 1 of own energy
+    const myPokemonWithEnergy = [p.active, ...p.bench].filter(c => c?.attachedEnergy?.length);
+    if (!myPokemonWithEnergy.length) { showToast("Must discard 1 of your energy first!", true); return; }
+    // Step 1: choose which of your own Pokémon to discard cost energy from
+    let costPokemon = myPokemonWithEnergy[0];
+    if (myPokemonWithEnergy.length > 1) {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: 'Choose YOUR Pokémon to discard 1 energy from', cards: myPokemonWithEnergy, maxSelect: 1 });
+      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      costPokemon = myPokemonWithEnergy[picked[0]];
+    }
+    // Step 1b: choose which energy from that Pokémon
     let myCostIdx = 0;
-    if (p.active.attachedEnergy.length > 1) {
-      const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: `Discard 1 energy from your ${p.active.name}`, cards: p.active.attachedEnergy, maxSelect: 1 });
+    if (costPokemon.attachedEnergy.length > 1) {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: `Discard 1 energy from your ${costPokemon.name}`, cards: costPokemon.attachedEnergy, maxSelect: 1 });
       if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
       myCostIdx = picked[0];
     }
     consume();
-    const myRemoved = p.active.attachedEnergy.splice(myCostIdx, 1)[0];
+    const myRemoved = costPokemon.attachedEnergy.splice(myCostIdx, 1)[0];
     p.discard.push(myRemoved);
-    addLog(`P${player} discarded ${myRemoved.name} from ${p.active.name} as cost.`);
+    addLog(`P${player} discarded ${myRemoved.name} from ${costPokemon.name} as cost.`);
     // Step 2: choose opponent's target
     const oppTargets = [
       ...(oppP.active?.attachedEnergy?.length ? [{ label: `Active: ${oppP.active.name}`, zone: 'active', idx: null }] : []),

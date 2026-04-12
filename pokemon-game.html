@@ -514,6 +514,13 @@ h1, h2, h3 { font-family: var(--font-title); }
 .zone-slot.highlight,
 .opp-bench-slot.highlight { border-color: var(--accent) !important; box-shadow: 0 0 6px rgba(232,200,74,.3); opacity: 1 !important; }
 .zone-slot.occupied { border-color: var(--border2); }
+/* Collapse empty bench slots outside SETUP so the bench hugs occupied slots */
+body:not([data-phase="SETUP"]) .bench-row .zone-slot:not(.occupied):not(.highlight) {
+  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
+}
+body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight) {
+  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
+}
 .zone-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
 
 .zone-slot-empty { text-align: center; line-height: 1.6; }
@@ -1251,7 +1258,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 /* ── MOVE FLASH OVERLAY ──────────────────────────── */
 #move-flash {
   display: none;
-  position: fixed; inset: 0; z-index: 960;
+  position: fixed; inset: 0; z-index: 1010;
   align-items: center; justify-content: center;
   pointer-events: none;
   background: rgba(0,0,0,0.55);
@@ -1265,7 +1272,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   display: none;
   position: fixed;
   bottom: 90px; left: 50%; transform: translateX(-50%);
-  z-index: 961;
+  z-index: 1011;
   pointer-events: none;
   width: max-content; max-width: 90vw;
 }
@@ -4671,6 +4678,7 @@ function endTurn() {
 // RENDER
 // ══════════════════════════════════════════════════
 function renderAll() {
+  document.body.dataset.phase = G.phase || 'SETUP';
   renderHands();
   renderField(1);
   renderField(2);
@@ -5636,6 +5644,10 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     document.getElementById('card-picker-confirm').disabled = maxSelect > 0;
 
     const grid = document.getElementById('card-picker-grid');
+    // Use fewer columns for large lists (e.g. Computer Search showing full deck)
+    // so cards aren't too narrow to read
+    const cols = cards.length > 10 ? 3 : cards.length > 4 ? 4 : Math.max(1, cards.length);
+    grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
     grid.innerHTML = cards.map((card, i) => `
       <div class="picker-card" id="picker-card-${i}"
         onclick="event.stopPropagation();togglePickerCard(${i})">
