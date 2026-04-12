@@ -4209,6 +4209,7 @@ async function performAttack(player, atk) {
       if (myActive) {
         myActive.damage = (myActive.damage || 0) + 10;
         addLog(`Strikes Back! (${oppActive.name}) — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
+        showActionFlash(opp, 'STRIKES BACK', oppActive.name, `→ 10 damage to ${myActive.name}`);
         const strikeKo = checkKO(opp, player, myActive, false);
         if (strikeKo === 'win') { renderWhenIdle(); return; }
         if (strikeKo === 'promote') { renderWhenIdle(); return; }
