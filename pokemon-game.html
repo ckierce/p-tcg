@@ -3509,6 +3509,15 @@ function flipCoin(label, opts = {}) {
     const heads = Math.random() < 0.5;
     const endDeg = heads ? 1440 : 1620;
 
+    // If coin overlay isn't already showing, clear any pending flashes and hide active ones
+    // so the coin flip is never obscured by a move/action flash
+    if (!overlay.classList.contains('show')) {
+      _flashQueue.length = 0;
+      _flashBusy = false;
+      document.getElementById('move-flash')?.classList.remove('show');
+      document.getElementById('action-flash')?.classList.remove('show');
+    }
+
     // Shorter pre-delay if overlay is already showing (consecutive flips)
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
 
