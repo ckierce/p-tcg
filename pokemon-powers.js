@@ -634,8 +634,8 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
   const actions = [];
 
   // Powers that appear on ANY slot (field-wide effects that any tap can trigger):
-  // Damage Swap (Alakazam) — triggers from any own Pokémon tap, not just Alakazam
-  if (damageSwapActive(player)) {
+  // Damage Swap (Alakazam) — triggers from any tap since it affects any own Pokémon
+  if (damageSwapActive(player) && isPowerActive(card, 'Damage Swap')) {
     actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
   }
 

@@ -724,19 +724,20 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge, sits just below midline and grows downward */
+/* Prizes — fixed to left edge, spans from midline to bottom of active card */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  top: 50%;           /* anchored at midline */
+  top: 50%;                        /* anchored at midline */
+  max-height: var(--active-h);     /* never taller than the active card */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
+  justify-content: space-evenly;   /* spread label + grid evenly in available height */
   align-items: center;
-  gap: 4px;
+  gap: 0;
   z-index: 10;
   pointer-events: none;
+  overflow: hidden;
 }
 #player-prizes-panel .prize-grid { pointer-events: auto; }
 #player-prizes-panel .panel-label {
@@ -746,23 +747,25 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
+/* Deck + discard — fixed to right edge, spans from midline to bottom of active card */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;           /* anchored at midline */
+  top: 50%;                        /* anchored at midline */
+  max-height: var(--active-h);     /* never taller than the active card */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
-  gap: 6px;
+  justify-content: space-evenly;   /* spread deck + discard evenly in available height */
   align-items: center;
+  gap: 0;
   z-index: 10;
+  overflow: hidden;
 }
 
 .player-deck-slot {
   width: var(--card-w-sm);
-  height: var(--card-h-sm);
+  height: calc(var(--active-h) * 0.45);  /* ~45% of active height so two fit with gap */
+  max-height: var(--card-h-sm);
   border: 1px solid var(--p1color);
   border-radius: 5px;
   background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
@@ -785,7 +788,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
 .player-discard-slot {
   width: var(--card-w-sm);
-  height: var(--card-h-sm);
+  height: calc(var(--active-h) * 0.45);  /* match deck slot */
+  max-height: var(--card-h-sm);
   border: 1px dashed var(--border);
   border-radius: 5px;
   background: var(--surface);
@@ -799,11 +803,11 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 .player-discard-slot img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Player prizes — 2×3 grid */
+/* Player prizes — 2×3 grid, constrained to fit within active card height */
 .prize-grid {
   display: grid;
   grid-template-columns: repeat(2, var(--prize-w));
-  grid-template-rows: repeat(3, var(--prize-h));
+  grid-template-rows: repeat(3, calc((var(--active-h) - 20px) / 3));  /* 3 rows fill active height minus label */
   gap: 4px;
 }
 
@@ -7100,14 +7104,6 @@ function receiveGameState(state) {
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
     showPromoteBanner(G.pendingPromotion);
-    // Restore bench highlights and midline prompt lost on page reload/rejoin
-    const promoteOwner = G.pendingPromotion;
-    for (let i = 0; i < 5; i++) {
-      if (G.players[promoteOwner].bench[i]) {
-        document.getElementById(`bench-p${promoteOwner}-${i}`)?.classList.add('highlight');
-      }
-    }
-    setMidline(`Player ${promoteOwner}: choose a bench Pokémon to promote to Active!`);
   } else {
     hidePromoteBanner();
   }
