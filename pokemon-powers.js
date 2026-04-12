@@ -346,7 +346,15 @@ async function doCurse(player) {
   dst.damage = (dst.damage || 0) + 10;
   addLog(`P${player} used Curse — moved 1 damage counter from ${src.name} to ${dst.name}.`, true);
   G.cursedThisTurn = true;
-  checkKO(player, oppNum, dst, false);
+
+  // Check KO on the destination (gained a counter) — src losing a counter can't KO it
+  const koResult = checkKO(player, oppNum, dst, false);
+  if (koResult === 'win') { renderAll(); return; }
+  if (koResult === 'promote') { renderAll(); return; }
+
+  // Also check if src was already at exactly lethal damage before losing the counter
+  // (edge case: src had exactly 0 hp remaining — but losing a counter means it can't KO)
+  // More importantly: if src === opp.active and dst KO'd something, the board still needs render
   renderAll();
 }
 
