@@ -6588,9 +6588,11 @@ async function aiPlayTrainers() {
           hand.splice(i, 1);
           p2.discard.push(card);
           const old = p2.active;
+          if (old.status) old.status = null;
           p2.active = p2.bench[bestIdx];
+          if (p2.active.status) p2.active.status = null;
           p2.bench[bestIdx] = old;
-          // Switch clears status on the new active
+          // Switch clears status on both Pokémon involved
           addLog(`🤖 Computer played Switch — swapped ${old.name} (${activeStatus}) for ${p2.active.name}!`, true);
           renderAll();
           return;
