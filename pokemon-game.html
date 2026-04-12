@@ -2201,27 +2201,18 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   <!-- REJOIN PANEL -->
   <div id="rejoin-panel" style="display:none;text-align:center;">
-    <p style="font-size: 11px;color:#f5a623;margin-bottom:12px">&#x21A9; REJOIN SAVED GAME</p>
-
-    <!-- In-progress games list -->
-    <div id="rejoin-games-list" style="margin-bottom:14px;width:280px;margin-left:auto;margin-right:auto;">
-      <div style="font-size:9px;color:var(--muted);margin-bottom:6px;letter-spacing:1px">IN-PROGRESS GAMES</div>
-      <div id="rejoin-games-rows" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto;">
-        <div style="font-size:9px;color:var(--muted);font-style:italic">Loading...</div>
-      </div>
-    </div>
-
-    <div style="font-size: 9px;color:var(--muted);margin-bottom:8px">&#x2014; or enter code manually &#x2014;</div>
+    <p style="font-size: 11px;color:#f5a623;margin-bottom:16px">↩ REJOIN SAVED GAME</p>
+    <div style="font-size: 9px;color:var(--muted);margin-bottom:10px">Enter your room code and select your role</div>
     <input id="rejoin-code-input" type="text" maxlength="6" placeholder="ROOM CODE"
       style="font-family:var(--font);font-size: 16px;letter-spacing:4px;text-align:center;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border2);color:var(--accent);padding:10px 16px;border-radius:4px;width:200px;outline:none;display:block;margin:0 auto 12px;">
     <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px">
-      <button class="lobby-btn player-opt" id="rejoin-p1-btn" onclick="selectRejoinRole(1)" style="padding:8px 18px">&#x1F535; P1</button>
-      <button class="lobby-btn player-opt" id="rejoin-p2-btn" onclick="selectRejoinRole(2)" style="padding:8px 18px">&#x1F534; P2</button>
+      <button class="lobby-btn player-opt" id="rejoin-p1-btn" onclick="selectRejoinRole(1)" style="padding:8px 18px">🔵 P1</button>
+      <button class="lobby-btn player-opt" id="rejoin-p2-btn" onclick="selectRejoinRole(2)" style="padding:8px 18px">🔴 P2</button>
     </div>
     <div id="rejoin-status" style="font-size: 9px;color:var(--muted);min-height:18px;margin-bottom:10px"></div>
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-      <button class="lobby-btn" onclick="rejoinGame()">&#x21A9; REJOIN &#x2192;</button>
-      <button class="lobby-btn" style="font-size: 9px;color:var(--muted)" onclick="showLobby()">&#x2190; BACK</button>
+      <button class="lobby-btn" onclick="rejoinGame()">↩ REJOIN →</button>
+      <button class="lobby-btn" style="font-size: 9px;color:var(--muted)" onclick="showLobby()">← BACK</button>
     </div>
   </div>
 
@@ -3248,23 +3239,25 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
 
   // Build a pool of energy tokens from attached cards
   // Energy Burn (Charizard): all attached energy counts as Fire
+  // Transform (Ditto): all attached energy is wildcard — satisfies any type
   const energyBurn = attackerCard && hasEnergyBurn(attackerCard);
+  const isDitto = attackerCard && typeof isPowerActive === 'function' && isPowerActive(attackerCard, 'Transform');
   const pool = [];
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
-    if (energyBurn) {
+    if (isDitto) {
+      pool.push('*'); // wildcard
+    } else if (energyBurn) {
       pool.push('Fire');
     } else if (/double colorless/i.test(name)) {
       pool.push('Colorless', 'Colorless');
     } else {
-      // Derive type from name e.g. "Water Energy" → "Water"
       const type = name.replace(/\s*energy/i, '').trim() || 'Colorless';
       pool.push(type);
     }
   }
 
   // Sort cost: specific types first, Colorless last
-  // so we don't wastefully use typed energy on Colorless slots
   const sortedCost = [...cost].sort((a, b) =>
     (a === 'Colorless' ? 1 : 0) - (b === 'Colorless' ? 1 : 0)
   );
@@ -3272,12 +3265,11 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   const remaining = [...pool];
   for (const req of sortedCost) {
     if (req === 'Colorless') {
-      // Any single energy satisfies Colorless
       if (remaining.length === 0) return false;
-      remaining.splice(0, 1); // consume any one
+      remaining.splice(0, 1);
     } else {
-      // Must match exact type
-      const idx = remaining.indexOf(req);
+      // Match exact type OR wildcard
+      const idx = remaining.findIndex(r => r === req || r === '*');
       if (idx === -1) return false;
       remaining.splice(idx, 1);
     }
@@ -7228,68 +7220,6 @@ function showRejoinPanel() {
   document.getElementById('rejoin-p2-btn').classList.remove('sel');
   document.getElementById('rejoin-status').textContent = '';
   showPanel('rejoin-panel');
-  loadInProgressGames();
-}
-
-async function loadInProgressGames() {
-  const rows = document.getElementById('rejoin-games-rows');
-  if (!rows) return;
-  rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">Loading...</div>';
-  try {
-    const snap = await db.ref('games').once('value');
-    const games = snap.val() || {};
-    const now = Date.now();
-    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-    const inProgress = Object.entries(games)
-      .filter(([, g]) => g.state?.started && (now - (g.created || 0)) < ONE_WEEK_MS)
-      .sort((a, b) => (b[1].created || 0) - (a[1].created || 0))
-      .slice(0, 10);
-
-    if (!inProgress.length) {
-      rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">No in-progress games found.</div>';
-      return;
-    }
-
-    rows.innerHTML = inProgress.map(([code, g]) => {
-      const p1Name = g.p1DeckName || 'P1';
-      const p2Name = g.p2DeckName || 'P2';
-      const turn = g.state?.turn;
-      const turnNum = g.state?.turnNum || '?';
-      const phase = g.state?.phase || '';
-      const ago = Math.round((now - (g.created || 0)) / 60000);
-      const agoStr = ago < 60 ? `${ago}m ago` : `${Math.round(ago/60)}h ago`;
-      const phaseLabel = phase === 'PROMOTE' ? ' &#x26A0; PROMOTE' : '';
-      const turnLabel = turn ? ` &bull; P${turn} turn` : '';
-      return `<div onclick="selectRejoinGame('${code}')"
-        id="rejoin-row-${code}"
-        style="display:flex;justify-content:space-between;align-items:center;
-               padding:8px 10px;background:var(--surface2);border:1px solid var(--border);
-               border-radius:5px;cursor:pointer;text-align:left;gap:8px;
-               transition:border-color .15s;"
-        onmouseover="this.style.borderColor='var(--accent)'"
-        onmouseout="this.style.borderColor=rejoinSelectedCode==='${code}'?'var(--accent)':'var(--border)'">
-        <div>
-          <div style="font-size:10px;color:var(--text);letter-spacing:1px;font-family:var(--font-title)">${code}</div>
-          <div style="font-size:8px;color:var(--muted);margin-top:2px">${p1Name} vs ${p2Name}${turnLabel}${phaseLabel}</div>
-          <div style="font-size:7px;color:var(--muted);margin-top:1px">Turn ${turnNum} &bull; ${agoStr}</div>
-        </div>
-        <div style="font-size:8px;color:var(--accent);white-space:nowrap">SELECT &#x2192;</div>
-      </div>`;
-    }).join('');
-  } catch(e) {
-    rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">Could not load games.</div>';
-  }
-}
-
-let rejoinSelectedCode = null;
-function selectRejoinGame(code) {
-  rejoinSelectedCode = code;
-  document.getElementById('rejoin-code-input').value = code;
-  // Highlight selected row
-  document.querySelectorAll('[id^="rejoin-row-"]').forEach(el => {
-    el.style.borderColor = el.id === 'rejoin-row-' + code ? 'var(--accent)' : 'var(--border)';
-    el.style.background = el.id === 'rejoin-row-' + code ? 'var(--surface)' : 'var(--surface2)';
-  });
 }
 
 function selectRejoinRole(role) {
