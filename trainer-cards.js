@@ -210,7 +210,6 @@ const TRAINER_EFFECTS = {
       addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
       renderAll();
     };
-    if (targets.length === 1) { doScoop(targets[0].zone, targets[0].idx); return; }
     const picked = await openCardPicker({ title: 'Scoop Up', subtitle: 'Choose a Pokémon to return to hand', cards: targets.map(t => ({ name: t.label, images: { small: '' } })), maxSelect: 1 });
     if (picked && picked.length) doScoop(targets[picked[0]].zone, targets[picked[0]].idx);
   },
@@ -228,7 +227,6 @@ const TRAINER_EFFECTS = {
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
       renderAll();
     };
-    if (benchSlots.length === 1) { doSwitch(benchSlots[0]); return; }
     const picked = await openCardPicker({ title: 'Switch — Choose a Pokémon', subtitle: 'Choose a bench Pokémon to switch in', cards: benchSlots.map(x => x.s), maxSelect: 1 });
     if (picked && picked.length) doSwitch(benchSlots[picked[0]]);
   },
@@ -246,7 +244,6 @@ const TRAINER_EFFECTS = {
       addLog(`P${player} used Gust of Wind — opponent's ${oppP.active.name} forced to Active.`, true);
       renderAll();
     };
-    if (bench.length === 1) { doGust(bench[0]); return; }
     const picked = await openCardPicker({ title: "Gust of Wind — Choose Opponent's Pokémon", subtitle: 'Choose 1 to force Active', cards: bench.map(x => x.s), maxSelect: 1 });
     if (picked && picked.length) doGust(bench[picked[0]]);
   },
@@ -658,7 +655,6 @@ const TRAINER_EFFECTS = {
       renderAll();
     };
 
-    if (evolved.length === 1) { doDevolution(evolved[0].zone, evolved[0].idx); return; }
     const picked = await openCardPicker({ title: 'Devolution Spray', subtitle: 'Choose a Pokémon to devolve to Basic', cards: evolved.map(e => ({ name: e.label, images: { small: '' } })), maxSelect: 1 });
     if (picked && picked.length) doDevolution(evolved[picked[0]].zone, evolved[picked[0]].idx);
   },
