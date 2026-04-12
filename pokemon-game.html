@@ -513,9 +513,9 @@ h1, h2, h3 { font-family: var(--font-title); }
 .zone-slot:hover { border-color: var(--border2); }
 .zone-slot.highlight,
 .opp-bench-slot.highlight { border-color: var(--accent) !important; box-shadow: 0 0 6px rgba(232,200,74,.3); opacity: 1 !important; }
-.zone-slot.occupied { border-color: var(--border2); }
+.zone-slot.occupied { border-color: var(--accent); }
 /* Collapse empty bench slots outside SETUP so the bench hugs occupied slots */
-body:not([data-phase="SETUP"]) .bench-row .zone-slot:not(.occupied):not(.highlight) {
+body:not([data-phase="SETUP"]) .bench-row .zone-slot:not(.occupied):not(.highlight):not(.drag-valid):not(.drag-valid-evolve):not(.drag-valid-energy):not(.drag-valid-heal):not(.drag-valid-trainer) {
   width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
 }
 body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight) {
@@ -1349,7 +1349,7 @@ body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight) 
 /* ── COIN FLIP OVERLAY ───────────────────────────── */
 #coin-overlay {
   display: none;
-  position: fixed; inset: 0; z-index: 1000;
+  position: fixed; inset: 0; z-index: 1020;
   background: rgba(0,0,0,.75);
   align-items: center; justify-content: center;
   flex-direction: column; gap: 20px;
