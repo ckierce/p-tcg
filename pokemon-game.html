@@ -2974,18 +2974,66 @@ function getActionsForCard(player, card, handIdx) {
   if (!isSetup && card.supertype === 'Trainer') {
     const opp = player === 1 ? 2 : 1;
     const oppP = G.players[opp];
-    let unplayableReason = null;
+    const myPokemon = [p.active, ...p.bench].filter(Boolean);
+    const oppPokemon = [oppP.active, ...oppP.bench].filter(Boolean);
     const nm = card.name;
-    if (/gust of wind/i.test(nm) && !oppP.bench.some(s => s !== null))
-      unplayableReason = 'Opponent has no benched Pokémon';
-    else if (/switch/i.test(nm) && !p.bench.some(s => s !== null))
-      unplayableReason = 'No bench Pokémon to switch with';
-    else if (/energy removal/i.test(nm) && !oppP.bench.concat([oppP.active]).some(s => s && (s.attachedEnergy||[]).length))
-      unplayableReason = 'Opponent has no energy';
-    else if (/scoop up/i.test(nm) && ![p.active, ...p.bench].some(s => s && s.subtypes?.includes('Basic') && !s.isDoll))
+    let unplayableReason = null;
+
+    if (/^potion$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0))
+      unplayableReason = 'No damaged Pokémon to heal';
+    else if (/^super potion$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0 && (s.attachedEnergy||[]).length))
+      unplayableReason = 'No damaged Pokémon with energy to discard';
+    else if (/^max potion$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0))
+      unplayableReason = 'No damaged Pokémon to heal';
+    else if (/^pokémon center$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0))
+      unplayableReason = 'No damaged Pokémon to heal';
+    else if (/^full heal$/i.test(nm) && !p.active?.status)
+      unplayableReason = 'Active Pokémon has no status condition';
+    else if (/^full restore$/i.test(nm) && !p.active?.status)
+      unplayableReason = 'Active Pokémon has no status condition';
+    else if (/^scoop up$/i.test(nm) && !myPokemon.some(s => s.subtypes?.includes('Basic') && !s.isDoll))
       unplayableReason = 'No eligible Basic Pokémon';
-    else if (/item finder/i.test(nm) && p.discard.filter(c => c.supertype === 'Trainer').length === 0)
-      unplayableReason = 'No Trainers in discard';
+    else if (/^switch$/i.test(nm) && !p.bench.some(s => s !== null))
+      unplayableReason = 'No bench Pokémon to switch with';
+    else if (/^gust of wind$/i.test(nm) && !oppP.bench.some(s => s !== null))
+      unplayableReason = 'Opponent has no benched Pokémon';
+    else if (/^pluspower$/i.test(nm) && !p.active)
+      unplayableReason = 'No active Pokémon';
+    else if (/^defender$/i.test(nm) && !p.active)
+      unplayableReason = 'No active Pokémon';
+    else if (/^energy removal$/i.test(nm) && !oppPokemon.some(s => (s.attachedEnergy||[]).length))
+      unplayableReason = 'Opponent has no energy to remove';
+    else if (/^super energy removal$/i.test(nm) && (!oppPokemon.some(s => (s.attachedEnergy||[]).length) || !myPokemon.some(s => (s.attachedEnergy||[]).length)))
+      unplayableReason = !oppPokemon.some(s => (s.attachedEnergy||[]).length) ? 'Opponent has no energy' : 'You have no energy to discard';
+    else if (/^energy retrieval$/i.test(nm) && !p.discard.some(c => c.supertype === 'Energy' && !/double colorless/i.test(c.name)))
+      unplayableReason = 'No basic energy in discard';
+    else if (/^energy search$/i.test(nm) && !p.deck.some(c => c.supertype === 'Energy' && !/double colorless/i.test(c.name)))
+      unplayableReason = 'No basic energy in deck';
+    else if (/^computer search$/i.test(nm) && (p.hand.filter((_,i)=>i!==handIdx).length < 2 || !p.deck.length))
+      unplayableReason = p.deck.length ? 'Need at least 2 other cards in hand' : 'Deck is empty';
+    else if (/^item finder$/i.test(nm) && (!p.discard.some(c => c.supertype === 'Trainer') || p.hand.filter((_,i)=>i!==handIdx).length < 2))
+      unplayableReason = !p.discard.some(c => c.supertype === 'Trainer') ? 'No Trainers in discard' : 'Need at least 2 other cards to discard';
+    else if (/^maintenance$/i.test(nm) && p.hand.filter((_,i)=>i!==handIdx).length < 2)
+      unplayableReason = 'Need at least 2 other cards in hand';
+    else if (/^revive$/i.test(nm) && (!p.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) || p.bench.every(s => s !== null)))
+      unplayableReason = !p.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) ? 'No Basic Pokémon in discard' : 'Bench is full';
+    else if (/^mr\. fuji$/i.test(nm) && !p.bench.some(s => s !== null))
+      unplayableReason = 'No bench Pokémon to choose';
+    else if (/^pokémon trader$/i.test(nm) && (!p.hand.some((c,i) => i !== handIdx && c.supertype === 'Pokémon') || !p.deck.some(c => c.supertype === 'Pokémon')))
+      unplayableReason = !p.deck.some(c => c.supertype === 'Pokémon') ? 'No Pokémon in deck' : 'No other Pokémon in hand to trade';
+    else if (/^pokémon breeder$/i.test(nm) && !p.hand.some((c,i) => i !== handIdx && c.subtypes?.includes('Stage 2')))
+      unplayableReason = 'No Stage 2 Pokémon in hand';
+    else if (/^pokémon flute$/i.test(nm) && (!oppP.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) || oppP.bench.every(s => s !== null)))
+      unplayableReason = !oppP.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) ? "No Basic Pokémon in opponent's discard" : "Opponent's bench is full";
+    else if (/^devolution spray$/i.test(nm) && !myPokemon.some(s => s.subtypes?.includes('Stage 1') || s.subtypes?.includes('Stage 2')))
+      unplayableReason = 'No evolved Pokémon to devolve';
+    else if (/^recycle$/i.test(nm) && !p.discard.length)
+      unplayableReason = 'Discard pile is empty';
+    else if (/^clefairy doll$/i.test(nm) && p.bench.every(s => s !== null) && p.active)
+      unplayableReason = 'Bench is full';
+    else if (/^mysterious fossil$/i.test(nm) && p.bench.every(s => s !== null) && p.active)
+      unplayableReason = 'Bench is full';
+
     if (unplayableReason) {
       actions.push({ label: `Cannot play — ${unplayableReason}`, disabled: true, fn: () => {} });
     } else {
