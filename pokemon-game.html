@@ -329,7 +329,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   position: relative;
   flex-shrink: 1;
   min-width: 24px;
-  transition: margin-right .15s ease, width .15s ease, min-width .15s ease, padding .15s ease, border .15s ease;
+  transition: margin-right .15s ease, width .15s ease;
 }
 .opp-bench-slot img {
   width: 100%; height: 100%;
@@ -2966,7 +2966,27 @@ function getActionsForCard(player, card, handIdx) {
     }
   }
   if (!isSetup && card.supertype === 'Trainer') {
-    actions.push({ label: 'Play Trainer', fn: async () => { closeActionMenu(); await playTrainer(player, handIdx); } });
+    const opp = player === 1 ? 2 : 1;
+    const oppP = G.players[opp];
+    // Pre-validate conditions for trainers that can obviously fail
+    let unplayableReason = null;
+    const nm = card.name;
+    if (/gust of wind/i.test(nm) && !oppP.bench.some(s => s !== null))
+      unplayableReason = 'Opponent has no benched Pokémon';
+    else if (/switch/i.test(nm) && !p.bench.some(s => s !== null))
+      unplayableReason = 'No bench Pokémon to switch with';
+    else if (/energy removal/i.test(nm) && !oppP.bench.concat([oppP.active]).some(s => s && (s.attachedEnergy||[]).length))
+      unplayableReason = 'Opponent has no energy';
+    else if (/scoop up/i.test(nm) && !([p.active, ...p.bench].some(s => s && s.subtypes?.includes('Basic') && !s.isDoll)))
+      unplayableReason = 'No eligible Basic Pokémon';
+    else if (/item finder/i.test(nm) && p.discard.filter(c => c.supertype === 'Trainer').length === 0)
+      unplayableReason = 'No Trainers in discard';
+
+    if (unplayableReason) {
+      actions.push({ label: `Cannot play — ${unplayableReason}`, disabled: true, fn: () => {} });
+    } else {
+      actions.push({ label: 'Play Trainer', fn: async () => { closeActionMenu(); await playTrainer(player, handIdx); } });
+    }
   }
   // Always allow viewing the card image
   const _viewSrc = card.images?.large || card.images?.small || '';
@@ -8554,9 +8574,6 @@ async function playTrainer(player, handIdx, targetHint = null) {
   if (!card) return;
   const name = card.name;
 
-  // Flash trainer card name for the opponent
-  showTrainerFlash(player, name);
-
   // Headache block — opponent can't play Trainer cards this turn
   if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {
     showToast(`Headache prevents playing Trainer cards this turn!`, true);
@@ -8564,8 +8581,12 @@ async function playTrainer(player, handIdx, targetHint = null) {
     return;
   }
 
-  // Helper: remove card from hand and discard it
-  const consume = () => { p.hand.splice(handIdx, 1); p.discard.push(card); };
+  // Helper: remove card from hand and discard it — flash only fires here
+  const consume = () => {
+    showTrainerFlash(player, name);
+    p.hand.splice(handIdx, 1);
+    p.discard.push(card);
+  };
 
   const handler = TRAINER_EFFECTS[name];
   if (handler) {
