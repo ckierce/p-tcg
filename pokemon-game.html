@@ -4217,7 +4217,8 @@ async function performAttack(player, atk) {
 
 
   // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
-  const selfProtectMatch = (atk.text || '').match(
+  const _hasSelfProtectPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+  const selfProtectMatch = !_hasSelfProtectPostAttack && (atk.text || '').match(
     /flip a coin[^.]*\.\s*if heads[^.]*prevent all damage done to/i
   );
   if (selfProtectMatch && myActive) {
