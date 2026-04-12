@@ -888,9 +888,8 @@ select:focus { border-color: var(--accent); }
     <div class="deck-summary" id="deck-summary">
       <strong>0 / 60</strong> cards
     </div>
-    <button class="btn btn-ghost" id="mydecks-btn" onclick="openDecksModal()">My Decks</button>
-    <button class="btn btn-primary" onclick="saveDeck()">Save Deck</button>
-    <a href="pokemon-game.html" class="btn btn-ghost hide-mobile" style="text-decoration:none">▶ Play</a>
+    <button class="btn btn-ghost hide-mobile" id="mydecks-btn" onclick="openDecksModal()">My Decks</button>
+    <a href="pokemon-game.html" class="btn btn-ghost" style="text-decoration:none">▶ Go to Game</a>
   </div>
 </header>
 
@@ -933,7 +932,7 @@ select:focus { border-color: var(--accent); }
   <div class="deck-panel">
     <div class="deck-header">
       <div class="deck-name-row">
-        <input type="text" class="deck-name-input" id="deck-name" value="My Deck" placeholder="DECK NAME">
+        <input type="text" class="deck-name-input" id="deck-name" value="" placeholder="DECK NAME">
       </div>
       <div class="deck-stats">
         <div class="stat-box"><div class="stat-val" id="stat-poke">0</div><div class="stat-lbl">Pokémon</div></div>
@@ -950,7 +949,7 @@ select:focus { border-color: var(--accent); }
     </div>
     <div class="deck-actions">
       <button class="btn btn-ghost" onclick="clearDeck()">Clear</button>
-      <button class="btn btn-primary" onclick="validateDeck(true)">Validate</button>
+      <button class="btn btn-primary" onclick="saveDeck()">Save Deck</button>
     </div>
   </div>
 </div>
@@ -993,19 +992,19 @@ select:focus { border-color: var(--accent); }
 
 <!-- Mobile bottom nav -->
 <nav class="mobile-tabs" id="mobile-tabs" aria-label="Mobile navigation">
-  <div class="mobile-tabs-inner">
+  <div class="mobile-tabs-inner" style="grid-template-columns: repeat(3, 1fr)">
     <button class="mobile-tab-btn active" id="mob-browse-btn" onclick="mobileSwitchTab('browse')">
       <span class="tab-icon">🃏</span>
-      Browse
+      Cards
     </button>
-    <a href="pokemon-game.html" class="mobile-tab-btn" style="text-decoration:none">
-      <span class="tab-icon">▶</span>
-      Play
-    </a>
     <button class="mobile-tab-btn" id="mob-deck-btn" onclick="mobileSwitchTab('deck')">
       <span class="tab-icon">📋</span>
-      Deck
+      Current Deck
       <span class="mobile-tab-badge" id="mob-deck-badge"></span>
+    </button>
+    <button class="mobile-tab-btn" id="mob-decks-btn" onclick="openDecksModal()">
+      <span class="tab-icon">📚</span>
+      Decks
     </button>
   </div>
 </nav>
@@ -1474,12 +1473,18 @@ let lastUsedFolder = '';        // remembered across saves
 function fbKey(str) { return str.replace(/[.#$[\]]/g, '_'); }
 
 async function saveDeck() {
-  const name = document.getElementById('deck-name').value.trim() || 'My Deck';
+  const name = document.getElementById('deck-name').value.trim();
+  if (!name || name.toLowerCase() === 'my deck' || name.toLowerCase() === 'new deck') {
+    showToast('Please give your deck a name before saving!', true);
+    document.getElementById('deck-name').focus();
+    return;
+  }
   if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
 
   // Show custom folder picker modal instead of browser prompt
   const folderName = await pickSaveFolder();
   if (folderName === null) return; // cancelled
+  if (!folderName.trim()) { showToast('Please choose or create a folder!', true); return; }
   lastUsedFolder = folderName;
 
   showToast('Saving…');
