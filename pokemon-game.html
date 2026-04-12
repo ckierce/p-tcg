@@ -4234,7 +4234,10 @@ async function performAttack(player, atk) {
   }
 
   // ── Agility-style: "Flip a coin. If heads, prevent all effects of attacks done to [Pokémon]" ──
-  const agilityMatch = (atk.text || '').match(/flip a coin\. if heads[^.]*prevent all effects of attacks[^.]*done to/i);
+  // Guard: skip generic flip if MOVE_EFFECTS already handles it via postAttack (e.g. Raichu's Agility)
+  const _hasAgilityPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack)
+    || /^agility$/i.test(atk.name);
+  const agilityMatch = !_hasAgilityPostAttack && (atk.text || '').match(/flip a coin\. if heads[^.]*prevent all effects of attacks[^.]*done to/i);
   if (agilityMatch && myActive) {
     const heads = await flipCoin(`${atk.name}: Heads = immune to all attack effects next turn, Tails = no effect`);
     if (heads) {
@@ -4479,16 +4482,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       return 'win';
     }
 
-    // Auto-promote if exactly one bench pokemon remains
-    if (benchLeft.length === 1) {
-      const idx = G.players[owner].bench.findIndex(s => s !== null);
-      G.players[owner].active = G.players[owner].bench[idx];
-      G.players[owner].bench[idx] = null;
-      addLog(`${G.players[owner].active.name} was automatically moved to Active!`, true);
-      return 'ko';
-    }
-
-    // Multiple bench pokemon — pause for promotion choice
+    // Always show the promote banner — even with one bench Pokémon the player must confirm
     G.phase = 'PROMOTE';
     G.pendingPromotion = owner;
     _flashQueue.length = 0; // clear pending flashes so banner isn't buried
@@ -7752,6 +7746,15 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
     actions.push({ label: '🌸 Heal (Vileplume)', fn: async () => { closeActionMenu(); await doHeal(player); G.healedThisTurn = true; } });
   }
 
+  // Blastoise — Rain Dance: show on Blastoise's card; tap to attach Water energy freely
+  if (isPowerActive(card, 'Rain Dance')) {
+    actions.push({
+      label: '🌧 Rain Dance',
+      sub: 'Passive — attach Water Energy to any Water Pokémon as many times as you like this turn',
+      fn: () => { closeActionMenu(); showToast('Rain Dance is active — attach Water Energy freely to Water Pokémon this turn!'); }
+    });
+  }
+
   return actions;
 }
 
@@ -9167,33 +9170,34 @@ const MOVE_EFFECTS = {
   // Confuse Ray (Alakazam/Drowzee/Vulpix/Lapras): flip → confused
   'Confuse Ray': _statusOppFlip('confused'),
 
-  // Conversion 1 (Porygon): change opp's weakness type
+  // Conversion 1 (Porygon): change opp's weakness type — preAttack so cancel blocks the turn
   'Conversion 1': {
-    postAttack: async ({ opp, atk }) => {
+    preAttack: async ({ opp, atk }) => {
       const oppActive = G.players[opp].active;
-      if (!oppActive) return;
-      if (!(oppActive.weaknesses || []).length) { addLog(`${atk.name}: ${oppActive.name} has no Weakness.`); return; }
+      if (!oppActive) return 'block';
+      if (!(oppActive.weaknesses || []).length) { addLog(`${atk.name}: ${oppActive.name} has no Weakness.`); return 'block'; }
       const chosen = await pickType(`${atk.name} — Choose new Weakness type for ${oppActive.name}`);
-      if (chosen && chosen !== 'Colorless') {
-        oppActive.weaknesses = [{ type: chosen, value: '×2' }];
-        oppActive.conversionWeakness = chosen;
-        addLog(`${atk.name}: ${oppActive.name}'s Weakness → ${chosen}!`, true);
-        renderAll();
-      }
+      if (!chosen || chosen === 'Colorless') return 'block';
+      oppActive.weaknesses = [{ type: chosen, value: '×2' }];
+      oppActive.conversionWeakness = chosen;
+      addLog(`${atk.name}: ${oppActive.name}'s Weakness → ${chosen}!`, true);
+      renderAll();
+      return null;
     }
   },
 
-  // Conversion 2 (Porygon): change own resistance type
+  // Conversion 2 (Porygon): change own resistance type — preAttack so cancel blocks the turn
   'Conversion 2': {
-    postAttack: async ({ myActive, atk }) => {
-      if (!myActive) return;
+    preAttack: async ({ player, atk }) => {
+      const myActive = G.players[player].active;
+      if (!myActive) return 'block';
       const chosen = await pickType(`${atk.name} — Choose new Resistance type for ${myActive.name}`);
-      if (chosen && chosen !== 'Colorless') {
-        myActive.resistances = [{ type: chosen, value: '-30' }];
-        myActive.conversionResistance = chosen;
-        addLog(`${atk.name}: ${myActive.name}'s Resistance → ${chosen}!`, true);
-        renderAll();
-      }
+      if (!chosen || chosen === 'Colorless') return 'block';
+      myActive.resistances = [{ type: chosen, value: '-30' }];
+      myActive.conversionResistance = chosen;
+      addLog(`${atk.name}: ${myActive.name}'s Resistance → ${chosen}!`, true);
+      renderAll();
+      return null;
     }
   },
 

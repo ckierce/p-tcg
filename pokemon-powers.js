@@ -684,5 +684,14 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
     actions.push({ label: '🌸 Heal (Vileplume)', fn: async () => { closeActionMenu(); await doHeal(player); G.healedThisTurn = true; } });
   }
 
+  // Blastoise — Rain Dance: show on Blastoise's card; tap to attach Water energy freely
+  if (isPowerActive(card, 'Rain Dance')) {
+    actions.push({
+      label: '🌧 Rain Dance',
+      sub: 'Passive — attach Water Energy to any Water Pokémon as many times as you like this turn',
+      fn: () => { closeActionMenu(); showToast('Rain Dance is active — attach Water Energy freely to Water Pokémon this turn!'); }
+    });
+  }
+
   return actions;
 }

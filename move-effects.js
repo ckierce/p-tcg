@@ -595,33 +595,34 @@ const MOVE_EFFECTS = {
   // Confuse Ray (Alakazam/Drowzee/Vulpix/Lapras): flip → confused
   'Confuse Ray': _statusOppFlip('confused'),
 
-  // Conversion 1 (Porygon): change opp's weakness type
+  // Conversion 1 (Porygon): change opp's weakness type — preAttack so cancel blocks the turn
   'Conversion 1': {
-    postAttack: async ({ opp, atk }) => {
+    preAttack: async ({ opp, atk }) => {
       const oppActive = G.players[opp].active;
-      if (!oppActive) return;
-      if (!(oppActive.weaknesses || []).length) { addLog(`${atk.name}: ${oppActive.name} has no Weakness.`); return; }
+      if (!oppActive) return 'block';
+      if (!(oppActive.weaknesses || []).length) { addLog(`${atk.name}: ${oppActive.name} has no Weakness.`); return 'block'; }
       const chosen = await pickType(`${atk.name} — Choose new Weakness type for ${oppActive.name}`);
-      if (chosen && chosen !== 'Colorless') {
-        oppActive.weaknesses = [{ type: chosen, value: '×2' }];
-        oppActive.conversionWeakness = chosen;
-        addLog(`${atk.name}: ${oppActive.name}'s Weakness → ${chosen}!`, true);
-        renderAll();
-      }
+      if (!chosen || chosen === 'Colorless') return 'block';
+      oppActive.weaknesses = [{ type: chosen, value: '×2' }];
+      oppActive.conversionWeakness = chosen;
+      addLog(`${atk.name}: ${oppActive.name}'s Weakness → ${chosen}!`, true);
+      renderAll();
+      return null;
     }
   },
 
-  // Conversion 2 (Porygon): change own resistance type
+  // Conversion 2 (Porygon): change own resistance type — preAttack so cancel blocks the turn
   'Conversion 2': {
-    postAttack: async ({ myActive, atk }) => {
-      if (!myActive) return;
+    preAttack: async ({ player, atk }) => {
+      const myActive = G.players[player].active;
+      if (!myActive) return 'block';
       const chosen = await pickType(`${atk.name} — Choose new Resistance type for ${myActive.name}`);
-      if (chosen && chosen !== 'Colorless') {
-        myActive.resistances = [{ type: chosen, value: '-30' }];
-        myActive.conversionResistance = chosen;
-        addLog(`${atk.name}: ${myActive.name}'s Resistance → ${chosen}!`, true);
-        renderAll();
-      }
+      if (!chosen || chosen === 'Colorless') return 'block';
+      myActive.resistances = [{ type: chosen, value: '-30' }];
+      myActive.conversionResistance = chosen;
+      addLog(`${atk.name}: ${myActive.name}'s Resistance → ${chosen}!`, true);
+      renderAll();
+      return null;
     }
   },
 
@@ -875,8 +876,17 @@ const MOVE_EFFECTS = {
       let chosenAtk;
       if (oppActive.attacks.length === 1) { chosenAtk = oppActive.attacks[0]; }
       else {
-        const picked = await openCardPicker({ title: `${atk.name} — Copy Attack`, subtitle: `Choose an attack from ${oppActive.name}`, cards: oppActive.attacks.map(a => ({ name: a.name, images: oppActive.images })), maxSelect: 1 });
-        if (picked && picked.length) chosenAtk = oppActive.attacks[picked[0]];
+        chosenAtk = await new Promise(resolve => {
+          showActionMenu(`Metronome — copy attack from ${oppActive.name}`,
+            oppActive.attacks.map(a => ({
+              label: a.name,
+              sub: `${a.damage || '—'} dmg · ${a.text || 'No effect'}`,
+              fn: () => { closeActionMenu(); resolve(a); }
+            })),
+            null,
+            () => resolve(null) // on dismiss
+          );
+        });
       }
       if (!chosenAtk) return;
       addLog(`${atk.name}: copying ${oppActive.name}'s ${chosenAtk.name}!`, true);

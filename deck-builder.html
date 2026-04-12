@@ -1472,10 +1472,9 @@ async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim() || 'My Deck';
   if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
 
-  // Prompt for folder
-  const folder = prompt('Save to folder:', lastUsedFolder || 'My Decks');
-  if (folder === null) return; // cancelled
-  const folderName = folder.trim() || 'My Decks';
+  // Show custom folder picker modal instead of browser prompt
+  const folderName = await pickSaveFolder();
+  if (folderName === null) return; // cancelled
   lastUsedFolder = folderName;
 
   showToast('Saving…');
@@ -1498,6 +1497,104 @@ async function saveDeck() {
   };
   await db.ref(`decks/${fbKey(folderName)}/${fbKey(name)}`).set(deckData);
   showToast(`"${name}" saved to ${folderName}!`);
+}
+
+// Custom folder picker — returns folder name string or null if cancelled
+async function pickSaveFolder() {
+  // Load existing folders from Firebase
+  let existingFolders = [];
+  try {
+    const snap = await db.ref('decks').once('value');
+    const val = snap.val();
+    if (val) existingFolders = Object.keys(val).map(k => {
+      // Try to get display name from any child deck's folder field
+      const children = Object.values(val[k]);
+      return (children[0] && children[0].folder) ? children[0].folder : k;
+    });
+  } catch(e) { /* offline — continue with empty list */ }
+
+  return new Promise(resolve => {
+    // Build modal
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:500;display:flex;align-items:center;justify-content:center;';
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:22px;width:360px;max-width:90vw;';
+
+    const title = document.createElement('div');
+    title.textContent = 'SAVE TO FOLDER';
+    title.style.cssText = 'font-family:var(--font-title);font-size:11px;color:var(--accent);margin-bottom:14px;letter-spacing:2px;';
+    modal.appendChild(title);
+
+    let selected = lastUsedFolder || null;
+
+    // Folder list
+    const listWrap = document.createElement('div');
+    listWrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-bottom:14px;max-height:220px;overflow-y:auto;';
+
+    function renderList() {
+      listWrap.innerHTML = '';
+      if (!existingFolders.length) {
+        const empty = document.createElement('div');
+        empty.textContent = 'No saved folders yet';
+        empty.style.cssText = 'color:var(--muted);font-size:12px;text-align:center;padding:12px 0;';
+        listWrap.appendChild(empty);
+        return;
+      }
+      existingFolders.forEach(f => {
+        const row = document.createElement('button');
+        const isSelected = f === selected;
+        row.style.cssText = `display:flex;align-items:center;gap:10px;width:100%;background:${isSelected ? 'var(--surface2)' : 'transparent'};border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};border-radius:var(--radius);padding:9px 12px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--text);text-align:left;transition:border-color .15s;`;
+        row.innerHTML = `<span style="color:var(--accent);font-size:14px;">📁</span> ${f}`;
+        row.addEventListener('click', () => { selected = f; newInput.value = ''; renderList(); });
+        listWrap.appendChild(row);
+      });
+    }
+    renderList();
+    modal.appendChild(listWrap);
+
+    // New folder input
+    const newLabel = document.createElement('div');
+    newLabel.textContent = 'New folder…';
+    newLabel.style.cssText = 'font-family:var(--font);font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:.5px;text-transform:uppercase;';
+    modal.appendChild(newLabel);
+
+    const newInput = document.createElement('input');
+    newInput.type = 'text';
+    newInput.placeholder = 'Folder name';
+    newInput.style.cssText = 'width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:12px;padding:8px 10px;margin-bottom:14px;outline:none;';
+    newInput.addEventListener('input', () => { if (newInput.value.trim()) { selected = null; renderList(); } });
+    modal.appendChild(newInput);
+
+    // Buttons row
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:8px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'flex:1;font-family:var(--font);font-size:9px;padding:10px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;';
+    cancelBtn.addEventListener('click', () => { overlay.remove(); resolve(null); });
+
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.style.cssText = 'flex:2;font-family:var(--font);font-size:9px;padding:10px;background:var(--accent);border:1px solid var(--accent);color:#000;border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;font-weight:700;';
+    saveBtn.addEventListener('click', () => {
+      const newVal = newInput.value.trim();
+      const folder = newVal || selected || 'My Decks';
+      overlay.remove();
+      resolve(folder);
+    });
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(saveBtn);
+    modal.appendChild(btnRow);
+
+    overlay.appendChild(modal);
+    // Click outside to cancel
+    overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+    document.body.appendChild(overlay);
+    newInput.focus();
+  });
 }
 
 // ── Modal: folder list ────────────────────────────────────────────────────────
