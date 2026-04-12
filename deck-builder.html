@@ -496,7 +496,7 @@ select:focus { border-color: var(--accent); }
   position: fixed;
   bottom: 20px;
   left: 50%;
-  transform: translateX(-50%) translateY(80px);
+  transform: translateX(-50%);
   background: var(--surface2);
   border: 1px solid var(--border2);
   color: var(--text);
@@ -505,11 +505,13 @@ select:focus { border-color: var(--accent); }
   padding: 9px 20px;
   border-radius: var(--radius);
   z-index: 1000;
-  transition: transform .25s ease;
+  transition: opacity .25s ease;
   white-space: nowrap;
   letter-spacing: .3px;
+  opacity: 0;
+  pointer-events: none;
 }
-.toast.show { transform: translateX(-50%) translateY(0); }
+.toast.show { opacity: 1; pointer-events: auto; }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 
 /* ── MODAL ───────────────────────────────────────────────────────────────── */
@@ -850,7 +852,7 @@ select:focus { border-color: var(--accent); }
 
   .mobile-tabs { display: block; }
   #view-toggle { display: none !important; }
-  .toast { bottom: 66px; }
+  .toast { bottom: 70px; }
   .modal { padding: 18px 14px; }
   .grid-section-header { font-size: 9px; }
 }
