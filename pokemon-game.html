@@ -329,7 +329,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   position: relative;
   flex-shrink: 1;
   min-width: 24px;
-  transition: margin-right .15s ease, width .15s ease;
+  transition: margin-right .15s ease, width .15s ease, min-width .15s ease, padding .15s ease, border .15s ease;
 }
 .opp-bench-slot img {
   width: 100%; height: 100%;
@@ -518,7 +518,8 @@ h1, h2, h3 { font-family: var(--font-title); }
 body:not([data-phase="SETUP"]) .bench-row .zone-slot:not(.occupied):not(.highlight):not(.drag-valid):not(.drag-valid-evolve):not(.drag-valid-energy):not(.drag-valid-heal):not(.drag-valid-trainer) {
   width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
 }
-body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight) {
+body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight),
+body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) {
   width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
 }
 .zone-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
