@@ -724,20 +724,19 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge; top/max-height set dynamically by positionSidePanels() */
+/* Prizes — fixed to left edge, sits just below midline and grows downward */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  top: 50%;                              /* fallback; overridden by JS */
-  max-height: calc(var(--active-h) / 2); /* fallback; overridden by JS */
+  top: 50%;           /* anchored at midline */
   display: flex;
   flex-direction: column;
-  justify-content: space-evenly;
+  justify-content: flex-start;   /* grow down from midline, not centered */
+  padding-top: 6px;
   align-items: center;
-  gap: 0;
+  gap: 4px;
   z-index: 10;
   pointer-events: none;
-  overflow: hidden;
 }
 #player-prizes-panel .prize-grid { pointer-events: auto; }
 #player-prizes-panel .panel-label {
@@ -747,25 +746,23 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge; top/max-height set dynamically by positionSidePanels() */
+/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;                              /* fallback; overridden by JS */
-  max-height: calc(var(--active-h) / 2); /* fallback; overridden by JS */
+  top: 50%;           /* anchored at midline */
   display: flex;
   flex-direction: column;
-  justify-content: space-evenly;
+  justify-content: flex-start;   /* grow down from midline, not centered */
+  padding-top: 6px;
+  gap: 6px;
   align-items: center;
-  gap: 0;
   z-index: 10;
-  overflow: hidden;
 }
 
 .player-deck-slot {
   width: var(--card-w-sm);
-  height: calc(var(--active-h) * 0.22);  /* two slots fit in half of active-h with gap */
-  max-height: var(--card-h-sm);
+  height: var(--card-h-sm);
   border: 1px solid var(--p1color);
   border-radius: 5px;
   background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
@@ -788,8 +785,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
 .player-discard-slot {
   width: var(--card-w-sm);
-  height: calc(var(--active-h) * 0.22);  /* match deck slot */
-  max-height: var(--card-h-sm);
+  height: var(--card-h-sm);
   border: 1px dashed var(--border);
   border-radius: 5px;
   background: var(--surface);
@@ -803,11 +799,11 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 .player-discard-slot img { width: 100%; height: 100%; object-fit: cover; }
 
-/* Player prizes — 2×3 grid, constrained to fit within half active card height */
+/* Player prizes — 2×3 grid */
 .prize-grid {
   display: grid;
   grid-template-columns: repeat(2, var(--prize-w));
-  grid-template-rows: repeat(3, calc((var(--active-h) / 2 - 20px) / 3));  /* 3 rows in half active-h minus label */
+  grid-template-rows: repeat(3, var(--prize-h));
   gap: 4px;
 }
 
@@ -4791,22 +4787,6 @@ function endTurn() {
 // ══════════════════════════════════════════════════
 // RENDER
 // ══════════════════════════════════════════════════
-function positionSidePanels() {
-  const active = document.getElementById('active-p1');
-  const fieldBody = document.getElementById('field-body');
-  const prizes = document.getElementById('player-prizes-panel');
-  const aux = document.getElementById('player-aux');
-  if (!active || !fieldBody || !prizes || !aux) return;
-  const fbRect = fieldBody.getBoundingClientRect();
-  const actRect = active.getBoundingClientRect();
-  const panelTop = actRect.top + actRect.height / 2 - fbRect.top;
-  const panelHeight = actRect.height / 2;
-  prizes.style.top = panelTop + 'px';
-  prizes.style.maxHeight = panelHeight + 'px';
-  aux.style.top = panelTop + 'px';
-  aux.style.maxHeight = panelHeight + 'px';
-}
-
 function renderAll() {
   document.body.dataset.phase = G.phase || 'SETUP';
   renderHands();
@@ -4828,8 +4808,6 @@ function renderAll() {
   } else if (vsComputer) {
     applyRoleVisibility();
   }
-  // Position side panels relative to active card geometry
-  requestAnimationFrame(positionSidePanels);
 }
 
 function updatePerspectiveLabels() {
