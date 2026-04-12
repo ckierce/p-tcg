@@ -138,6 +138,11 @@ function tryApplyStatus(target, status) {
     showToast(`${target.name} is immune to status conditions!`);
     return false;
   }
+  if (target.immuneToAttack) {
+    addLog(`${target.name} is unaffected by attack effects (Agility)!`, true);
+    showToast(`${target.name} is immune to attack effects!`);
+    return false;
+  }
   target.status = status;
   return true;
 }

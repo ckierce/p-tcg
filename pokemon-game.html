@@ -4199,6 +4199,14 @@ async function performAttack(player, atk) {
       addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
     }
 
+    // Agility immunity — if oppActive used Agility (heads) last turn, block all damage and effects
+    if (oppActive.immuneToAttack) {
+      addLog(`${oppActive.name} is unaffected by attacks (Agility)!`, true);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `AGILITY — all effects blocked`);
+      dmg = 0;
+      atk._transparencyBlocked = true; // reuse this flag to suppress status effect parsing
+    }
+
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
     // Transform (Ditto): when Ditto attacks, KO threshold uses Ditto's own HP, not the defender's
@@ -7092,6 +7100,14 @@ function receiveGameState(state) {
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
     showPromoteBanner(G.pendingPromotion);
+    // Restore bench highlights and midline prompt lost on page reload/rejoin
+    const promoteOwner = G.pendingPromotion;
+    for (let i = 0; i < 5; i++) {
+      if (G.players[promoteOwner].bench[i]) {
+        document.getElementById(`bench-p${promoteOwner}-${i}`)?.classList.add('highlight');
+      }
+    }
+    setMidline(`Player ${promoteOwner}: choose a bench Pokémon to promote to Active!`);
   } else {
     hidePromoteBanner();
   }
