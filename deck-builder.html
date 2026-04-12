@@ -1618,9 +1618,10 @@ async function renderFolderList() {
     const folders = {}; // fKey -> { displayName, decks: [] }
     for (const [fKey, node] of Object.entries(data)) {
       if (isLegacyDeck(node)) {
-        // Legacy flat deck — slot into Uncategorized
-        if (!folders['_uncategorized']) folders['_uncategorized'] = { displayName: 'Uncategorized', decks: [] };
+        // Legacy flat deck — show in Uncategorized so user can delete it
+        if (!folders['_uncategorized']) folders['_uncategorized'] = { displayName: 'Uncategorized', decks: [], keys: {} };
         folders['_uncategorized'].decks.push(node);
+        folders['_uncategorized'].keys[node.name] = fKey; // store actual Firebase key
       } else if (isFolderNode(node)) {
         const children = Object.values(node).filter(v => isLegacyDeck(v));
         const displayName = children.find(v => v.folder)?.folder || fKey;
@@ -1660,10 +1661,12 @@ async function openFolder(encodedFKey, encodedDisplayName) {
   try {
     let entries = [];
     if (fKey === '_uncategorized') {
-      // Legacy flat decks live directly under decks/
+      // Legacy flat decks live directly under decks/ — keep their actual Firebase key for deletion
       const snap = await db.ref('decks').once('value');
       const data = snap.val() || {};
-      entries = Object.values(data).filter(v => v && typeof v === 'object' && v.deck && v.name)
+      entries = Object.entries(data)
+                  .filter(([,v]) => v && typeof v === 'object' && v.deck && v.name)
+                  .map(([k, v]) => ({ ...v, _firebaseKey: k }))
                   .sort((a,b) => b.savedAt - a.savedAt);
     } else {
       const snap = await db.ref(`decks/${fKey}`).once('value');
@@ -1677,13 +1680,16 @@ async function openFolder(encodedFKey, encodedDisplayName) {
     }
     list.innerHTML = entries.map(d => {
       const total = Object.values(d.deck).reduce((s,c)=>s+c.qty, 0);
+      // For uncategorized, use the real Firebase key so delete targets the right path
+      const isLegacy = !!d._firebaseKey;
+      const delFKey = isLegacy ? encodeURIComponent(d._firebaseKey) : encodeURIComponent(fKey);
       return `<div class="saved-deck-item">
         <div>
           <div class="d-name">${d.name}</div>
           <div class="d-count">${total} cards</div>
         </div>
         <button class="d-load" onclick="loadDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Load</button>
-        <button class="d-del"  onclick="deleteDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Del</button>
+        <button class="d-del"  onclick="deleteDeck('${delFKey}','${encodeURIComponent(d.name)}',${isLegacy})">Del</button>
       </div>`;
     }).join('');
   } catch(e) {
@@ -1743,15 +1749,19 @@ async function loadDeck(encodedFKey, encodedName) {
   showToast(`"${name}" loaded!`);
 }
 
-async function deleteDeck(encodedFKey, encodedName) {
+async function deleteDeck(encodedFKey, encodedName, isLegacy) {
   const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
-  const path = fKey === '_uncategorized'
-    ? `decks/${fbKey(name)}`
-    : `decks/${fKey}/${fbKey(name)}`;
+  // isLegacy: deck lives at decks/<fKey> directly (fKey IS the Firebase key)
+  // normal:   deck lives at decks/<fKey>/<deckKey>
+  const path = isLegacy ? `decks/${fKey}` : `decks/${fKey}/${fbKey(name)}`;
   await db.ref(path).remove();
-  openFolder(encodedFKey, encodeURIComponent(currentFolderName || fKey));
   showToast(`"${name}" deleted.`);
+  if (isLegacy) {
+    openFolder(encodeURIComponent('_uncategorized'), encodeURIComponent('Uncategorized'));
+  } else {
+    openFolder(encodeURIComponent(fKey), encodeURIComponent(currentFolderName || fKey));
+  }
 }
 
 // ─── UI HELPERS ──────────────────────────────────────────────────────────────
