@@ -1168,7 +1168,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 .picker-card:hover { border-color: var(--border2); }
 .picker-card.selected { border-color: var(--accent); box-shadow: 0 0 6px rgba(232,200,74,.4); }
-.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: contain; background: #111; }
+.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: contain; background: #111; max-height: 160px; }
 .picker-card-name {
   font-size: 7px; color: var(--muted);
   padding: 2px 3px;
@@ -2437,10 +2437,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
 <!-- Card picker modal -->
 <div class="modal-overlay" id="card-picker-modal">
-  <div class="modal-box" style="width:460px;max-height:85vh">
+  <div class="modal-box" style="width:min(460px,90vw);max-height:85vh;overflow:hidden">
     <div class="modal-title" id="card-picker-title">Pick a card</div>
     <div id="card-picker-subtitle" style="font-size: 9px;color:var(--muted);text-align:center;margin-bottom:8px"></div>
-    <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:50vh;padding:4px"></div>
+    <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:55vh;padding:4px"></div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
       <button class="modal-close-btn" id="card-picker-confirm" onclick="confirmCardPick()" style="background:var(--accent);color:#000;border-color:var(--accent)">CONFIRM</button>
       <button class="modal-close-btn" onclick="cancelCardPick()">CANCEL</button>

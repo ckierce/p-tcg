@@ -993,6 +993,14 @@ function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     // so cards aren't too narrow to read
     const cols = cards.length > 10 ? 3 : cards.length > 4 ? 4 : Math.max(1, cards.length);
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    // Narrow the modal for small card counts so single cards aren't huge
+    const box = document.querySelector('#card-picker-modal .modal-box');
+    if (box) {
+      const cardW = 110; // px per card column
+      const padding = 56; // modal padding + border
+      const idealW = Math.min(460, cols * cardW + padding);
+      box.style.width = idealW + 'px';
+    }
     grid.innerHTML = cards.map((card, i) => {
       const energy = (card.attachedEnergy || []);
       const energyHtml = energy.length
