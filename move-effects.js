@@ -63,8 +63,8 @@ const _agilityFlip = () => ({
     if (!myActive) return;
     const heads = await flipCoin(`${atk.name}: Heads = immune to all attack effects next turn!`);
     if (heads) {
-      myActive.immuneToAttack = true;
-      addLog(`${atk.name}: HEADS — ${myActive.name} is immune to all attack effects next turn!`, true);
+      myActive.defender = true; myActive.defenderFull = true;
+      addLog(`${atk.name}: HEADS — ${myActive.name} fully protected next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
     }
@@ -391,8 +391,8 @@ const MOVE_EFFECTS = {
   'Barrier': {
     postAttack: async ({ myActive, atk }) => {
       if (!myActive) return;
-      myActive.immuneToAttack = true;
-      addLog(`${atk.name}: ${myActive.name} is immune to all attack effects next turn!`, true);
+      myActive.defender = true; myActive.defenderFull = true;
+      addLog(`${atk.name}: ${myActive.name} fully protected next turn!`, true);
     }
   },
 
@@ -860,9 +860,9 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Meditate (Jynx/Mr. Mime): 20 + 10 per damage counter on defender
+  // Meditate (Jynx/Mr. Mime): 10 + 10 per damage counter on defender
   'Meditate': {
-    modifyDamage: ({ oppActive }) => 20 + Math.floor((oppActive?.damage || 0) / 10) * 10
+    modifyDamage: ({ oppActive }) => 10 + Math.floor((oppActive?.damage || 0) / 10) * 10
   },
 
   // Mega Drain (Butterfree): heal half damage dealt

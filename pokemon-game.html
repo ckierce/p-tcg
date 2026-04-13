@@ -685,16 +685,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   align-items: flex-end;
 }
 .card-badge {
-  font-size: 9px;
+  font-size: 8px;
   font-family: var(--font);
-  padding: 2px 5px;
-  border-radius: 3px;
-  line-height: 1.5;
+  padding: 1px 3px;
+  border-radius: 2px;
+  line-height: 1.4;
   white-space: nowrap;
-  letter-spacing: 0.3px;
 }
-.card-badge.defender  { background: rgba(91,156,246,.95); color: #fff; box-shadow: 0 0 8px rgba(91,156,246,.8), 0 0 2px rgba(91,156,246,1); font-weight: 700; }
-.card-badge.pluspower { background: rgba(232,200,74,.95); color: #000; box-shadow: 0 0 8px rgba(232,200,74,.7), 0 0 2px rgba(232,200,74,1); font-weight: 700; }
+.card-badge.defender  { background: rgba(91,156,246,.9); color: #fff; }
+.card-badge.pluspower { background: rgba(232,200,74,.9); color: #000; }
 
 /* Active Pokémon — hero card, centered */
 #active-row {
@@ -2193,33 +2192,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
       <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
-      <button class="lobby-btn" onclick="showRejoinPanel()" style="border-color:#f5a623;color:#f5a623">↩ REJOIN GAME<br><span>Resume a saved game</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="deck-builder.html">← Back to Deck Builder</a>
-    </div>
-  </div>
-
-  <!-- REJOIN PANEL -->
-  <div id="rejoin-panel" style="display:none;text-align:center;">
-    <p style="font-size: 11px;color:#f5a623;margin-bottom:12px">&#x21A9; REJOIN SAVED GAME</p>
-    <div id="rejoin-games-list" style="margin-bottom:14px;width:280px;margin-left:auto;margin-right:auto;">
-      <div style="font-size:9px;color:var(--muted);margin-bottom:6px;letter-spacing:1px">IN-PROGRESS GAMES</div>
-      <div id="rejoin-games-rows" style="display:flex;flex-direction:column;gap:5px;max-height:200px;overflow-y:auto;">
-        <div style="font-size:9px;color:var(--muted);font-style:italic">Loading...</div>
-      </div>
-    </div>
-    <div style="font-size: 9px;color:var(--muted);margin-bottom:8px">&#x2014; or enter code manually &#x2014;</div>
-    <input id="rejoin-code-input" type="text" maxlength="6" placeholder="ROOM CODE"
-      style="font-family:var(--font);font-size: 16px;letter-spacing:4px;text-align:center;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border2);color:var(--accent);padding:10px 16px;border-radius:4px;width:200px;outline:none;display:block;margin:0 auto 12px;">
-    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px">
-      <button class="lobby-btn player-opt" id="rejoin-p1-btn" onclick="selectRejoinRole(1)" style="padding:8px 18px">&#x1F535; P1</button>
-      <button class="lobby-btn player-opt" id="rejoin-p2-btn" onclick="selectRejoinRole(2)" style="padding:8px 18px">&#x1F534; P2</button>
-    </div>
-    <div id="rejoin-status" style="font-size: 9px;color:var(--muted);min-height:18px;margin-bottom:10px"></div>
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
-      <button class="lobby-btn" onclick="rejoinGame()">&#x21A9; REJOIN &#x2192;</button>
-      <button class="lobby-btn" style="font-size: 9px;color:var(--muted)" onclick="showLobby()">&#x2190; BACK</button>
     </div>
   </div>
 
@@ -2727,8 +2702,7 @@ async function loadDeck(fKey, deckName) {
         subtypes: entry.subtypes || [],
         hp: entry.hp || '0',
         attacks: entry.attacks || [],
-        types: entry.types || [],
-        abilities: entry.abilities || []
+        types: entry.types || []
       };
       for (let i = 0; i < entry.qty; i++) {
         flat.push(enrichCard({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` }));
@@ -3247,24 +3221,16 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
 
   // Build a pool of energy tokens from attached cards
   // Energy Burn (Charizard): all attached energy counts as Fire
-  // Transform (Ditto): all attached energy is wildcard — satisfies any type
   const energyBurn = attackerCard && hasEnergyBurn(attackerCard);
-  const isDitto = attackerCard && typeof isPowerActive === 'function' && isPowerActive(attackerCard, 'Transform');
   const pool = [];
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
-    if (isDitto) {
-      // DCE counts as 2 wildcards even for Ditto
-      if (/double colorless/i.test(name)) {
-        pool.push('*', '*');
-      } else {
-        pool.push('*');
-      }
-    } else if (energyBurn) {
+    if (energyBurn) {
       pool.push('Fire');
     } else if (/double colorless/i.test(name)) {
       pool.push('Colorless', 'Colorless');
     } else {
+      // Derive type from name e.g. "Water Energy" → "Water"
       const type = name.replace(/\s*energy/i, '').trim() || 'Colorless';
       pool.push(type);
     }
@@ -3279,11 +3245,12 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   const remaining = [...pool];
   for (const req of sortedCost) {
     if (req === 'Colorless') {
+      // Any single energy satisfies Colorless
       if (remaining.length === 0) return false;
-      remaining.splice(0, 1);
+      remaining.splice(0, 1); // consume any one
     } else {
-      // Match exact type OR wildcard
-      const idx = remaining.findIndex(r => r === req || r === '*');
+      // Must match exact type
+      const idx = remaining.indexOf(req);
       if (idx === -1) return false;
       remaining.splice(idx, 1);
     }
@@ -3536,7 +3503,6 @@ async function executeRetreat(player, benchIdx) {
     old.swordsDanceActive = false;
     old.destinyBond = false;
     old.pounceActive = false;
-    old.smokescreened = false; // smokescreen clears when retreating
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
   if (old.status) {
@@ -4133,20 +4099,6 @@ async function performAttack(player, atk) {
     dmg = 0;
   }
 
-  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
-  // Done before damage/KO so the cost is paid even if the attack KOs the opponent.
-  const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
-  );
-  if (discardCostMatch && myActive) {
-    const rawN = discardCostMatch[1].toLowerCase();
-    const discarded = rawN === 'all'
-      ? myActive.attachedEnergy.splice(0)
-      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
-    G.players[player].discard.push(...discarded);
-    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
-  }
-
   if (dmg > 0) {
     // PlusPower bonus (card attached to attacker)
     if (myActive?.plusPower) {
@@ -4229,14 +4181,6 @@ async function performAttack(player, atk) {
       addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
     }
 
-    // Agility immunity — if oppActive used Agility (heads) last turn, block all damage and effects
-    if (oppActive.immuneToAttack) {
-      addLog(`${oppActive.name} is unaffected by attacks (Agility)!`, true);
-      showBlockedFlash(player, myActive?.name || '?', atk.name, `AGILITY — all effects blocked`);
-      dmg = 0;
-      atk._transparencyBlocked = true; // reuse this flag to suppress status effect parsing
-    }
-
     oppActive.damage = (oppActive.damage || 0) + dmg;
     const oppHp = parseInt(oppActive.hp) || 0;
     // Transform (Ditto): when Ditto attacks, KO threshold uses Ditto's own HP, not the defender's
@@ -4317,7 +4261,18 @@ async function performAttack(player, atk) {
     addLog(`${myActive.name} removed all damage counters!`, true);
   }
 
-
+  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  const discardCostMatch = (atk.text || '').match(
+    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+  );
+  if (discardCostMatch && myActive) {
+    const rawN = discardCostMatch[1].toLowerCase();
+    const discarded = rawN === 'all'
+      ? myActive.attachedEnergy.splice(0)
+      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+    G.players[player].discard.push(...discarded);
+    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
+  }
 
 
   // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
@@ -4376,8 +4331,9 @@ async function performAttack(player, atk) {
   if (agilityMatch && myActive) {
     const heads = await flipCoin(`${atk.name}: Heads = immune to all attack effects next turn, Tails = no effect`);
     if (heads) {
-      myActive.immuneToAttack = true;
-      addLog(`${atk.name}: HEADS — ${myActive.name} is immune to all attack effects next turn!`, true);
+      myActive.defender = true;
+      myActive.defenderFull = true;
+      addLog(`${atk.name}: HEADS — ${myActive.name} is fully protected from all attack effects next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
     }
@@ -4534,19 +4490,12 @@ async function performAttack(player, atk) {
     }
   }
 
-  // If a KO during this attack triggered a PROMOTE phase, stop here.
-  // endTurn will fire from inside resolvePromotion once the player chooses.
-  if (G.phase === 'PROMOTE') { renderWhenIdle(); return; }
-
   // ── Apply special move effects (Lure, Whirlwind, Conversion, Destiny Bond, etc.) ──
   if (typeof applyMoveEffects === 'function' && G.started) {
     const currentOpp = G.players[opp].active;
     const effectBlocked = await applyMoveEffects(player, atk, typeof _dmgDealt !== 'undefined' ? _dmgDealt : 0, myActive, currentOpp);
     if (effectBlocked === true) return;
   }
-
-  // If applyMoveEffects triggered a PROMOTE (e.g. recoil KO), stop here too.
-  if (G.phase === 'PROMOTE') { renderWhenIdle(); return; }
 
   // Attack always ends the turn
   renderWhenIdle();
@@ -4760,7 +4709,7 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
-    // smokescreened is cleared by performAttack after the flip — not here
+    nextActive.smokescreened = false; // smokescreen lasts one opponent turn regardless of whether they attacked
     // Defender expires at end of the opponent's next turn — that's now (the new current player
     // was the defending player last turn; their defender expires as their turn begins).
     nextActive.defender = false;
@@ -4789,24 +4738,34 @@ function endTurn() {
     addLog(`P${G.turn} draws ${extras} extra card(s) from opponent mulligan(s).`);
   }
 
-  // Sleep check: flip coin at start of new player's turn
+  // Sleep check: flag it for the new player's client to resolve (so both sides see the flip)
   const sleepTarget = G.players[G.turn].active;
   if (sleepTarget?.status === 'asleep') {
-    setTimeout(async () => {
-      const wakeUp = await flipCoin(`${sleepTarget.name} is Asleep!\nHeads = wake up, Tails = stay asleep`);
-      if (wakeUp) {
-        sleepTarget.status = null;
-        addLog(`${sleepTarget.name} woke up!`, true);
-      } else {
-        addLog(`${sleepTarget.name} is still Asleep.`);
-      }
-      renderAll();
-    }, 400);
+    G.pendingSleepFlip = sleepTarget.name;
   }
 
   drawCard(G.turn, true);
   renderAll();
   showTurnFlash(G.turn);
+
+  // In local/vs-CPU mode, resolve sleep flip immediately (no Firebase round-trip)
+  if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
+    const sleepName = G.pendingSleepFlip;
+    G.pendingSleepFlip = null;
+    setTimeout(async () => {
+      const target = G.players[G.turn].active;
+      if (target && target.name === sleepName && target.status === 'asleep') {
+        const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
+        if (wakeUp) {
+          target.status = null;
+          addLog(`${sleepName} woke up!`, true);
+        } else {
+          addLog(`${sleepName} is still Asleep.`);
+        }
+        renderAll();
+      }
+    }, 400);
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -5198,6 +5157,16 @@ function updateTurnBadge() {
     badge.className = 'turn-badge';
     badge.style.color = 'var(--accent)';
     badge.style.borderColor = 'var(--accent)';
+  } else if (G.phase === 'PROMOTE' && G.pendingPromotion) {
+    const promoter = G.pendingPromotion;
+    badge.style.color = '';
+    badge.style.borderColor = '';
+    badge.className = `turn-badge p${promoter}`;
+    if (myRole === null) {
+      badge.textContent = `P${promoter} PROMOTE`;
+    } else {
+      badge.textContent = promoter === myRole ? 'YOUR TURN' : 'OPP TURN';
+    }
   } else {
     badge.style.color = '';
     badge.style.borderColor = '';
@@ -5501,7 +5470,7 @@ function enrichCard(card) {
       types: Array.isArray(card.types) ? card.types : [],
       subtypes: safeSubtypes,
       attacks: mergedAttacks,
-      abilities: (Array.isArray(card.abilities) && card.abilities.length) ? card.abilities : [],
+      abilities: Array.isArray(card.abilities) ? card.abilities : [],
       weaknesses: Array.isArray(card.weaknesses) ? card.weaknesses : [],
       resistances: Array.isArray(card.resistances) ? card.resistances : [],
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
@@ -5522,7 +5491,7 @@ function enrichCard(card) {
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
-    abilities: (full.abilities && full.abilities.length) ? full.abilities : (Array.isArray(card.abilities) && card.abilities.length ? card.abilities : (full.abilities || [])),
+    abilities: full.abilities || card.abilities || [],
     attacks: mergedAttacks,
     hp: (card.hp && card.hp !== '0') ? card.hp : (full.hp || card.hp || '0'),
     weaknesses: full.weaknesses || [],
@@ -6639,11 +6608,9 @@ async function aiPlayTrainers() {
           hand.splice(i, 1);
           p2.discard.push(card);
           const old = p2.active;
-          if (old.status) old.status = null;
           p2.active = p2.bench[bestIdx];
-          if (p2.active.status) p2.active.status = null;
           p2.bench[bestIdx] = old;
-          // Switch clears status on both Pokémon involved
+          // Switch clears status on the new active
           addLog(`🤖 Computer played Switch — swapped ${old.name} (${activeStatus}) for ${p2.active.name}!`, true);
           renderAll();
           return;
@@ -6883,9 +6850,8 @@ let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
 // ── Panel helpers ─────────────────────────────────
-const ALL_PANELS = ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','rejoin-panel'];
-function showLobby()     { ALL_PANELS.forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ALL_PANELS.forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
 
 function generateCode() {
   return Math.random().toString(36).substring(2,8).toUpperCase();
@@ -7125,6 +7091,17 @@ function receiveGameState(state) {
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
     showPromoteBanner(G.pendingPromotion);
+    // Re-highlight the promoting player's bench slots (lost on re-render)
+    const promotingPlayer = G.pendingPromotion;
+    const isMyPromote = myRole === null || myRole === promotingPlayer;
+    if (isMyPromote) {
+      const benchPlayerNum = myRole === 2 ? (promotingPlayer === 1 ? 2 : 1) : promotingPlayer;
+      for (let i = 0; i < 5; i++) {
+        if (G.players[promotingPlayer].bench[i]) {
+          document.getElementById(`bench-p${benchPlayerNum}-${i}`)?.classList.add('highlight');
+        }
+      }
+    }
   } else {
     hidePromoteBanner();
   }
@@ -7144,6 +7121,25 @@ function receiveGameState(state) {
   // Show turn flash if turn just switched to this player
   if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
     showTurnFlash(myRole);
+  }
+  // Sleep flip: resolve on the new turn player's client so both sides see it
+  if (G.pendingSleepFlip) {
+    const sleepName = G.pendingSleepFlip;
+    const sleepTarget = G.players[G.turn].active;
+    if (sleepTarget && sleepTarget.name === sleepName && sleepTarget.status === 'asleep'
+        && (myRole === null || G.turn === myRole)) {
+      G.pendingSleepFlip = null;
+      setTimeout(async () => {
+        const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
+        if (wakeUp) {
+          sleepTarget.status = null;
+          addLog(`${sleepName} woke up!`, true);
+        } else {
+          addLog(`${sleepName} is still Asleep.`);
+        }
+        renderAll();
+      }, 400);
+    }
   }
   // Show Lass reveal modal if opponent just played Lass
   if (G.pendingLass && !document.getElementById('lass-modal').classList.contains('show')) {
@@ -7231,143 +7227,8 @@ function applyRoleVisibility() {
 setMidline('Load decks and press Start Game');
 
 // Clean up room when tab/window closes
-// ── Rejoin a saved game ───────────────────────────
-const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-let rejoinRole = null;
-
-function showRejoinPanel() {
-  rejoinRole = null;
-  const urlCode = new URLSearchParams(location.search).get('room');
-  const input = document.getElementById('rejoin-code-input');
-  if (input && urlCode) input.value = urlCode.toUpperCase();
-  document.getElementById('rejoin-p1-btn').classList.remove('sel');
-  document.getElementById('rejoin-p2-btn').classList.remove('sel');
-  document.getElementById('rejoin-status').textContent = '';
-  showPanel('rejoin-panel');
-  loadInProgressGames();
-}
-
-async function loadInProgressGames() {
-  const rows = document.getElementById('rejoin-games-rows');
-  if (!rows) return;
-  rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">Loading...</div>';
-  try {
-    const snap = await db.ref('games').once('value');
-    const games = snap.val() || {};
-    const now = Date.now();
-    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-    const inProgress = Object.entries(games)
-      .filter(([, g]) => g.state && g.state.started && (now - (g.created || 0)) < ONE_WEEK_MS)
-      .sort((a, b) => (b[1].created || 0) - (a[1].created || 0))
-      .slice(0, 10);
-    if (!inProgress.length) {
-      rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">No in-progress games found.</div>';
-      return;
-    }
-    const fragment = document.createDocumentFragment();
-    inProgress.forEach(([code, g]) => {
-      const p1Name = g.p1DeckName || 'P1';
-      const p2Name = g.p2DeckName || 'P2';
-      const turn = g.state && g.state.turn;
-      const turnNum = (g.state && g.state.turnNum) || '?';
-      const phase = (g.state && g.state.phase) || '';
-      const ago = Math.round((now - (g.created || 0)) / 60000);
-      const agoStr = ago < 60 ? ago + 'm ago' : Math.round(ago / 60) + 'h ago';
-      const phaseLabel = phase === 'PROMOTE' ? ' ⚠ PROMOTE' : '';
-      const turnLabel = turn ? (' • P' + turn + ' turn') : '';
-      const el = document.createElement('div');
-      el.id = 'rejoin-row-' + code;
-      el.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;cursor:pointer;text-align:left;gap:8px;transition:border-color .15s;';
-      el.innerHTML = '<div>'
-        + '<div style="font-size:10px;color:var(--text);letter-spacing:1px;font-family:var(--font-title)">' + code + '</div>'
-        + '<div style="font-size:8px;color:var(--muted);margin-top:2px">' + p1Name + ' vs ' + p2Name + turnLabel + phaseLabel + '</div>'
-        + '<div style="font-size:7px;color:var(--muted);margin-top:1px">Turn ' + turnNum + ' • ' + agoStr + '</div>'
-        + '</div>'
-        + '<div style="font-size:8px;color:var(--accent);white-space:nowrap">SELECT →</div>';
-      el.addEventListener('mouseover', () => { el.style.borderColor = 'var(--accent)'; });
-      el.addEventListener('mouseout', () => { el.style.borderColor = rejoinSelectedCode === code ? 'var(--accent)' : 'var(--border)'; });
-      el.addEventListener('click', () => selectRejoinGame(code));
-      fragment.appendChild(el);
-    });
-    rows.innerHTML = '';
-    rows.appendChild(fragment);
-  } catch(e) {
-    rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">Could not load games.</div>';
-  }
-}
-
-let rejoinSelectedCode = null;
-function selectRejoinGame(code) {
-  rejoinSelectedCode = code;
-  document.getElementById('rejoin-code-input').value = code;
-  document.querySelectorAll('[id^="rejoin-row-"]').forEach(el => {
-    const isSelected = el.id === 'rejoin-row-' + code;
-    el.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)';
-    el.style.background = isSelected ? 'var(--surface)' : 'var(--surface2)';
-  });
-}
-
-function selectRejoinRole(role) {
-  rejoinRole = role;
-  document.getElementById('rejoin-p1-btn').classList.toggle('sel', role === 1);
-  document.getElementById('rejoin-p2-btn').classList.toggle('sel', role === 2);
-}
-
-async function rejoinGame() {
-  const code = document.getElementById('rejoin-code-input').value.trim().toUpperCase();
-  const statusEl = document.getElementById('rejoin-status');
-  if (code.length !== 6) { statusEl.textContent = 'Enter a 6-character room code.'; return; }
-  if (!rejoinRole)        { statusEl.textContent = 'Select P1 or P2 first.'; return; }
-
-  statusEl.textContent = 'Looking up room...';
-  const snap = await db.ref(`games/${code}`).once('value');
-  const data = snap.val();
-
-  if (!data) { statusEl.textContent = 'Room not found.'; return; }
-  if (!data.state?.started) { statusEl.textContent = 'No game in progress for that room.'; return; }
-
-  const age = Date.now() - (data.created || 0);
-  if (age > ONE_WEEK_MS) { statusEl.textContent = 'Room has expired (older than 1 week).'; return; }
-
-  // All good — reconnect as the chosen role
-  roomCode = code;
-  myRole   = rejoinRole;
-  gameRef  = db.ref(`games/${roomCode}`);
-
-  // Hide setup screen, apply the saved state
-  document.getElementById('setup-screen').style.display = 'none';
-  receiveGameState(data.state);
-  renderAll();
-
-  // Re-attach the Firebase listener for the appropriate role
-  if (myRole === 1) {
-    gameRef.on('value', snap => {
-      if (isWriting) return;
-      const d = snap.val();
-      if (!d || !d.state) return;
-      if (G.phase === 'SETUP' && d.setup_p2) mergeSetupSlot(2, d.setup_p2);
-      if (G.phase !== 'SETUP' && d.state)    receiveGameState(d.state);
-    });
-  } else {
-    gameRef.on('value', snap => {
-      if (isWriting) return;
-      const d = snap.val();
-      if (!d || !d.state) return;
-      if (G.phase === 'SETUP' && d.state?.players?.[1]) mergeSetupSlot(1, d.state.players[1]);
-      if (d.state && (G.phase !== 'SETUP' || d.state.phase !== 'SETUP')) receiveGameState(d.state);
-    });
-  }
-
-  addLog(`↩ Player ${myRole} rejoined room ${roomCode}.`, true);
-}
-
-// Rooms persist on disconnect so games can be rejoined within 1 week.
-// Explicit deletion only happens via playAgain() (intentional game end).
 window.addEventListener('beforeunload', () => {
-  // Write lastSeen so we can detect stale rooms
-  if (gameRef && myRole) {
-    gameRef.update({ [`p${myRole}LastSeen`]: Date.now() }).catch(() => {});
-  }
+  if (gameRef) { gameRef.remove().catch(() => {}); }
 });
 </script>
 </script>
