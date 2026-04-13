@@ -845,6 +845,8 @@ const MOVE_EFFECTS = {
   // Leek Slap (Farfetch'd): flip coin — tails = does nothing; can't use again either way
   // Card text: "Flip a coin. If tails, this attack does nothing. Either way, you can't
   // use this attack again as long as Farfetch'd stays in play."
+  // modifyDamage is present (even though it returns null) so resolveCoinFlipDamage
+  // skips its generic "tails = nothing" pattern and doesn't double-flip.
   'Leek Slap': {
     preAttack: async ({ myActive, atk }) => {
       if (myActive?.leekSlapUsed) {
@@ -852,7 +854,7 @@ const MOVE_EFFECTS = {
         addLog(`${atk.name}: already used — blocked!`, true);
         return 'block';
       }
-      // Mark as used regardless of flip result
+      // Mark as used regardless of flip result (card says "either way")
       if (myActive) myActive.leekSlapUsed = true;
       // Flip: tails = attack does nothing
       const heads = await flipCoin(`${atk.name}: Heads = 30 damage, Tails = does nothing`);
@@ -861,7 +863,8 @@ const MOVE_EFFECTS = {
         return 'block';
       }
       addLog(`${atk.name}: HEADS — 30 damage! (can't use again while Farfetch'd is in play)`, true);
-    }
+    },
+    modifyDamage: () => null  // prevents resolveCoinFlipDamage from adding a second flip
   },
 
   // Leer (Rhyhorn): flip → defending can't attack this Pokémon next turn
