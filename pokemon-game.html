@@ -233,7 +233,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   align-items: center;
   overflow: hidden;
   /* Side panels are position:absolute — padding reserves their width so bench never underlaps */
-  padding: 10px calc(var(--card-w-sm) + 14px);
+  padding: 10px calc(var(--card-w-sm) + 34px);  /* extra 20px for count label + gap */
   gap: 8px;
   min-height: 0;
   position: relative;
@@ -782,21 +782,22 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   z-index: 10;
 }
 
-/* Count label — left of the piles */
+/* Count label — left of the piles, written vertically */
 #deck-count-p1-label {
-  font-size: 15px;
+  font-size: 11px;
+  font-weight: bold;
   color: #fff;
   line-height: 1;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
-  writing-mode: horizontal-tb;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
 }
 #deck-count-p1-label span {
   font-size: 7px;
   color: #ddd;
-  display: block;
-  margin-top: 2px;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.9);
 }
 
 /* Piles column: deck on top, discard below */
