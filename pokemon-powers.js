@@ -138,11 +138,6 @@ function tryApplyStatus(target, status) {
     showToast(`${target.name} is immune to status conditions!`);
     return false;
   }
-  if (target.immuneToAttack) {
-    addLog(`${target.name} is unaffected by attack effects (Agility)!`, true);
-    showToast(`${target.name} is immune to attack effects!`);
-    return false;
-  }
   target.status = status;
   return true;
 }
@@ -216,15 +211,15 @@ async function doDamageSwap(player) {
   }
 
   const dsts = all.filter(x => x.card !== srcCard);
-  const dstCards = dsts.map(x => x.card);
-  const validDsts = dstCards.filter(c => {
-    const hp = parseInt(c.hp) || 0;
-    return (c.damage || 0) + numCounters * 10 < hp;
+  const validDsts = dsts.filter(x => {
+    const hp = parseInt(x.card.hp) || 0;
+    return (x.card.damage || 0) + numCounters * 10 < hp;
   });
   if (!validDsts.length) {
     showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
     return;
   }
+  const dstCards = validDsts.map(x => x.card);
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',
     subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
@@ -232,7 +227,7 @@ async function doDamageSwap(player) {
     maxSelect: 1
   });
   if (!dstPicked) return;
-  const dstCard = dsts[dstPicked[0]].card;
+  const dstCard = validDsts[dstPicked[0]].card;
 
   srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
   dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
@@ -322,6 +317,7 @@ async function doCurse(player) {
       title: 'Curse — Source',
       subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
       cards: oppWithDamage,
+      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
       maxSelect: 1
     });
     if (!picked) return;
@@ -336,6 +332,10 @@ async function doCurse(player) {
       title: 'Curse — Destination',
       subtitle: "Choose an opponent Pokémon to move the damage counter TO",
       cards: dests,
+      cardMeta: buildPokemonMeta(dests, opp.active, c => {
+        const hp = parseInt(c.hp) || 0;
+        return (c.damage || 0) + 10 >= hp;
+      }),
       maxSelect: 1
     });
     if (!picked) return;
@@ -346,15 +346,7 @@ async function doCurse(player) {
   dst.damage = (dst.damage || 0) + 10;
   addLog(`P${player} used Curse — moved 1 damage counter from ${src.name} to ${dst.name}.`, true);
   G.cursedThisTurn = true;
-
-  // Check KO on the destination (gained a counter) — src losing a counter can't KO it
-  const koResult = checkKO(player, oppNum, dst, false);
-  if (koResult === 'win') { renderAll(); return; }
-  if (koResult === 'promote') { renderAll(); return; }
-
-  // Also check if src was already at exactly lethal damage before losing the counter
-  // (edge case: src had exactly 0 hp remaining — but losing a counter means it can't KO)
-  // More importantly: if src === opp.active and dst KO'd something, the board still needs render
+  checkKO(player, oppNum, dst, false);
   renderAll();
 }
 
@@ -632,8 +624,8 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
   const actions = [];
 
   // Powers that appear on ANY slot (field-wide effects that any tap can trigger):
-  // Damage Swap (Alakazam) — triggers from any own Pokémon tap, not just Alakazam
-  if (damageSwapActive(player)) {
+  // Damage Swap (Alakazam) — triggers from any tap since it affects any own Pokémon
+  if (damageSwapActive(player) && isPowerActive(card, 'Damage Swap')) {
     actions.push({ label: '⚡ Damage Swap (Alakazam)', fn: () => { closeActionMenu(); doDamageSwap(player); } });
   }
 

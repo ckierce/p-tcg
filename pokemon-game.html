@@ -2982,7 +2982,6 @@ function getActionsForCard(player, card, handIdx) {
     const oppPokemon = [oppP.active, ...oppP.bench].filter(Boolean);
     const nm = card.name;
     let unplayableReason = null;
-
     if (/^potion$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0))
       unplayableReason = 'No damaged Pokémon to heal';
     else if (/^super potion$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0 && (s.attachedEnergy||[]).length))
@@ -3037,7 +3036,6 @@ function getActionsForCard(player, card, handIdx) {
       unplayableReason = 'Bench is full';
     else if (/^mysterious fossil$/i.test(nm) && p.bench.every(s => s !== null) && p.active)
       unplayableReason = 'Bench is full';
-
     if (unplayableReason) {
       actions.push({ label: `Cannot play — ${unplayableReason}`, disabled: true, fn: () => {} });
     } else {
@@ -3574,6 +3572,46 @@ function cancelAction() {
 // ══════════════════════════════════════════════════
 // COIN FLIP
 // ══════════════════════════════════════════════════
+function showCoinAnimation(label, heads, opts = {}) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('coin-overlay');
+    const coin = document.getElementById('coin');
+    const resultEl = document.getElementById('coin-result');
+    const labelEl = document.getElementById('coin-label');
+    const endDeg = heads ? 1440 : 1620;
+
+    if (!overlay.classList.contains('show')) {
+      _flashQueue.length = 0;
+      _flashBusy = false;
+      document.getElementById('move-flash')?.classList.remove('show');
+      document.getElementById('action-flash')?.classList.remove('show');
+    }
+
+    const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
+    setTimeout(() => {
+      coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
+      const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
+        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}`
+        : label;
+      labelEl.textContent = header || 'Flipping a coin...';
+      resultEl.textContent = '';
+      overlay.classList.add('show');
+      coin.classList.remove('flipping');
+      void coin.offsetWidth;
+      coin.classList.add('flipping');
+      setTimeout(() => {
+        resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
+        resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
+        setTimeout(() => {
+          if (!opts.persistent) overlay.classList.remove('show');
+          coin.classList.remove('flipping');
+          resolve();
+        }, 1200);
+      }, 1000);
+    }, PRE_DELAY);
+  });
+}
+
 function flipCoin(label, opts = {}) {
   // opts.persistent: keep overlay open after resolving (caller closes via closeCoinOverlay())
   // opts.flipNum / opts.totalFlips: show "Flip X of Y" when in a multi-flip sequence
@@ -3584,15 +3622,10 @@ function flipCoin(label, opts = {}) {
     const labelEl = document.getElementById('coin-label');
 
     const heads = Math.random() < 0.5;
+    // Store flip in G for opponent to replay
+    if (!G.coinFlipLog) G.coinFlipLog = [];
+    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips });
     const endDeg = heads ? 1440 : 1620;
-
-    // Clear any active flashes so coin flip is never obscured
-    if (!overlay.classList.contains('show')) {
-      _flashQueue.length = 0;
-      _flashBusy = false;
-      document.getElementById('move-flash')?.classList.remove('show');
-      document.getElementById('action-flash')?.classList.remove('show');
-    }
 
     // Shorter pre-delay if overlay is already showing (consecutive flips)
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
@@ -3922,7 +3955,6 @@ async function performAttack(player, atk) {
 
   // ── "Next attack does double damage" self-buff (e.g. Swords Dance) ──
   // Detect by text pattern OR by known attack names that have this effect.
-  // Skip if MOVE_EFFECTS already handles this via postAttack (e.g. Scyther's Swords Dance)
   const _hasDoublePostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
   const doubleNextMatch = !_hasDoublePostAttack && (
     (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
@@ -4738,7 +4770,6 @@ function endTurn() {
     addLog(`P${G.turn} draws ${extras} extra card(s) from opponent mulligan(s).`);
   }
 
-  // Sleep check: flag it for the new player's client to resolve (so both sides see the flip)
   const sleepTarget = G.players[G.turn].active;
   if (sleepTarget?.status === 'asleep') {
     G.pendingSleepFlip = sleepTarget.name;
@@ -4748,7 +4779,6 @@ function endTurn() {
   renderAll();
   showTurnFlash(G.turn);
 
-  // In local/vs-CPU mode, resolve sleep flip immediately (no Firebase round-trip)
   if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
     const sleepName = G.pendingSleepFlip;
     G.pendingSleepFlip = null;
@@ -5157,20 +5187,14 @@ function updateTurnBadge() {
     badge.className = 'turn-badge';
     badge.style.color = 'var(--accent)';
     badge.style.borderColor = 'var(--accent)';
-  } else if (G.phase === 'PROMOTE' && G.pendingPromotion) {
-    const promoter = G.pendingPromotion;
-    badge.style.color = '';
-    badge.style.borderColor = '';
-    badge.className = `turn-badge p${promoter}`;
-    if (myRole === null) {
-      badge.textContent = `P${promoter} PROMOTE`;
-    } else {
-      badge.textContent = promoter === myRole ? 'YOUR TURN' : 'OPP TURN';
-    }
   } else {
     badge.style.color = '';
     badge.style.borderColor = '';
-    if (myRole === null) {
+    if (G.phase === 'PROMOTE' && G.pendingPromotion) {
+      const promoter = G.pendingPromotion;
+      badge.className = `turn-badge p${promoter}`;
+      badge.textContent = myRole === null ? `P${promoter} PROMOTE` : (promoter === myRole ? 'YOUR TURN' : 'OPP TURN');
+    } else if (myRole === null) {
       badge.textContent = `P${G.turn} TURN`;
       badge.className = `turn-badge p${G.turn}`;
     } else {
@@ -5580,6 +5604,9 @@ function showTurnFlash(player) {
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
+  // Store for opponent to see
+  G.lastMoveFlash = { attackingPlayer, attackerName, moveName, dmg, targetName, suffix, ts: Date.now() };
+  G.coinFlipLog = []; // fresh log for this attack
   const DURATION = 3000;
   _queueFlash(() => {
     const el = document.getElementById('move-flash');
@@ -7091,7 +7118,6 @@ function receiveGameState(state) {
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
     showPromoteBanner(G.pendingPromotion);
-    // Re-highlight the promoting player's bench slots (lost on re-render)
     const promotingPlayer = G.pendingPromotion;
     const isMyPromote = myRole === null || myRole === promotingPlayer;
     if (isMyPromote) {
@@ -7118,11 +7144,35 @@ function receiveGameState(state) {
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   initDragDrop();
   applyRoleVisibility();
+  if (!G.started && wasStarted) {
+    const p1prizes = G.players[1].prizes.filter(p => p).length;
+    const p2prizes = G.players[2].prizes.filter(p => p).length;
+    const winner = p1prizes <= p2prizes ? 2 : 1;
+    showWinScreen(winner, '');
+    return;
+  }
+  // Show move flash and coin flips from opponent's attack
+  if (myRole !== null && G.lastMoveFlash && G.lastMoveFlash.ts !== window._lastMoveFlashTs) {
+    window._lastMoveFlashTs = G.lastMoveFlash.ts;
+    const mf = G.lastMoveFlash;
+    // Only show if this was the opponent's action
+    if (mf.attackingPlayer !== myRole) {
+      showMoveFlash(mf.attackingPlayer, mf.attackerName, mf.moveName, mf.dmg, mf.targetName, mf.suffix);
+      // Replay coin flips after move flash
+      if (G.coinFlipLog && G.coinFlipLog.length) {
+        const flips = [...G.coinFlipLog];
+        setTimeout(async () => {
+          for (const flip of flips) {
+            await showCoinAnimation(flip.label, flip.heads, { flipNum: flip.flipNum, totalFlips: flip.totalFlips });
+          }
+        }, 800);
+      }
+    }
+  }
   // Show turn flash if turn just switched to this player
   if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
     showTurnFlash(myRole);
   }
-  // Sleep flip: resolve on the new turn player's client so both sides see it
   if (G.pendingSleepFlip) {
     const sleepName = G.pendingSleepFlip;
     const sleepTarget = G.players[G.turn].active;
@@ -7230,7 +7280,6 @@ setMidline('Load decks and press Start Game');
 window.addEventListener('beforeunload', () => {
   if (gameRef) { gameRef.remove().catch(() => {}); }
 });
-</script>
 </script>
 <script src="pokemon-powers.js"></script>
 <script src="trainer-cards.js"></script>
