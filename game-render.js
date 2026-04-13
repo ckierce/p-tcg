@@ -382,10 +382,12 @@ function updateDeckCounts() {
   const isP2Persp = (myRole === 2);
   const bottomPlayer = isP2Persp ? 2 : 1;
   const topPlayer    = isP2Persp ? 1 : 2;
-  const el1 = document.getElementById('deck-count-p1');
+  // P1 label (current player) — count to the left of piles
+  const el1 = document.getElementById('deck-count-p1-label');
   if (el1) el1.innerHTML = `${G.players[bottomPlayer].deck.length}<span>cards</span>`;
+  // P2 label (opponent) — count below piles (web) or left (mobile via CSS)
   const el2 = document.getElementById('deck-count-p2');
-  if (el2) el2.innerHTML = `${G.players[topPlayer].deck.length}<br><span style="font-size:6px">deck</span>`;
+  if (el2) el2.innerHTML = `${G.players[topPlayer].deck.length} <span>deck</span>`;
 }
 
 function updatePhase() {
