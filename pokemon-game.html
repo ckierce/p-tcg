@@ -4530,12 +4530,19 @@ async function performAttack(player, atk) {
     }
   }
 
+  // If a KO during this attack triggered a PROMOTE phase, stop here.
+  // endTurn will fire from inside resolvePromotion once the player chooses.
+  if (G.phase === 'PROMOTE') { renderWhenIdle(); return; }
+
   // ── Apply special move effects (Lure, Whirlwind, Conversion, Destiny Bond, etc.) ──
   if (typeof applyMoveEffects === 'function' && G.started) {
     const currentOpp = G.players[opp].active;
     const effectBlocked = await applyMoveEffects(player, atk, typeof _dmgDealt !== 'undefined' ? _dmgDealt : 0, myActive, currentOpp);
     if (effectBlocked === true) return;
   }
+
+  // If applyMoveEffects triggered a PROMOTE (e.g. recoil KO), stop here too.
+  if (G.phase === 'PROMOTE') { renderWhenIdle(); return; }
 
   // Attack always ends the turn
   renderWhenIdle();
