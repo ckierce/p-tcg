@@ -385,34 +385,36 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 .opp-prize-pip.gone { opacity: .15; }
 
-/* Opp deck + discard — wrap column: [deck+discard row] then [count below] */
-.opp-aux-wrap {
+/* Opp deck + discard — row of columns, each column = [card] / [count] */
+.opp-aux-row {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+/* Each column: card on top, number below */
+.opp-aux-col {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  flex-shrink: 0;
 }
 
-/* Count label — below piles on web */
-.opp-deck-count-label {
-  font-size: 10px;
+/* Number below each P2 pile */
+.opp-pile-count {
+  font-size: 11px;
+  font-weight: bold;
   color: var(--muted);
   text-align: center;
+  line-height: 1;
   white-space: nowrap;
-  line-height: 1.2;
 }
-.opp-deck-count-label span {
-  font-size: 8px;
+.opp-pile-count small {
+  font-size: 7px;
   color: var(--muted);
-}
-
-/* Opp deck + discard side by side */
-.opp-aux-row {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  flex-shrink: 0;
+  font-weight: normal;
+  display: block;
 }
 .opp-deck-slot {
   width: 56px;
@@ -444,28 +446,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   flex-shrink: 0;
 }
 .opp-discard img { width: 100%; height: 100%; object-fit: cover; }
-.discard-count {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: bold;
-  color: #fff;
-  text-shadow: 0 1px 4px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,1);
-  background: rgba(0,0,0,0.45);
-  border-radius: 4px;
-  pointer-events: none;
-  line-height: 1;
-}
-.discard-count span {
-  font-size: 7px;
-  color: #ddd;
-  margin-top: 1px;
-  font-weight: normal;
-}
+/* discard count shown via dedicated label elements */
 
 /* ── MIDLINE DIVIDER ──────────────────────────────────────── */
 #midline {
@@ -792,29 +773,35 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   display: flex;
   flex-direction: column;
   justify-content: center;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 8px;
   z-index: 10;
 }
 
-/* Count label — centered overlay inside deck slot */
-#deck-count-p1-label {
-  font-size: 20px;
+/* P1 pile rows: [number] [card] */
+.aux-pile-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Number label left of each P1 pile */
+.aux-count {
+  font-size: 18px;
   font-weight: bold;
   color: #fff;
+  text-align: right;
   line-height: 1;
-  text-align: center;
-  text-shadow: 0 1px 4px rgba(0,0,0,1), 0 0 10px rgba(0,0,0,1);
-  background: rgba(0,0,0,0.55);
-  border-radius: 4px;
-  padding: 4px 6px;
-  pointer-events: none;
+  min-width: 22px;
+  text-shadow: 0 1px 4px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,1);
 }
-#deck-count-p1-label span {
+.aux-count small {
   font-size: 7px;
-  color: #ddd;
+  color: #ccc;
+  font-weight: normal;
   display: block;
-  margin-top: 1px;
+  text-align: right;
 }
 
 /* Piles column: deck on top, discard below */
@@ -2090,19 +2077,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   }
   .opp-deck-slot { width: 36px; height: 50px; }
   .opp-discard   { width: 36px; height: 50px; }
-
-  /* Mobile: P2 count moves to the LEFT of the piles */
-  .opp-aux-wrap {
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-  }
-  .opp-deck-count-label {
-    writing-mode: vertical-rl;
-    text-orientation: mixed;
-    transform: rotate(180deg);
-    font-size: 9px;
-  }
+  .opp-pile-count { font-size: 9px; }
 
   /* Hand count hidden — too little space */
   .opp-hand-count { display: none; }
@@ -2406,12 +2381,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <!-- Right: prizes + deck + discard + hand count -->
         <div id="opp-right">
           <div class="opp-prizes" id="prizes-p2"></div>
-          <div class="opp-aux-wrap">
-              <div class="opp-aux-row">
+          <div class="opp-aux-row">
+              <div class="opp-aux-col">
                 <div class="opp-deck-slot"></div>
-                <div class="opp-discard" id="discard-p2"><span style="font-size: 8px">DISC</span></div>
+                <div id="deck-count-p2" class="opp-pile-count">0<small>deck</small></div>
               </div>
-              <div id="deck-count-p2" class="opp-deck-count-label">0 <span>deck</span></div>
+              <div class="opp-aux-col">
+                <div class="opp-discard" id="discard-p2"><span style="font-size:8px">DISC</span></div>
+                <div id="discard-count-p2" class="opp-pile-count">0<small>disc</small></div>
+              </div>
           </div>
           <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
         </div>
@@ -2458,12 +2436,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
       <!-- Deck + discard — right side, below midline -->
       <div id="player-aux">
-        <div id="player-aux-piles">
-          <div class="player-deck-slot" onclick="drawCard(G.turn)">
-            <div id="deck-count-p1-label">0<span>deck</span></div>
-          </div>
+        <div class="aux-pile-row">
+          <span class="aux-count" id="deck-count-p1-label">0<small>deck</small></span>
+          <div class="player-deck-slot" onclick="drawCard(G.turn)"></div>
+        </div>
+        <div class="aux-pile-row">
+          <span class="aux-count" id="discard-count-p1-label">0<small>disc</small></span>
           <div class="player-discard-slot" id="discard-p1">
-            <span style="font-size: 8px">DISCARD</span>
+            <span style="font-size:8px">DISC</span>
           </div>
         </div>
       </div>
