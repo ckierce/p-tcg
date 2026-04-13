@@ -420,41 +420,52 @@ async function doMetronome(player) {
 }
 
 // Slowbro — Strange Behavior
-// Move 1 damage counter from any of your Pokémon to Slowbro.
+// Per card text: "As often as you like during your turn (before your attack), you may
+// move 1 damage counter from 1 of your Pokémon to Slowbro as long as you don't
+// Knock Out Slowbro." — 1 counter per use, repeatable, cannot KO Slowbro.
 async function doStrangeBehavior(player) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Strange Behavior!", true); return; }
   const p = G.players[player];
   const slowbro = [p.active, ...p.bench].find(c => isPowerActive(c, 'Strange Behavior'));
   if (!slowbro) { showToast('Slowbro not in play!', true); return; }
 
-  const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
-  if (!sources.length) { showToast('No Pokémon with damage counters to move!', true); return; }
+  let moved = 0;
 
-  const picked = await openCardPicker({
-    title: 'Strange Behavior',
-    subtitle: 'Choose a Pokémon to move damage counters FROM (to Slowbro)',
-    cards: sources, maxSelect: 1
-  });
-  if (!picked) return;
-  const src = sources[picked[0]];
+  while (true) {
+    const slowbroHp = parseInt(slowbro.hp) || 0;
+    // Can't move if it would KO Slowbro
+    if ((slowbro.damage || 0) + 10 >= slowbroHp) {
+      if (moved === 0) showToast("Can't move damage to Slowbro — would KO it!", true);
+      else showToast("Slowbro can't take any more counters without being KO'd.", true);
+      break;
+    }
 
-  // Ask how many counters to move, capped so Slowbro isn't KO'd
-  const maxFromSrc = Math.floor((src.damage || 0) / 10);
-  const slowbroHp = parseInt(slowbro.hp) || 0;
-  const maxSafe = Math.floor((slowbroHp - (slowbro.damage || 0) - 1) / 10);
-  const maxCounters = Math.min(maxFromSrc, maxSafe);
-  if (maxCounters <= 0) { showToast(`Can't move damage to Slowbro — would KO it!`, true); return; }
+    const sources = [p.active, ...p.bench].filter(c => c && c !== slowbro && (c.damage || 0) >= 10);
+    if (!sources.length) {
+      if (moved === 0) showToast('No other Pokémon have damage counters to move!', true);
+      break;
+    }
 
-  let numCounters = maxCounters;
-  if (maxCounters > 1) {
-    numCounters = await pickNumber(`How many damage counters to move from ${src.name} to Slowbro?`, 1, maxCounters);
-    if (!numCounters) return;
+    const picked = await openCardPicker({
+      title: `Strange Behavior${moved > 0 ? ` (${moved} moved)` : ''} — Source`,
+      subtitle: moved > 0 ? 'Move another counter to Slowbro? Or press Done to finish.' : 'Choose a Pokémon to move 1 damage counter FROM (to Slowbro)',
+      cards: sources,
+      maxSelect: 1,
+      showDone: moved > 0
+    });
+    if (!picked || picked === 'done') break;
+
+    const src = sources[picked[0]];
+    src.damage = (src.damage || 0) - 10;
+    slowbro.damage = (slowbro.damage || 0) + 10;
+    moved++;
+    addLog(`Strange Behavior: moved 1 counter from ${src.name} → ${slowbro.name}.`, true);
+    renderAll();
   }
 
-  src.damage -= numCounters * 10;
-  slowbro.damage = (slowbro.damage || 0) + numCounters * 10;
-  addLog(`P${player} used Strange Behavior — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${src.name} to ${slowbro.name}.`, true);
-  renderAll();
+  if (moved > 0) {
+    addLog(`P${player} finished Strange Behavior — moved ${moved} counter${moved > 1 ? 's' : ''} to ${slowbro.name}.`, true);
+  }
 }
 
 // Venomoth — Shift

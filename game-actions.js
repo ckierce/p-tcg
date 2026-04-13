@@ -1203,9 +1203,11 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     addLog(`${myActive.name} removed all damage counters!`, true);
   }
 
-  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  // ── Attack energy cost discard: energy that must be discarded to use the attack ──
+  // Covers: "in order to use this attack" (Charizard Fire Spin) AND
+  //         "in order to [do/prevent]..." (Mewtwo Barrier, Arcanine Flamethrower, etc.)
   const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to/i
   );
   if (discardCostMatch && myActive) {
     const rawN = discardCostMatch[1].toLowerCase();
