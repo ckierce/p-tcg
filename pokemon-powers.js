@@ -202,7 +202,6 @@ async function doDamageSwap(player) {
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
 
-  // Ask how many counters to move (1 to all available)
   const maxCounters = Math.floor((srcCard.damage || 0) / 10);
   let numCounters = maxCounters;
   if (maxCounters > 1) {

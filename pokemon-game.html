@@ -3098,8 +3098,16 @@ function evolve(player, handIdx, zone, benchIdx) {
   evoCard.attachedEnergy = target.attachedEnergy || [];
   evoCard.status = null; // evolving cures status conditions
 
-  // Send the pre-evolution card to discard (this includes Mysterious Fossil)
-  p.discard.push(target);
+  // Store pre-evolution cards underneath (they go to discard only when KO'd, not on evolve)
+  // Mysterious Fossil is an exception — it IS discarded on evolution per Base Set rules
+  const isFossil = /mysterious fossil/i.test(target.name);
+  if (isFossil) {
+    target.attachedEnergy = [];
+    target.damage = 0;
+    p.discard.push(target);
+  } else {
+    evoCard.prevStages = [...(target.prevStages || []), { ...target, attachedEnergy: [], damage: 0, prevStages: undefined }];
+  }
 
   if (zone === 'active') {
     p.active = evoCard;
@@ -3532,9 +3540,10 @@ async function handleBenchClick(player, slotIdx, evt) {
 
   // During PROMOTE phase — only the KO'd player can act, and only to pick a bench slot
   if (G.phase === 'PROMOTE') {
-    if (G.pendingPromotion === player && slot) {
+    const isMyPromote = myRole === null || myRole === G.pendingPromotion;
+    if (G.pendingPromotion === player && slot && isMyPromote) {
       resolvePromotion(player, slotIdx);
-    } else if (G.pendingPromotion !== player) {
+    } else if (!isMyPromote || G.pendingPromotion !== player) {
       showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
     }
     return;
@@ -3579,20 +3588,16 @@ function showCoinAnimation(label, heads, opts = {}) {
     const resultEl = document.getElementById('coin-result');
     const labelEl = document.getElementById('coin-label');
     const endDeg = heads ? 1440 : 1620;
-
     if (!overlay.classList.contains('show')) {
-      _flashQueue.length = 0;
-      _flashBusy = false;
+      _flashQueue.length = 0; _flashBusy = false;
       document.getElementById('move-flash')?.classList.remove('show');
       document.getElementById('action-flash')?.classList.remove('show');
     }
-
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
     setTimeout(() => {
       coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
       const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
-        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}`
-        : label;
+        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}` : label;
       labelEl.textContent = header || 'Flipping a coin...';
       resultEl.textContent = '';
       overlay.classList.add('show');
@@ -3622,7 +3627,6 @@ function flipCoin(label, opts = {}) {
     const labelEl = document.getElementById('coin-label');
 
     const heads = Math.random() < 0.5;
-    // Store flip in G for opponent to replay
     if (!G.coinFlipLog) G.coinFlipLog = [];
     G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips });
     const endDeg = heads ? 1440 : 1620;
@@ -4556,6 +4560,11 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     }
 
     G.players[owner].discard.push(card);
+    // Also discard any previous evolution stages stored under this card
+    if (card.prevStages && card.prevStages.length) {
+      G.players[owner].discard.push(...card.prevStages);
+    }
+    // Discard attached energy
     G.players[owner].active = null;
 
     // Clefairy Doll KO — no prize, no win check
@@ -5604,9 +5613,8 @@ function showTurnFlash(player) {
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
-  // Store for opponent to see
   G.lastMoveFlash = { attackingPlayer, attackerName, moveName, dmg, targetName, suffix, ts: Date.now() };
-  G.coinFlipLog = []; // fresh log for this attack
+  G.coinFlipLog = [];
   const DURATION = 3000;
   _queueFlash(() => {
     const el = document.getElementById('move-flash');
@@ -7151,14 +7159,16 @@ function receiveGameState(state) {
     showWinScreen(winner, '');
     return;
   }
-  // Show move flash and coin flips from opponent's attack
+  // Show turn flash if turn just switched to this player
+  if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
+    showTurnFlash(myRole);
+  }
+  // Show opponent move flash and coin flips
   if (myRole !== null && G.lastMoveFlash && G.lastMoveFlash.ts !== window._lastMoveFlashTs) {
     window._lastMoveFlashTs = G.lastMoveFlash.ts;
     const mf = G.lastMoveFlash;
-    // Only show if this was the opponent's action
     if (mf.attackingPlayer !== myRole) {
       showMoveFlash(mf.attackingPlayer, mf.attackerName, mf.moveName, mf.dmg, mf.targetName, mf.suffix);
-      // Replay coin flips after move flash
       if (G.coinFlipLog && G.coinFlipLog.length) {
         const flips = [...G.coinFlipLog];
         setTimeout(async () => {
@@ -7169,10 +7179,7 @@ function receiveGameState(state) {
       }
     }
   }
-  // Show turn flash if turn just switched to this player
-  if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
-    showTurnFlash(myRole);
-  }
+  // Sleep flip: resolve on the new turn player's client
   if (G.pendingSleepFlip) {
     const sleepName = G.pendingSleepFlip;
     const sleepTarget = G.players[G.turn].active;
