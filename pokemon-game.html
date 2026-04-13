@@ -786,22 +786,21 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   gap: 6px;
 }
 
-/* Number label left of each P1 pile */
+/* Number label left of each P1 pile — subtle, matches sidebar labels */
 .aux-count {
-  font-size: 18px;
-  font-weight: bold;
-  color: #fff;
+  font-size: 9px;
+  color: var(--muted);
   text-align: right;
-  line-height: 1;
-  min-width: 22px;
-  text-shadow: 0 1px 4px rgba(0,0,0,1), 0 0 8px rgba(0,0,0,1);
+  line-height: 1.3;
+  min-width: 18px;
+  letter-spacing: 0.5px;
 }
 .aux-count small {
   font-size: 7px;
-  color: #ccc;
+  color: var(--muted);
   font-weight: normal;
   display: block;
-  text-align: right;
+  letter-spacing: 0.5px;
 }
 
 /* Piles column: deck on top, discard below */
