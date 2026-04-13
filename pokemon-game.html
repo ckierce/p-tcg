@@ -4513,7 +4513,7 @@ async function performAttack(player, atk) {
     } else {
       G.phase = 'PROMOTE';
       G.pendingPromotion = player;
-      _flashQueue.length = 0; // clear pending flashes so banner isn't buried
+      _flashQueue.length = 0; _flashBusy = false;
       for (let i = 0; i < 5; i++) {
         if (G.players[player].bench[i]) {
           document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
@@ -4616,7 +4616,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     // Always show the promote banner — even with one bench Pokémon the player must confirm
     G.phase = 'PROMOTE';
     G.pendingPromotion = owner;
-    _flashQueue.length = 0; // clear pending flashes so banner isn't buried
+    _flashQueue.length = 0; _flashBusy = false; // clear pending flashes
     // Highlight available bench slots for the KO'd player
     for (let i = 0; i < 5; i++) {
       if (G.players[owner].bench[i]) {
@@ -4664,8 +4664,7 @@ function endTurn() {
     if (!G.players[pNum].active && G.players[pNum].bench.some(s => s !== null)) {
       G.phase = 'PROMOTE';
       G.pendingPromotion = pNum;
-      // Clear pending flashes so the promote banner isn't immediately buried
-      _flashQueue.length = 0;
+      _flashQueue.length = 0; _flashBusy = false;
       for (let i = 0; i < 5; i++) {
         if (G.players[pNum].bench[i]) {
           document.getElementById(`bench-p${pNum}-${i}`)?.classList.add('highlight');
@@ -5613,8 +5612,11 @@ function showTurnFlash(player) {
 }
 
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
-  G.lastMoveFlash = { attackingPlayer, attackerName, moveName, dmg, targetName, suffix, ts: Date.now() };
-  G.coinFlipLog = [];
+  // Store for opponent to see — only set on the attacker's client
+  if (myRole === null || attackingPlayer === myRole) {
+    G.lastMoveFlash = { attackingPlayer, attackerName, moveName, dmg, targetName, suffix, ts: Date.now() };
+    G.coinFlipLog = []; // fresh log for this attack — only reset on attacker's side
+  }
   const DURATION = 3000;
   _queueFlash(() => {
     const el = document.getElementById('move-flash');
@@ -7183,9 +7185,9 @@ function receiveGameState(state) {
   if (G.pendingSleepFlip) {
     const sleepName = G.pendingSleepFlip;
     const sleepTarget = G.players[G.turn].active;
+    G.pendingSleepFlip = null; // always clear regardless of outcome
     if (sleepTarget && sleepTarget.name === sleepName && sleepTarget.status === 'asleep'
         && (myRole === null || G.turn === myRole)) {
-      G.pendingSleepFlip = null;
       setTimeout(async () => {
         const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
         if (wakeUp) {
