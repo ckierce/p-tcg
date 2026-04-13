@@ -698,18 +698,28 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Energy Conversion (Gastly): retrieve up to 2 energy from own discard
+  // Energy Conversion (Gastly): retrieve up to 2 energy from own discard; Gastly takes 10 damage to itself
+  // Card text: "Put up to 2 Energy cards from your discard pile into your hand. Gastly does 10 damage to itself."
   'Energy Conversion': {
-    postAttack: async ({ player, atk }) => {
+    postAttack: async ({ player, myActive, atk }) => {
       const myP = G.players[player];
+      const opp = player === 1 ? 2 : 1;
       const energy = myP.discard.filter(c => c.supertype === 'Energy');
-      if (!energy.length) { addLog(`${atk.name}: no energy in discard.`); return; }
-      const picked = await openCardPicker({ title: `${atk.name}`, subtitle: 'Choose up to 2 energy from your discard', cards: energy, maxSelect: 2 });
-      if (picked && picked.length) {
-        picked.forEach(pi => { const di = myP.discard.findIndex(c => c === energy[pi]); if (di !== -1) myP.hand.push(...myP.discard.splice(di, 1)); });
-        addLog(`${atk.name}: retrieved ${picked.length} energy to hand.`, true);
-        renderAll();
+      if (!energy.length) { addLog(`${atk.name}: no energy in discard.`); }
+      else {
+        const picked = await openCardPicker({ title: `${atk.name}`, subtitle: 'Choose up to 2 energy from your discard', cards: energy, maxSelect: 2 });
+        if (picked && picked.length) {
+          picked.forEach(pi => { const di = myP.discard.findIndex(c => c === energy[pi]); if (di !== -1) myP.hand.push(...myP.discard.splice(di, 1)); });
+          addLog(`${atk.name}: retrieved ${picked.length} energy to hand.`, true);
+        }
       }
+      // Gastly does 10 damage to itself (per card text)
+      if (myActive) {
+        myActive.damage = (myActive.damage || 0) + 10;
+        addLog(`${atk.name}: ${myActive.name} takes 10 damage to itself! (${myActive.damage}/${myActive.hp} HP)`, true);
+        checkKO(opp, player, myActive, true);
+      }
+      renderAll();
     }
   },
 
@@ -832,17 +842,25 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Leek Slap (Farfetch'd): once-only per Farfetch'd instance
+  // Leek Slap (Farfetch'd): flip coin — tails = does nothing; can't use again either way
+  // Card text: "Flip a coin. If tails, this attack does nothing. Either way, you can't
+  // use this attack again as long as Farfetch'd stays in play."
   'Leek Slap': {
-    preAttack: ({ myActive, atk }) => {
+    preAttack: async ({ myActive, atk }) => {
       if (myActive?.leekSlapUsed) {
-        showToast(`${atk.name}: already used — can't use again!`, true);
+        showToast(`${atk.name}: already used — can't use again while Farfetch'd is in play!`, true);
         addLog(`${atk.name}: already used — blocked!`, true);
         return 'block';
       }
-    },
-    postAttack: async ({ myActive, atk }) => {
-      if (myActive) { myActive.leekSlapUsed = true; addLog(`${atk.name}: can't use again while Farfetch'd is in play!`, true); }
+      // Mark as used regardless of flip result
+      if (myActive) myActive.leekSlapUsed = true;
+      // Flip: tails = attack does nothing
+      const heads = await flipCoin(`${atk.name}: Heads = 30 damage, Tails = does nothing`);
+      if (!heads) {
+        addLog(`${atk.name}: TAILS — attack does nothing! (can't use again either way)`, true);
+        return 'block';
+      }
+      addLog(`${atk.name}: HEADS — 30 damage! (can't use again while Farfetch'd is in play)`, true);
     }
   },
 
@@ -969,8 +987,27 @@ const MOVE_EFFECTS = {
   // Poison Sting (Beedrill/Weedle): flip → Poisoned
   'Poison Sting': _statusOppFlip('poisoned'),
 
-  // Poisonpowder (Ivysaur/Kakuna/Tangela/Gloom/Weepinbell): opp Poisoned (no flip)
-  'Poisonpowder': _statusOpp('poisoned'),
+  // Poisonpowder — Ivysaur/Tangela/Gloom: no flip, opponent is Poisoned
+  // Kakuna/Weepinbell: flip a coin, heads = opponent Poisoned
+  // Per card text: Ivysaur/Tangela/Gloom say "The Defending Pokémon is now Poisoned."
+  //                Kakuna/Weepinbell say "Flip a coin. If heads, the Defending Pokémon is now Poisoned."
+  'Poisonpowder': {
+    postAttack: async ({ myActive, oppActive, atk }) => {
+      const flipCards = ['Kakuna', 'Weepinbell'];
+      if (flipCards.includes(myActive?.name)) {
+        const heads = await flipCoin(`${atk.name}: Heads = ${oppActive?.name} is Poisoned!`);
+        if (heads) {
+          tryApplyStatus(oppActive, 'poisoned');
+          addLog(`${atk.name}: HEADS — ${oppActive?.name} is now Poisoned!`, true);
+        } else {
+          addLog(`${atk.name}: TAILS — no poison.`);
+        }
+      } else {
+        tryApplyStatus(oppActive, 'poisoned');
+        addLog(`${atk.name}: ${oppActive?.name} is now Poisoned!`, true);
+      }
+    }
+  },
 
   // Pounce (Persian): incoming attack next turn does 10 less damage
   'Pounce': {

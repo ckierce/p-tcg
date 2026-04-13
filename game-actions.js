@@ -1079,7 +1079,8 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
       showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 KABUTO ARMOR (${before}→${dmg})`);
     }
     // Transparency (Haunter): flip — heads = prevent all effects including damage
-    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency') && dmg > 0) {
+    // Card says "whenever an attack does anything" — fires even on 0-damage status attacks
+    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency')) {
       const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
       if (transpHeads) {
         addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
