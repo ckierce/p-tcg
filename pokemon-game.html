@@ -3253,7 +3253,12 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
     if (isDitto) {
-      pool.push('*'); // wildcard — satisfies any energy type
+      // DCE counts as 2 wildcards even for Ditto
+      if (/double colorless/i.test(name)) {
+        pool.push('*', '*');
+      } else {
+        pool.push('*');
+      }
     } else if (energyBurn) {
       pool.push('Fire');
     } else if (/double colorless/i.test(name)) {
@@ -5485,7 +5490,7 @@ function enrichCard(card) {
       types: Array.isArray(card.types) ? card.types : [],
       subtypes: safeSubtypes,
       attacks: mergedAttacks,
-      abilities: Array.isArray(card.abilities) ? card.abilities : [],
+      abilities: (Array.isArray(card.abilities) && card.abilities.length) ? card.abilities : [],
       weaknesses: Array.isArray(card.weaknesses) ? card.weaknesses : [],
       resistances: Array.isArray(card.resistances) ? card.resistances : [],
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
@@ -5506,7 +5511,7 @@ function enrichCard(card) {
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
     rules: full.rules || card.rules || [],
-    abilities: full.abilities || card.abilities || [],
+    abilities: (full.abilities && full.abilities.length) ? full.abilities : (Array.isArray(card.abilities) && card.abilities.length ? card.abilities : (full.abilities || [])),
     attacks: mergedAttacks,
     hp: (card.hp && card.hp !== '0') ? card.hp : (full.hp || card.hp || '0'),
     weaknesses: full.weaknesses || [],
