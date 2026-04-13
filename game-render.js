@@ -997,13 +997,14 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
     // so cards aren't too narrow to read
     const cols = cards.length > 10 ? 3 : cards.length > 4 ? 4 : Math.max(1, cards.length);
     grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-    // Narrow the modal for small card counts so single cards aren't huge
+    // Narrow the modal based on card count and type
     const box = document.querySelector('#card-picker-modal .modal-box');
     if (box) {
-      const cardW = 130; // px per card column
+      const allEnergy = cards.every(c => c.supertype === 'Energy');
+      const cardW = allEnergy ? 100 : 130; // energy cards display narrower
+      const minW  = allEnergy ? 180 : 280; // tighter minimum for energy pickers
       const padding = 56; // modal padding + border
-      // Minimum 280px so a single card is readable; max 460px
-      const idealW = Math.min(460, Math.max(280, cols * cardW + padding));
+      const idealW = Math.min(460, Math.max(minW, cols * cardW + padding));
       box.style.width = idealW + 'px';
     }
     grid.innerHTML = cards.map((card, i) => {
