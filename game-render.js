@@ -72,7 +72,7 @@ function renderField(player) {
     const discardEl = document.getElementById('discard-p1');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}</div>`;
+      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}<span>disc</span></div>`;
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISCARD</span>`;
     }
@@ -169,7 +169,7 @@ function renderField(player) {
     const discardEl = document.getElementById('discard-p2');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}</div>`;
+      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}<span>disc</span></div>`;
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISC</span>`;
     }
@@ -382,9 +382,9 @@ function updateDeckCounts() {
   const isP2Persp = (myRole === 2);
   const bottomPlayer = isP2Persp ? 2 : 1;
   const topPlayer    = isP2Persp ? 1 : 2;
-  // P1 label (current player) — count to the left of piles
+  // P1 label (current player) — centered inside deck slot
   const el1 = document.getElementById('deck-count-p1-label');
-  if (el1) el1.innerHTML = `${G.players[bottomPlayer].deck.length}<span>cards</span>`;
+  if (el1) el1.innerHTML = `${G.players[bottomPlayer].deck.length}<span>deck</span>`;
   // P2 label (opponent) — count below piles (web) or left (mobile via CSS)
   const el2 = document.getElementById('deck-count-p2');
   if (el2) el2.innerHTML = `${G.players[topPlayer].deck.length} <span>deck</span>`;
