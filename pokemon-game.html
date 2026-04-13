@@ -724,15 +724,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge, sits just below midline and grows downward */
+/* Prizes — left edge, vertically centered in player half (midline → bottom) */
 #player-prizes-panel {
   position: absolute;
   left: 10px;
-  top: 50%;           /* anchored at midline */
+  top: 50%;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
+  justify-content: center;
   align-items: center;
   gap: 4px;
   z-index: 10;
@@ -746,15 +746,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
+/* Deck + discard — right edge, vertically centered in player half (midline → bottom) */
 #player-aux {
   position: absolute;
   right: 10px;
-  top: 50%;           /* anchored at midline */
+  top: 50%;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
-  padding-top: 6px;
+  justify-content: center;
   gap: 6px;
   align-items: center;
   z-index: 10;
@@ -1936,10 +1936,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #player-prizes-panel {
     left: 2px;
     gap: 3px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;       /* don't stretch to bottom */
-    justify-content: flex-start;
-    padding-top: 4px;
+    top: 50%;
+    bottom: 0;
+    justify-content: center;
+    padding-top: 0;
   }
   #player-prizes-panel .panel-label { display: none; }
 
@@ -1957,10 +1957,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   .prize-slot img { object-fit: cover; }  #player-aux {
     right: 2px;
     gap: 4px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;
-    justify-content: flex-start;
-    padding-top: 4px;
+    top: 50%;
+    bottom: 0;
+    justify-content: center;
+    padding-top: 0;
   }
   .player-deck-slot {
     width: clamp(36px, 9vw, 52px);
