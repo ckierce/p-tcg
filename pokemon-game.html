@@ -4132,6 +4132,20 @@ async function performAttack(player, atk) {
     dmg = 0;
   }
 
+  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  // Done before damage/KO so the cost is paid even if the attack KOs the opponent.
+  const discardCostMatch = (atk.text || '').match(
+    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+  );
+  if (discardCostMatch && myActive) {
+    const rawN = discardCostMatch[1].toLowerCase();
+    const discarded = rawN === 'all'
+      ? myActive.attachedEnergy.splice(0)
+      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+    G.players[player].discard.push(...discarded);
+    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
+  }
+
   if (dmg > 0) {
     // PlusPower bonus (card attached to attacker)
     if (myActive?.plusPower) {
@@ -4302,18 +4316,7 @@ async function performAttack(player, atk) {
     addLog(`${myActive.name} removed all damage counters!`, true);
   }
 
-  // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
-  const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
-  );
-  if (discardCostMatch && myActive) {
-    const rawN = discardCostMatch[1].toLowerCase();
-    const discarded = rawN === 'all'
-      ? myActive.attachedEnergy.splice(0)
-      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
-    G.players[player].discard.push(...discarded);
-    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
-  }
+
 
 
   // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
