@@ -202,6 +202,8 @@ async function doDamageSwap(player) {
   if (!srcPicked) return;
   const srcCard = sources[srcPicked[0]].card;
 
+  // Wait a frame so the source picker fully hides before pickNumber appears
+  await new Promise(r => requestAnimationFrame(r));
   const maxCounters = Math.floor((srcCard.damage || 0) / 10);
   let numCounters = maxCounters;
   if (maxCounters > 1) {
@@ -218,6 +220,8 @@ async function doDamageSwap(player) {
     showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
     return;
   }
+  // Wait a frame so any previous modal/overlay finishes hiding before we open the next
+  await new Promise(r => requestAnimationFrame(r));
   const dstCards = validDsts.map(x => x.card);
   const dstPicked = await openCardPicker({
     title: 'Damage Swap — Destination',

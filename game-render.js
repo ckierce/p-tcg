@@ -973,12 +973,15 @@ let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
-function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
+async function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
   // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
   if (vsComputer && G.turn === 2) {
     if (!cards || !cards.length) return Promise.resolve(null);
     return Promise.resolve([0]); // AI always picks first option
   }
+  // Wait a frame so any previously-closing modal/overlay fully hides before we show
+  await new Promise(r => requestAnimationFrame(r));
+
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
     _cardPickerSelected = [];
