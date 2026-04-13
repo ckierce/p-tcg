@@ -2726,7 +2726,8 @@ async function loadDeck(fKey, deckName) {
         subtypes: entry.subtypes || [],
         hp: entry.hp || '0',
         attacks: entry.attacks || [],
-        types: entry.types || []
+        types: entry.types || [],
+        abilities: entry.abilities || []
       };
       for (let i = 0; i < entry.qty; i++) {
         flat.push(enrichCard({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` }));
@@ -3252,7 +3253,7 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
     if (isDitto) {
-      pool.push('*'); // wildcard
+      pool.push('*'); // wildcard — satisfies any energy type
     } else if (energyBurn) {
       pool.push('Fire');
     } else if (/double colorless/i.test(name)) {
@@ -3264,6 +3265,7 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   }
 
   // Sort cost: specific types first, Colorless last
+  // so we don't wastefully use typed energy on Colorless slots
   const sortedCost = [...cost].sort((a, b) =>
     (a === 'Colorless' ? 1 : 0) - (b === 'Colorless' ? 1 : 0)
   );
@@ -7246,7 +7248,8 @@ async function loadInProgressGames() {
       rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">No in-progress games found.</div>';
       return;
     }
-    rows.innerHTML = inProgress.map(([code, g]) => {
+    const fragment = document.createDocumentFragment();
+    inProgress.forEach(([code, g]) => {
       const p1Name = g.p1DeckName || 'P1';
       const p2Name = g.p2DeckName || 'P2';
       const turn = g.state && g.state.turn;
@@ -7254,30 +7257,24 @@ async function loadInProgressGames() {
       const phase = (g.state && g.state.phase) || '';
       const ago = Math.round((now - (g.created || 0)) / 60000);
       const agoStr = ago < 60 ? ago + 'm ago' : Math.round(ago / 60) + 'h ago';
-      const phaseLabel = phase === 'PROMOTE' ? ' \u26a0 PROMOTE' : '';
-      const turnLabel = turn ? (' \u2022 P' + turn + ' turn') : '';
-      const rowId = 'rejoin-row-' + code;
+      const phaseLabel = phase === 'PROMOTE' ? ' ⚠ PROMOTE' : '';
+      const turnLabel = turn ? (' • P' + turn + ' turn') : '';
       const el = document.createElement('div');
-      el.id = rowId;
+      el.id = 'rejoin-row-' + code;
       el.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;cursor:pointer;text-align:left;gap:8px;transition:border-color .15s;';
       el.innerHTML = '<div>'
         + '<div style="font-size:10px;color:var(--text);letter-spacing:1px;font-family:var(--font-title)">' + code + '</div>'
         + '<div style="font-size:8px;color:var(--muted);margin-top:2px">' + p1Name + ' vs ' + p2Name + turnLabel + phaseLabel + '</div>'
-        + '<div style="font-size:7px;color:var(--muted);margin-top:1px">Turn ' + turnNum + ' \u2022 ' + agoStr + '</div>'
+        + '<div style="font-size:7px;color:var(--muted);margin-top:1px">Turn ' + turnNum + ' • ' + agoStr + '</div>'
         + '</div>'
-        + '<div style="font-size:8px;color:var(--accent);white-space:nowrap">SELECT \u2192</div>';
+        + '<div style="font-size:8px;color:var(--accent);white-space:nowrap">SELECT →</div>';
       el.addEventListener('mouseover', () => { el.style.borderColor = 'var(--accent)'; });
       el.addEventListener('mouseout', () => { el.style.borderColor = rejoinSelectedCode === code ? 'var(--accent)' : 'var(--border)'; });
       el.addEventListener('click', () => selectRejoinGame(code));
-      return el.outerHTML;
-    }).join('');
-    // Re-attach event listeners since innerHTML was set (use event delegation instead)
-    rows.querySelectorAll('[id^="rejoin-row-"]').forEach(el => {
-      const code = el.id.replace('rejoin-row-', '');
-      el.addEventListener('click', () => selectRejoinGame(code));
-      el.addEventListener('mouseover', () => { el.style.borderColor = 'var(--accent)'; });
-      el.addEventListener('mouseout', () => { el.style.borderColor = rejoinSelectedCode === code ? 'var(--accent)' : 'var(--border)'; });
+      fragment.appendChild(el);
     });
+    rows.innerHTML = '';
+    rows.appendChild(fragment);
   } catch(e) {
     rows.innerHTML = '<div style="font-size:9px;color:var(--muted);font-style:italic">Could not load games.</div>';
   }
@@ -7288,8 +7285,9 @@ function selectRejoinGame(code) {
   rejoinSelectedCode = code;
   document.getElementById('rejoin-code-input').value = code;
   document.querySelectorAll('[id^="rejoin-row-"]').forEach(el => {
-    el.style.borderColor = el.id === 'rejoin-row-' + code ? 'var(--accent)' : 'var(--border)';
-    el.style.background = el.id === 'rejoin-row-' + code ? 'var(--surface)' : 'var(--surface2)';
+    const isSelected = el.id === 'rejoin-row-' + code;
+    el.style.borderColor = isSelected ? 'var(--accent)' : 'var(--border)';
+    el.style.background = isSelected ? 'var(--surface)' : 'var(--surface2)';
   });
 }
 
