@@ -203,11 +203,12 @@ async function doDamageSwap(player) {
 
     const srcPicked = await openCardPicker({
       title: `Damage Swap${moved > 0 ? ` (${moved} moved so far)` : ''} — Source`,
-      subtitle: 'Choose a Pokémon to move 1 damage counter FROM — or Cancel to stop',
+      subtitle: moved > 0 ? 'Move another counter FROM which Pokémon? Or press Done to finish.' : 'Choose a Pokémon to move 1 damage counter FROM',
       cards: sources.map(x => x.card),
-      maxSelect: 1
+      maxSelect: 1,
+      showDone: moved > 0  // show Done button once at least one counter has moved
     });
-    if (!srcPicked) break; // Cancel = done
+    if (!srcPicked || srcPicked === 'done') break; // Done or Cancel = stop loop
     const srcCard = sources[srcPicked[0]].card;
 
     // Build destination list: any other Pokémon where +10 damage won't KO it
@@ -227,7 +228,7 @@ async function doDamageSwap(player) {
       cards: validDsts.map(x => x.card),
       maxSelect: 1
     });
-    if (!dstPicked) break; // Cancel = done
+    if (!dstPicked || dstPicked === 'done') break; // Cancel = stop
     const dstCard = validDsts[dstPicked[0]].card;
 
     srcCard.damage = (srcCard.damage || 0) - 10;

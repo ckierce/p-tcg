@@ -973,7 +973,7 @@ let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 
-async function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
+async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone = false } = {}) {
   // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
   if (vsComputer && G.turn === 2) {
     if (!cards || !cards.length) return Promise.resolve(null);
@@ -984,6 +984,7 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
 
   return new Promise(resolve => {
     _cardPickerResolve = resolve;
+    const options = { showDone };
     _cardPickerSelected = [];
     _cardPickerMax = maxSelect;
 
@@ -1023,6 +1024,9 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
       `;
     }).join('');
 
+    // Show/hide DONE button based on caller's preference
+    const doneBtn = document.getElementById('card-picker-done');
+    if (doneBtn) doneBtn.style.display = options.showDone ? '' : 'none';
     document.getElementById('card-picker-modal').classList.add('show');
   });
 }
@@ -1069,6 +1073,14 @@ function cancelCardPick() {
   if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
   G.pendingAction = null;
   renderAll();
+}
+
+// Resolves with sentinel 'done' — used by repeatable pickers (e.g. Damage Swap)
+// to signal "finished" without cancelling the whole action
+function doneCardPick() {
+  document.getElementById('card-picker-modal').classList.remove('show');
+  hideCardDetail();
+  if (_cardPickerResolve) { _cardPickerResolve('done'); _cardPickerResolve = null; }
 }
 
 // ══════════════════════════════════════════════════

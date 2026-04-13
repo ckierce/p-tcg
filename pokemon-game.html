@@ -2441,8 +2441,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div class="modal-title" id="card-picker-title">Pick a card</div>
     <div id="card-picker-subtitle" style="font-size: 9px;color:var(--muted);text-align:center;margin-bottom:8px"></div>
     <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:55vh;padding:4px"></div>
-    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap">
       <button class="modal-close-btn" id="card-picker-confirm" onclick="confirmCardPick()" style="background:var(--accent);color:#000;border-color:var(--accent)">CONFIRM</button>
+      <button class="modal-close-btn" id="card-picker-done" onclick="doneCardPick()" style="display:none">DONE</button>
       <button class="modal-close-btn" onclick="cancelCardPick()">CANCEL</button>
     </div>
   </div>
