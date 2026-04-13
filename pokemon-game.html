@@ -3535,6 +3535,7 @@ async function executeRetreat(player, benchIdx) {
     old.swordsDanceActive = false;
     old.destinyBond = false;
     old.pounceActive = false;
+    old.smokescreened = false; // smokescreen clears when retreating
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
   if (old.status) {
@@ -4756,7 +4757,7 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
-    nextActive.smokescreened = false; // smokescreen lasts one opponent turn regardless of whether they attacked
+    // smokescreened is cleared by performAttack after the flip — not here
     // Defender expires at end of the opponent's next turn — that's now (the new current player
     // was the defending player last turn; their defender expires as their turn begins).
     nextActive.defender = false;
