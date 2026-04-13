@@ -999,9 +999,10 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1 }) {
     // Narrow the modal for small card counts so single cards aren't huge
     const box = document.querySelector('#card-picker-modal .modal-box');
     if (box) {
-      const cardW = 110; // px per card column
+      const cardW = 130; // px per card column
       const padding = 56; // modal padding + border
-      const idealW = Math.min(460, cols * cardW + padding);
+      // Minimum 280px so a single card is readable; max 460px
+      const idealW = Math.min(460, Math.max(280, cols * cardW + padding));
       box.style.width = idealW + 'px';
     }
     grid.innerHTML = cards.map((card, i) => {
