@@ -323,27 +323,30 @@ async function doCurse(player) {
   if (oppWithDamage.length > 1) {
     const picked = await openCardPicker({
       title: 'Curse — Source',
-      subtitle: "Choose an opponent Pokémon to take a damage counter FROM",
+      subtitle: 'Choose an opponent Pokémon to take a damage counter FROM',
       cards: oppWithDamage,
-      cardMeta: buildPokemonMeta(oppWithDamage, opp.active),
       maxSelect: 1
     });
     if (!picked) return;
     src = oppWithDamage[picked[0]];
   }
 
-  // Step 2: choose destination — grey out any that would be KO'd by 1 counter
-  const dests = oppAll.filter(c => c !== src);
+  // Step 2: choose destination (any other opponent Pokémon that won't be KO'd)
+  const dests = oppAll.filter(c => {
+    if (c === src) return false;
+    const hp = parseInt(c.hp) || 0;
+    return hp === 0 || (c.damage || 0) + 10 < hp; // exclude targets that would be KO'd
+  });
+  if (!dests.length) {
+    showToast("Moving 1 damage counter would KO every other opponent Pokémon!", true);
+    return;
+  }
   let dst = dests[0];
   if (dests.length > 1) {
     const picked = await openCardPicker({
       title: 'Curse — Destination',
-      subtitle: "Choose an opponent Pokémon to move the damage counter TO",
+      subtitle: 'Choose an opponent Pokémon to move the damage counter TO',
       cards: dests,
-      cardMeta: buildPokemonMeta(dests, opp.active, c => {
-        const hp = parseInt(c.hp) || 0;
-        return (c.damage || 0) + 10 >= hp;
-      }),
       maxSelect: 1
     });
     if (!picked) return;
