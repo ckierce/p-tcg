@@ -3793,6 +3793,9 @@ window.addEventListener('load', () => {
       return result;
     };
   }
+
+  // Initial UI state
+  setMidline('Load decks and press Start Game');
 });
 
 function aiDoPromotion() {
@@ -4325,9 +4328,8 @@ function applyRoleVisibility() {
 })();
 
 // ══════════════════════════════════════════════════
-// INIT
+// INIT — deferred to window load so game-render.js is available
 // ══════════════════════════════════════════════════
-setMidline('Load decks and press Start Game');
 
 // Clean up room when tab/window closes
 window.addEventListener('beforeunload', () => {
