@@ -2191,11 +2191,32 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
+      <button class="lobby-btn" onclick="showResumePanel()" style="border-color:var(--accent)">♻ RESUME GAME<br><span>Rejoin active game</span></button>
       <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="deck-builder.html">← Back to Deck Builder</a>
     </div>
+  </div>
+
+  <!-- RESUME GAME PANEL -->
+  <div id="resume-panel" style="display:none;text-align:center;">
+    <p style="font-size:11px;color:var(--accent);margin-bottom:12px">RESUME GAME</p>
+    <p style="font-size:9px;color:var(--muted);margin-bottom:16px">Choose which player you are, then select a game</p>
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
+      <button id="resume-as-p1" onclick="setResumeRole(1)"
+        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">
+        Rejoin as P1
+      </button>
+      <button id="resume-as-p2" onclick="setResumeRole(2)"
+        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">
+        Rejoin as P2
+      </button>
+    </div>
+    <div id="resume-game-list" style="max-width:420px;margin:0 auto 16px;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;">
+      <div style="font-size:9px;color:var(--muted)">Loading games...</div>
+    </div>
+    <button onclick="showLobby()" style="font-family:var(--font);font-size:8px;padding:6px 14px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;">← Back</button>
   </div>
 
   <!-- P1 WAITING ROOM -->
@@ -6887,8 +6908,97 @@ let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
 // ── Panel helpers ─────────────────────────────────
-function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+
+let _resumeRole = 1;
+function setResumeRole(role) {
+  _resumeRole = role;
+  document.getElementById('resume-as-p1').style.background = role === 1 ? 'var(--p1color)' : 'var(--surface2)';
+  document.getElementById('resume-as-p1').style.color = role === 1 ? '#000' : 'var(--p1color)';
+  document.getElementById('resume-as-p2').style.background = role === 2 ? 'var(--p2color)' : 'var(--surface2)';
+  document.getElementById('resume-as-p2').style.color = role === 2 ? '#000' : 'var(--p2color)';
+}
+
+function showResumePanel() {
+  showPanel('resume-panel');
+  setResumeRole(1);
+  const list = document.getElementById('resume-game-list');
+  list.innerHTML = '<div style="font-size:9px;color:var(--muted)">Loading games...</div>';
+  db.ref('games').once('value', snap => {
+    const games = snap.val();
+    if (!games) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
+    const active = Object.entries(games)
+      .filter(([, d]) => d.state && d.state.started)
+      .sort(([, a], [, b]) => (b.created || 0) - (a.created || 0));
+    if (!active.length) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
+    list.innerHTML = active.map(([code, d]) => {
+      const s = d.state;
+      const turnLabel = s.phase === 'PROMOTE' ? `P${s.pendingPromotion} PROMOTING` : `P${s.turn} TURN`;
+      const prizes1 = (s.players?.[1]?.prizes || []);
+      const prizes2 = (s.players?.[2]?.prizes || []);
+      const p1rem = Array.isArray(prizes1) ? prizes1.filter(p=>p).length : Object.values(prizes1).filter(p=>p).length;
+      const p2rem = Array.isArray(prizes2) ? prizes2.filter(p=>p).length : Object.values(prizes2).filter(p=>p).length;
+      const age = d.created ? Math.round((Date.now() - d.created) / 60000) : '?';
+      return `<div onclick="resumeGame('${code}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;cursor:pointer;text-align:left;transition:border-color .1s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${code}</span>
+          <span style="font-size:8px;color:var(--muted)">${age}m ago</span>
+        </div>
+        <div style="font-size:9px;color:var(--text2);margin-top:4px">
+          🔵 ${d.p1DeckName||'?'} &nbsp;vs&nbsp; 🔴 ${d.p2DeckName||'?'}
+        </div>
+        <div style="font-size:8px;color:var(--muted);margin-top:3px">
+          ${turnLabel} &nbsp;·&nbsp; P1 prizes: ${p1rem} left &nbsp;·&nbsp; P2 prizes: ${p2rem} left
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+function resumeGame(code) {
+  const role = _resumeRole;
+  db.ref(`games/${code}/state`).once('value', snap => {
+    const s = snap.val();
+    if (!s) { showToast('Game not found!', true); return; }
+    roomCode = code;
+    myRole = role;
+    gameRef = db.ref(`games/${code}`);
+    Object.assign(G, s);
+    [1,2].forEach(p => {
+      const pl = G.players[p];
+      if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
+      if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
+      if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
+      if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
+      if (pl.prizes && !Array.isArray(pl.prizes)) pl.prizes = Object.values(pl.prizes);
+    });
+    if (G.evolvedThisTurn && !Array.isArray(G.evolvedThisTurn)) G.evolvedThisTurn = Object.values(G.evolvedThisTurn);
+    document.getElementById('setup-screen').style.display = 'none';
+    renderAll();
+    applyRoleVisibility();
+    gameRef.on('value', data => {
+      if (isWriting) return;
+      const d = data.val();
+      if (d && d.state && G.phase !== 'SETUP') {
+        const ns = d.state;
+        Object.assign(G, ns);
+        [1,2].forEach(p => {
+          const pl = G.players[p];
+          if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
+          if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
+          if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
+          if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
+          if (pl.prizes && !Array.isArray(pl.prizes)) pl.prizes = Object.values(pl.prizes);
+        });
+        if (G.evolvedThisTurn && !Array.isArray(G.evolvedThisTurn)) G.evolvedThisTurn = Object.values(G.evolvedThisTurn);
+        renderAll();
+        applyRoleVisibility();
+      }
+    });
+    addLog(`P${role} rejoined game ${code}.`, true);
+  });
+}
 
 function generateCode() {
   return Math.random().toString(36).substring(2,8).toUpperCase();
