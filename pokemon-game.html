@@ -2737,7 +2737,13 @@ async function loadDeck(fKey, deckName) {
     const d = snap.val();
     if (!d) { showToast('Deck not found', true); return; }
     const flat = [];
+    if (!d.deck || typeof d.deck !== 'object') {
+      console.error('loadDeck: unexpected deck structure', d);
+      showToast('Deck data is corrupted or in an unexpected format', true);
+      return;
+    }
     for (const entry of Object.values(d.deck)) {
+      if (!entry || !entry.cardId) { console.warn('loadDeck: skipping invalid entry', entry); continue; }
       const card = {
         id: entry.cardId,
         name: entry.name,
@@ -2746,9 +2752,10 @@ async function loadDeck(fKey, deckName) {
         subtypes: entry.subtypes || [],
         hp: entry.hp || '0',
         attacks: entry.attacks || [],
+        abilities: entry.abilities || [],
         types: entry.types || []
       };
-      for (let i = 0; i < entry.qty; i++) {
+      for (let i = 0; i < (entry.qty || 1); i++) {
         flat.push(enrichCard({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` }));
       }
     }
@@ -3747,42 +3754,46 @@ async function aiChooseAndAttack() {
   return true;
 }
 
-// ── Hook into endTurn to trigger AI ─────────────────
-{
-  const _orig = endTurn;
-  endTurn = function() {
-    _orig();
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
+// ── Hook into game-actions.js functions for AI — deferred until all scripts load ─
+// endTurn, resolvePromotion, checkKO live in game-actions.js which loads after
+// this inline script, so we patch them on window load rather than immediately.
+window.addEventListener('load', () => {
+  // Hook endTurn to trigger AI turn
+  {
+    const _orig = endTurn;
+    endTurn = function() {
+      _orig();
+      if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+        aiThinking = false;
+        setTimeout(() => aiTakeTurn(), 900);
+      }
+    };
+  }
 
-// ── Hook into resolvePromotion to handle AI promotion ─
-{
-  const _orig = resolvePromotion;
-  resolvePromotion = function(player, benchIdx) {
-    _orig(player, benchIdx);
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
+  // Hook resolvePromotion to resume AI after promotion
+  {
+    const _orig = resolvePromotion;
+    resolvePromotion = function(player, benchIdx) {
+      _orig(player, benchIdx);
+      if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
+        aiThinking = false;
+        setTimeout(() => aiTakeTurn(), 900);
+      }
+    };
+  }
 
-// ── AI auto-handles its own promotion ───────────────
-// Intercept checkKO to detect when AI needs to pick a new active
-{
-  const _orig = checkKO;
-  checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
-    const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
-    if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
-      setTimeout(() => aiDoPromotion(), 700);
-    }
-    return result;
-  };
-}
+  // Hook checkKO to detect when AI needs to pick a new active
+  {
+    const _orig = checkKO;
+    checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
+      const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
+      if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
+        setTimeout(() => aiDoPromotion(), 700);
+      }
+      return result;
+    };
+  }
+});
 
 function aiDoPromotion() {
   if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
