@@ -7285,7 +7285,8 @@ setMidline('Load decks and press Start Game');
 
 // Clean up room when tab/window closes
 window.addEventListener('beforeunload', () => {
-  if (gameRef) { gameRef.remove().catch(() => {}); }
+  // Don't delete room on unload — player may be refreshing to recover
+  // Room cleanup happens only via playAgain()
 });
 </script>
 <script src="pokemon-powers.js"></script>
