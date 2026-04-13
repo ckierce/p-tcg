@@ -576,19 +576,19 @@ async function executeRetreat(player, benchIdx) {
       (attached.length > 0 && energyValue(attached) === retreatCost && !attached.some(e => /double colorless/i.test(e.name || '')));
 
     if (noRealChoice) {
-      // Build toDiscard automatically but still show a brief confirmation
+      // Auto-select the minimum cards needed — no choice to make
       let remaining = retreatCost;
       for (const e of attached) {
         if (remaining <= 0) break;
         toDiscard.push(e);
         remaining -= /double colorless/i.test(e.name || '') ? 2 : 1;
       }
-      // Show picker pre-selected so player sees what will be discarded
+      // Show picker with ONLY the cards being discarded so the player can confirm or cancel
       const picked = await openCardPicker({
         title: `${p.active.name} — Retreat Cost`,
-        subtitle: `Confirm: discard ${toDiscard.map(e => e.name).join(', ')} to retreat`,
-        cards: attached,
-        maxSelect: attached.length,
+        subtitle: `Discard ${toDiscard.map(e => e.name).join(' + ')} to retreat?`,
+        cards: toDiscard,
+        maxSelect: toDiscard.length,
       });
       if (!picked || !picked.length) {
         showToast('Retreat cancelled.', true);

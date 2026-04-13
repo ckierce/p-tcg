@@ -1013,8 +1013,9 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
         : '';
       const dmg = card.damage ? `<div class="picker-card-meta">${damageCounters(card.damage)}</div>` : '';
       const status = card.status ? `<div class="picker-card-meta" style="color:var(--accent)">${statusEmoji(card.status)} ${card.status}</div>` : '';
+      const isEnergy = card.supertype === 'Energy';
       return `
-        <div class="picker-card" id="picker-card-${i}"
+        <div class="picker-card${isEnergy ? ' is-energy' : ''}" id="picker-card-${i}"
           onclick="event.stopPropagation();togglePickerCard(${i})">
           <img src="${card.images?.small || ''}" alt="${card.name}">
           <div class="picker-card-name">${card.name}</div>
