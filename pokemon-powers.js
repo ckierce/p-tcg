@@ -178,64 +178,68 @@ function getDittoTransformStats(player) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Alakazam — Damage Swap
-// Move 1 damage counter from one of your Pokémon to another.
+// Per Base Set rules: move 1 damage counter at a time, repeatable as often as
+// you like during your turn (before your attack), as long as it doesn't KO the target.
 async function doDamageSwap(player) {
   if (!damageSwapActive(player)) { showToast('Alakazam not in play!', true); return; }
   if (isMukActive())             { showToast("Muk's Toxic Gas suppresses Damage Swap!", true); return; }
-  const p = G.players[player];
-  const all = [
-    ...(p.active ? [{ label: `Active: ${p.active.name} (${p.active.damage||0} dmg)`, card: p.active }] : []),
-    ...p.bench.map((b, i) => b ? { label: `Bench ${i+1}: ${b.name} (${b.damage||0} dmg)`, card: b } : null).filter(Boolean)
-  ];
-  if (all.length < 2) { showToast('Need at least 2 Pokémon to swap damage!', true); return; }
 
-  const sources = all.filter(x => (x.card.damage || 0) >= 10);
-  if (!sources.length) { showToast('No Pokémon have damage counters to move!', true); return; }
+  let moved = 0;
 
-  const srcCards = sources.map(x => x.card);
-  const srcPicked = await openCardPicker({
-    title: 'Damage Swap — Source',
-    subtitle: 'Choose a Pokémon to take damage counters FROM',
-    cards: srcCards,
-    maxSelect: 1
-  });
-  if (!srcPicked) return;
-  const srcCard = sources[srcPicked[0]].card;
+  while (true) {
+    const p = G.players[player];
+    const all = [
+      ...(p.active ? [{ card: p.active }] : []),
+      ...p.bench.map(b => b ? { card: b } : null).filter(Boolean)
+    ];
+    if (all.length < 2) break;
 
-  // Wait a frame so the source picker fully hides before pickNumber appears
-  await new Promise(r => requestAnimationFrame(r));
-  const maxCounters = Math.floor((srcCard.damage || 0) / 10);
-  let numCounters = maxCounters;
-  if (maxCounters > 1) {
-    numCounters = await pickNumber(`How many damage counters to move from ${srcCard.name}?`, 1, maxCounters);
-    if (!numCounters) return;
+    // Build source list: Pokémon with at least 1 damage counter
+    const sources = all.filter(x => (x.card.damage || 0) >= 10);
+    if (!sources.length) {
+      if (moved === 0) showToast('No Pokémon have damage counters to move!', true);
+      break;
+    }
+
+    const srcPicked = await openCardPicker({
+      title: `Damage Swap${moved > 0 ? ` (${moved} moved so far)` : ''} — Source`,
+      subtitle: 'Choose a Pokémon to move 1 damage counter FROM — or Cancel to stop',
+      cards: sources.map(x => x.card),
+      maxSelect: 1
+    });
+    if (!srcPicked) break; // Cancel = done
+    const srcCard = sources[srcPicked[0]].card;
+
+    // Build destination list: any other Pokémon where +10 damage won't KO it
+    const validDsts = all.filter(x => {
+      if (x.card === srcCard) return false;
+      const hp = parseInt(x.card.hp) || 0;
+      return hp > 0 && (x.card.damage || 0) + 10 < hp;
+    });
+    if (!validDsts.length) {
+      showToast('No valid destination — placing 1 counter there would KO every other Pokémon!', true);
+      break;
+    }
+
+    const dstPicked = await openCardPicker({
+      title: 'Damage Swap — Destination',
+      subtitle: 'Move 1 damage counter TO which Pokémon?',
+      cards: validDsts.map(x => x.card),
+      maxSelect: 1
+    });
+    if (!dstPicked) break; // Cancel = done
+    const dstCard = validDsts[dstPicked[0]].card;
+
+    srcCard.damage = (srcCard.damage || 0) - 10;
+    dstCard.damage = (dstCard.damage || 0) + 10;
+    moved++;
+    addLog(`Damage Swap: moved 1 counter from ${srcCard.name} → ${dstCard.name}.`, true);
+    renderAll();
   }
 
-  const dsts = all.filter(x => x.card !== srcCard);
-  const validDsts = dsts.filter(x => {
-    const hp = parseInt(x.card.hp) || 0;
-    return (x.card.damage || 0) + numCounters * 10 < hp;
-  });
-  if (!validDsts.length) {
-    showToast(`No valid destination — moving ${numCounters} counter${numCounters>1?'s':''} would KO every other Pokémon!`, true);
-    return;
+  if (moved > 0) {
+    addLog(`P${player} finished Damage Swap — moved ${moved} counter${moved > 1 ? 's' : ''} total.`, true);
   }
-  // Wait a frame so any previous modal/overlay finishes hiding before we open the next
-  await new Promise(r => requestAnimationFrame(r));
-  const dstCards = validDsts.map(x => x.card);
-  const dstPicked = await openCardPicker({
-    title: 'Damage Swap — Destination',
-    subtitle: `Move ${numCounters} damage counter${numCounters>1?'s':''} TO which Pokémon?`,
-    cards: dstCards,
-    maxSelect: 1
-  });
-  if (!dstPicked) return;
-  const dstCard = validDsts[dstPicked[0]].card;
-
-  srcCard.damage = (srcCard.damage || 0) - numCounters * 10;
-  dstCard.damage = (dstCard.damage || 0) + numCounters * 10;
-  addLog(`P${player} used Damage Swap — moved ${numCounters} damage counter${numCounters>1?'s':''} from ${srcCard.name} to ${dstCard.name}.`, true);
-  renderAll();
 }
 
 // Venusaur — Energy Trans
