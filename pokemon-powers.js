@@ -331,16 +331,9 @@ async function doCurse(player) {
     src = oppWithDamage[picked[0]];
   }
 
-  // Step 2: choose destination (any other opponent Pokémon that won't be KO'd)
-  const dests = oppAll.filter(c => {
-    if (c === src) return false;
-    const hp = parseInt(c.hp) || 0;
-    return hp === 0 || (c.damage || 0) + 10 < hp; // exclude targets that would be KO'd
-  });
-  if (!dests.length) {
-    showToast("Moving 1 damage counter would KO every other opponent Pokémon!", true);
-    return;
-  }
+  // Step 2: choose destination — any opponent Pokémon other than the source
+  // Curse CAN target a Pokémon even if it would KO it (per card text)
+  const dests = oppAll.filter(c => c !== src);
   let dst = dests[0];
   if (dests.length > 1) {
     const picked = await openCardPicker({
