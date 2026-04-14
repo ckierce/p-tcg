@@ -3256,7 +3256,7 @@ async function startGame() {
   G.turnNum = 0;
   G.energyPlayedThisTurn = false;
   document.getElementById('setup-screen').style.display = 'none';
-  document.getElementById('end-turn-btn').textContent = 'DONE SETUP';
+  document.getElementById('end-turn-btn').textContent = 'READY!';
 
   addLog('Game started! Both players place their starting Pokémon.', true);
   if (mulligans[1] > 0) addLog(`P1 mulliganed ${mulligans[1]} time(s) — opponent draws ${mulligans[1]} extra card(s) next turn.`);
@@ -3265,7 +3265,7 @@ async function startGame() {
 
   addLog('Each player drew 7 cards and set aside 6 prizes.');
   renderAll();
-  setMidline('Both players: place your Active Pokémon (and optionally bench basics)');
+  setMidline('Place your Active Pokémon (and optionally bench basics), then click READY!');
   showToast('Place your starting Pokémon!', false, 'ok');
 }
 
@@ -4861,7 +4861,7 @@ function applyRoleVisibility() {
     if (G.phase === 'SETUP') {
       if (myRole === 1) {
         // P1 can click DONE SETUP (subject to both having actives)
-        endBtn.textContent = 'DONE SETUP';
+        endBtn.textContent = 'READY!';
         endBtn.style.opacity = '';
         endBtn.style.pointerEvents = '';
       } else {
