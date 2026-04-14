@@ -394,12 +394,10 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const isConversion1Blocked = atk.name === 'Conversion 1' &&
           !(G.players[player === 1 ? 2 : 1].active?.weaknesses || []).length;
         const isStatusBlocked = card.status === 'paralyzed' || card.status === 'asleep';
-        // Agility/Barrier (defenderFullEffects) and Tail Wag (immuneToAttack) block all effects
-        const oppCard = G.players[player === 1 ? 2 : 1].active;
-        const oppImmune = !!(oppCard?.defenderFullEffects || oppCard?.immuneToAttack);
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked || oppImmune;
+        // Agility/Barrier (defenderFullEffects) and Tail Wag (immuneToAttack) are handled
+        // inside performAttack — don't grey out attacks here, player should still be able to select them
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked;
         const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${card.status.toUpperCase()})` :
-                         oppImmune ? `${costStr} · ${oppCard.name} IS PROTECTED` :
                          isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
                          isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
