@@ -138,6 +138,15 @@ function tryApplyStatus(target, status) {
     showToast(`${target.name} is immune to status conditions!`);
     return false;
   }
+  // TCG rule: only the Active Pokémon can have a status condition.
+  // Guard against stale references where the target has been sent to the bench.
+  for (const pNum of [1, 2]) {
+    const p = G.players[pNum];
+    if (p.bench && p.bench.some(b => b && b === target)) {
+      addLog(`${target.name} is on the bench — status ${status} not applied.`);
+      return false;
+    }
+  }
   target.status = status;
   return true;
 }

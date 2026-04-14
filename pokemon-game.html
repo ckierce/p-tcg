@@ -275,6 +275,20 @@ h1, h2, h3 { font-family: var(--font-title); }
   flex-shrink: 0;
 }
 
+#lobby-back-btn {
+  font-family: var(--font);
+  font-size: 9px;
+  padding: 3px 7px;
+  background: none;
+  border: 1px solid var(--border2);
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+#lobby-back-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 .top-bar-logo {
   font-size: 12px;
   color: var(--accent);
@@ -2428,6 +2442,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
     <div id="setup-hint" style="font-size: 9px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
+    <div style="margin-top:12px">
+      <button class="lobby-btn" style="font-size:9px;color:var(--muted)" onclick="cancelWaiting()">← BACK</button>
+    </div>
   </div>
 
   <!-- VS COMPUTER PANEL -->
@@ -2488,6 +2505,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       </div>
     </div>
     <div style="font-size: 9px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
+    <div style="margin-top:12px">
+      <button class="lobby-btn" style="font-size:9px;color:var(--muted)" onclick="cancelJoined()">← BACK</button>
+    </div>
   </div>
 
 </div>
@@ -2502,12 +2522,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
     <!-- Top bar -->
     <div id="top-bar">
+      <button id="lobby-back-btn" onclick="returnToLobby()" title="Back to lobby">⬅ LOBBY</button>
       <span class="top-bar-logo">P-TCG</span>
       <span id="turn-badge" class="p1">P1 TURN</span>
       <span id="phase-badge">DRAW</span>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
-      <button class="top-bar-btn" onclick="returnToLobby()" title="Back to lobby">⬅ LOBBY</button>
     </div>
 
     <!-- Field body -->
@@ -4022,10 +4042,13 @@ async function aiPlayTrainers() {
           hand.splice(i, 1);
           p2.discard.push(card);
           const old = p2.active;
+          const clearedStatus = old.status;
+          old.status = null; // status clears when leaving active slot (TCG rule)
           p2.active = p2.bench[bestIdx];
           p2.bench[bestIdx] = old;
-          // Switch clears status on the new active
-          addLog(`🤖 Computer played Switch — swapped ${old.name} (${activeStatus}) for ${p2.active.name}!`, true);
+          // Switch clears status on the old active
+          if (clearedStatus) addLog(`🤖 Computer played Switch — ${old.name}'s ${clearedStatus} cleared! Sent out ${p2.active.name}.`, true);
+          else addLog(`🤖 Computer played Switch — swapped ${old.name} for ${p2.active.name}!`, true);
           renderAll();
           return;
         }
@@ -4276,6 +4299,24 @@ function showLobby()   { _allPanels.forEach(id => { const el = document.getEleme
 function showPanel(id) { _allPanels.forEach(i  => { const el = document.getElementById(i);  if(el) el.style.display = i  === id  ? '' : 'none'; }); }
 
 function showStartMatchPanel() { showPanel('start-match-panel'); }
+
+function cancelWaiting() {
+  // Delete the room we created and detach listener
+  if (gameRef) {
+    gameRef.remove().catch(() => {});
+    gameRef.off();
+    gameRef = null;
+  }
+  roomCode = null; myRole = null;
+  showPanel('start-match-panel');
+}
+
+function cancelJoined() {
+  // Detach listener — leave the room intact for P1
+  if (gameRef) { gameRef.off(); gameRef = null; }
+  roomCode = null; myRole = null;
+  showLobby();
+}
 
 function showWaitingPanel() {
   // createRoom() does Firebase setup then calls showPanel('waiting-panel') itself
