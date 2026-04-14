@@ -1313,12 +1313,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   overflow: hidden;
   position: relative;
   transition: border-color .1s;
+  display: flex;
+  flex-direction: column;
 }
 .picker-card:hover { border-color: var(--border2); }
 .picker-card.selected { border-color: var(--accent); box-shadow: 0 0 6px rgba(232,200,74,.4); }
-.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: contain; background: #111; max-height: 160px; }
-.picker-card.is-energy { display: flex; flex-direction: column; align-items: center; }
-.picker-card.is-energy img { width: auto; max-width: 100%; max-height: 90px; aspect-ratio: unset; display: block; }
+.picker-card img { width: 100%; display: block; aspect-ratio: 5/7; object-fit: cover; background: #111; }
+.picker-card.is-energy { align-items: center; }
+.picker-card.is-energy img { object-fit: contain; aspect-ratio: 5/7; width: 100%; }
 .picker-card-name {
   font-size: 7px; color: var(--muted);
   padding: 2px 3px;
@@ -2238,7 +2240,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   }
   #card-picker-modal .modal-box { width: 96vw !important; }
   #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
-  .picker-card img { width: 100%; object-fit: contain; background: #111; border-radius: 4px; }
+  .picker-card img { width: 100%; aspect-ratio: 5/7; object-fit: cover; background: #111; border-radius: 4px; }
+  .picker-card.is-energy img { object-fit: contain; }
   .picker-card-name { font-size: 7px; }
   .modal-title { font-size: 12px; }
   .modal-close-btn { font-size: 11px; padding: 10px 16px; min-height: 44px; }
