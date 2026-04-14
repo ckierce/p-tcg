@@ -900,12 +900,16 @@ function showTrainerFlash(player, cardName) {
 // ══════════════════════════════════════════════════
 function showWinScreen(winnerNum, reason) {
   const p = G.players[winnerNum];
-  const deckName = p.deckData?.name || null;
   let displayName;
   if (vsComputer) {
     displayName = winnerNum === 1 ? '🏆 YOU WIN!' : '🤖 COMPUTER WINS';
   } else {
-    displayName = deckName ? `${deckName}` : `PLAYER ${winnerNum}`;
+    displayName = p.name || `PLAYER ${winnerNum}`;
+  }
+
+  // Record win/loss — only in networked games, only if we know our role
+  if (!vsComputer && myRole !== null) {
+    recordResult(winnerNum === myRole);
   }
 
   const nameEl   = document.getElementById('win-player-name');

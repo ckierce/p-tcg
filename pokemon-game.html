@@ -55,6 +55,96 @@ html, body {
 }
 h1, h2, h3 { font-family: var(--font-title); }
 
+/* ── LOGIN SCREEN ────────────────────────────────────────── */
+#login-screen {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px;
+  background: var(--bg);
+  z-index: 900;
+}
+#login-screen h1 {
+  font-size: 22px;
+  font-family: var(--font-title);
+  color: var(--accent);
+  letter-spacing: 2px;
+  text-align: center;
+  line-height: 1.8;
+}
+#login-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 28px 32px;
+  width: min(340px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#login-box label {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+  display: block;
+}
+#login-box input {
+  width: 100%;
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 4px;
+  outline: none;
+}
+#login-box input:focus { border-color: var(--accent); }
+#login-error {
+  font-size: 10px;
+  color: var(--warn);
+  min-height: 14px;
+  text-align: center;
+}
+#login-submit {
+  width: 100%;
+  font-family: var(--font-title);
+  font-size: 13px;
+  letter-spacing: 1px;
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+#login-submit:hover { filter: brightness(1.1); }
+#login-submit:disabled { opacity: 0.5; cursor: default; }
+#login-mode-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+#login-mode-toggle a {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+#login-mode-toggle a:hover { text-decoration: underline; }
+#login-name-row { display: none; }
+
+/* ── TRAINER BADGE in lobby ──────────────────────────────── */
+#trainer-badge {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+}
+#trainer-badge strong { color: var(--text); }
+#trainer-record { color: var(--ok); }
+
 /* ── SETUP SCREEN ─────────────────────────────────────────── */
 #setup-screen {
   position: fixed; inset: 0;
@@ -2227,13 +2317,45 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 <body>
 
 <!-- ══════════════════════════════════════════════ -->
+<!-- LOGIN SCREEN                                   -->
+<!-- ══════════════════════════════════════════════ -->
+<div id="login-screen">
+  <h1>POKéMON TCG<br>GAME BOARD</h1>
+  <div id="login-box">
+    <div id="login-name-row">
+      <label for="login-name">Trainer Name</label>
+      <input id="login-name" type="text" autocomplete="nickname" placeholder="Choose a name">
+    </div>
+    <div>
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" autocomplete="username" placeholder="trainer@example.com">
+    </div>
+    <div>
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"
+        onkeydown="if(event.key==='Enter') doLoginOrSignup()">
+    </div>
+    <div id="login-error"></div>
+    <button id="login-submit" onclick="doLoginOrSignup()">SIGN IN →</button>
+    <div id="login-mode-toggle">
+      No account? <a onclick="setAuthMode('signup')">Create one</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════ -->
 <!-- SETUP SCREEN                                   -->
 <!-- ══════════════════════════════════════════════ -->
-<div id="setup-screen">
+<div id="setup-screen" style="display:none">
   <h1>POKéMON TCG<br>GAME BOARD</h1>
 
   <!-- LOBBY -->
   <div id="lobby-panel">
+    <div id="trainer-badge" style="margin-bottom:12px">
+      Signed in as <strong id="trainer-name-display">—</strong>
+      &nbsp;·&nbsp; <span id="trainer-record">W: 0 / L: 0</span>
+      &nbsp;·&nbsp; <a href="#" onclick="doSignOut()" style="color:var(--muted);font-size:9px">sign out</a>
+    </div>
     <p style="font-size: 11px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
@@ -2619,6 +2741,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 <!-- ══════════════════════════════════════════════ -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 
 <script>
 // ══════════════════════════════════════════════════
@@ -2635,6 +2758,134 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+const auth = firebase.auth();
+
+// ══════════════════════════════════════════════════
+// IDENTITY
+// ══════════════════════════════════════════════════
+let currentUser = null;   // firebase.auth().currentUser
+let trainerName = '';     // display name (stored in users/{uid}/name)
+
+// ── Auth state listener — gates the whole UI ──────
+auth.onAuthStateChanged(async user => {
+  if (user) {
+    currentUser = user;
+    // Load display name from Firebase
+    const nameSnap = await db.ref(`users/${user.uid}/name`).once('value');
+    trainerName = nameSnap.val() || user.email.split('@')[0];
+    // Load win/loss record
+    const recSnap = await db.ref(`users/${user.uid}/record`).once('value');
+    const rec = recSnap.val() || { wins: 0, losses: 0 };
+    // Show lobby, hide login
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('setup-screen').style.display = '';
+    // Populate trainer badge
+    document.getElementById('trainer-name-display').textContent = trainerName;
+    document.getElementById('trainer-record').textContent = `W: ${rec.wins || 0} / L: ${rec.losses || 0}`;
+  } else {
+    currentUser = null;
+    trainerName = '';
+    document.getElementById('login-screen').style.display = '';
+    document.getElementById('setup-screen').style.display = 'none';
+  }
+});
+
+let _authMode = 'signin'; // 'signin' | 'signup'
+
+function setAuthMode(mode) {
+  _authMode = mode;
+  const nameRow  = document.getElementById('login-name-row');
+  const submitBtn = document.getElementById('login-submit');
+  const toggle   = document.getElementById('login-mode-toggle');
+  const pwInput  = document.getElementById('login-password');
+  if (mode === 'signup') {
+    nameRow.style.display = '';
+    submitBtn.textContent = 'CREATE ACCOUNT →';
+    toggle.innerHTML = 'Already have an account? <a onclick="setAuthMode(\'signin\')">Sign in</a>';
+    pwInput.placeholder = 'Choose a password (6+ chars)';
+    pwInput.onkeydown = e => { if (e.key === 'Enter') doLoginOrSignup(); };
+  } else {
+    nameRow.style.display = 'none';
+    submitBtn.textContent = 'SIGN IN →';
+    toggle.innerHTML = 'No account? <a onclick="setAuthMode(\'signup\')">Create one</a>';
+    pwInput.placeholder = '••••••••';
+    pwInput.onkeydown = e => { if (e.key === 'Enter') doLoginOrSignup(); };
+  }
+  document.getElementById('login-error').textContent = '';
+}
+
+async function doLoginOrSignup() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl    = document.getElementById('login-error');
+  const btn      = document.getElementById('login-submit');
+
+  if (!email || !password) { errEl.textContent = 'Enter email and password.'; return; }
+
+  if (_authMode === 'signup') {
+    const name = document.getElementById('login-name').value.trim();
+    if (!name) { errEl.textContent = 'Enter a trainer name.'; return; }
+    if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, password);
+      // Write display name — onAuthStateChanged will read it back
+      await db.ref(`users/${cred.user.uid}/name`).set(name);
+    } catch (e) {
+      errEl.textContent = friendlyAuthError(e.code);
+      btn.disabled = false; btn.textContent = 'CREATE ACCOUNT →';
+    }
+  } else {
+    errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    try {
+      await auth.signInWithEmailAndPassword(email, password);
+    } catch (e) {
+      errEl.textContent = friendlyAuthError(e.code);
+      btn.disabled = false; btn.textContent = 'SIGN IN →';
+    }
+  }
+}
+
+// Keep old name as alias so any lingering references don't break
+const doLogin = doLoginOrSignup;
+
+function doSignOut() {
+  auth.signOut();
+  setAuthMode('signin');
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-name').value = '';
+}
+
+function friendlyAuthError(code) {
+  switch (code) {
+    case 'auth/user-not-found':
+    case 'auth/wrong-password':
+    case 'auth/invalid-credential': return 'Invalid email or password.';
+    case 'auth/email-already-in-use': return 'An account with that email already exists.';
+    case 'auth/too-many-requests':  return 'Too many attempts. Try again later.';
+    case 'auth/invalid-email':      return 'Invalid email address.';
+    case 'auth/weak-password':      return 'Password must be at least 6 characters.';
+    default: return 'Sign in failed. Check your credentials.';
+  }
+}
+
+// ── Record win/loss after a game ends ─────────────
+async function recordResult(didWin) {
+  if (!currentUser) return;
+  const ref = db.ref(`users/${currentUser.uid}/record`);
+  const snap = await ref.once('value');
+  const rec  = snap.val() || { wins: 0, losses: 0 };
+  if (didWin) rec.wins = (rec.wins || 0) + 1;
+  else        rec.losses = (rec.losses || 0) + 1;
+  await ref.set(rec);
+  // Update badge live
+  document.getElementById('trainer-record').textContent = `W: ${rec.wins} / L: ${rec.losses}`;
+}
+
+
 
 // ══════════════════════════════════════════════════
 // GAME STATE
@@ -3331,6 +3582,8 @@ function checkVsCpuReady() {
 async function startVsCpuGame() {
   vsComputer = true;
   myRole = 1; // human is always P1
+  G.players[1].name = trainerName || 'Player 1';
+  G.players[2].name = 'Computer';
 
   if (!G.players[1].deck.length) { showToast('Load your deck first!', true); return; }
   if (!G.players[2].deck.length) { showToast("Choose the AI's deck first!", true); return; }
@@ -4031,6 +4284,7 @@ async function createRoom() {
   myRole = 1;
   roomCode = generateCode();
   gameRef = db.ref(`games/${roomCode}`);
+  G.players[1].name = trainerName || 'Player 1';
 
   // Write initial room record
   await gameRef.set({
@@ -4039,8 +4293,12 @@ async function createRoom() {
     p2Ready: false,
     p1DeckName: null,
     p2DeckName: null,
+    p1Name: trainerName || 'Player 1',
+    p2Name: null,
     state: null
   });
+  // Set our own player name in G immediately
+  G.players[1].name = trainerName || 'Player 1';
 
   showPanel('waiting-panel');
   const url = `${location.origin}${location.pathname}?room=${roomCode}`;
@@ -4056,6 +4314,8 @@ async function createRoom() {
       if (data.p2Ready) {
         const ws = document.getElementById('waiting-status');
         if (ws) ws.textContent = '✅ Player 2 has joined and loaded a deck!';
+        // Capture P2's name
+        if (data.p2Name) G.players[2].name = data.p2Name;
       }
       checkBothReady(data);
       if (data.setup_p2 && G.phase === 'SETUP') mergeSetupSlot(2, data.setup_p2);
@@ -4088,6 +4348,13 @@ async function joinRoom() {
 
   myRole = 2;
   showPanel('joined-panel');
+
+  // Write P2 name into room, read P1 name for local G
+  await gameRef.update({ p2Name: trainerName || 'Player 2' });
+  const roomSnap = await gameRef.once('value');
+  const roomData = roomSnap.val() || {};
+  G.players[1].name = roomData.p1Name || 'Player 1';
+  G.players[2].name = trainerName || 'Player 2';
 
   // Watch for game start and all P1 moves
   gameRef.on('value', snap => {
