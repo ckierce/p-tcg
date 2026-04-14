@@ -143,15 +143,14 @@ const _discardOppEnergy = () => ({
     if (!target || !(target.attachedEnergy || []).length) {
       addLog(`${atk.name}: opponent has no energy to discard.`); return;
     }
-    let idx = 0;
-    if (target.attachedEnergy.length > 1) {
-      const picked = await openCardPicker({
-        title: `${atk.name} — Discard Energy`,
-        subtitle: `Choose 1 energy to discard from ${target.name}`,
-        cards: target.attachedEnergy, maxSelect: 1
-      });
-      if (picked && picked.length) idx = picked[0];
-    }
+    // Always prompt — even with one energy, the player should see what's being
+    // discarded and confirm. TCG rule: attacker chooses which energy to discard.
+    const picked = await openCardPicker({
+      title: `${atk.name} — Discard Energy`,
+      subtitle: `Choose 1 energy to discard from ${target.name}`,
+      cards: target.attachedEnergy, maxSelect: 1
+    });
+    const idx = (picked && picked.length) ? picked[0] : 0;
     const removed = target.attachedEnergy.splice(idx, 1)[0];
     G.players[opp].discard.push(removed);
     addLog(`${atk.name}: discarded ${removed.name} from ${target.name}!`, true);
