@@ -356,47 +356,7 @@ function onActiveClick(player, evt) {
   }
 }
 
-function canAffordAttack(attachedEnergy, cost, attackerCard) {
-  if (!cost || cost.length === 0) return true;
-
-  // Build a pool of energy tokens from attached cards
-  // Energy Burn (Charizard): all attached energy counts as Fire
-  const energyBurn = attackerCard && hasEnergyBurn(attackerCard);
-  const pool = [];
-  for (const e of (attachedEnergy || [])) {
-    const name = e.name || '';
-    if (energyBurn) {
-      pool.push('Fire');
-    } else if (/double colorless/i.test(name)) {
-      pool.push('Colorless', 'Colorless');
-    } else {
-      // Derive type from name e.g. "Water Energy" → "Water"
-      const type = name.replace(/\s*energy/i, '').trim() || 'Colorless';
-      pool.push(type);
-    }
-  }
-
-  // Sort cost: specific types first, Colorless last
-  // so we don't wastefully use typed energy on Colorless slots
-  const sortedCost = [...cost].sort((a, b) =>
-    (a === 'Colorless' ? 1 : 0) - (b === 'Colorless' ? 1 : 0)
-  );
-
-  const remaining = [...pool];
-  for (const req of sortedCost) {
-    if (req === 'Colorless') {
-      // Any single energy satisfies Colorless
-      if (remaining.length === 0) return false;
-      remaining.splice(0, 1); // consume any one
-    } else {
-      // Must match exact type
-      const idx = remaining.indexOf(req);
-      if (idx === -1) return false;
-      remaining.splice(idx, 1);
-    }
-  }
-  return true;
-}
+// canAffordAttack — defined in game-utils.js (loaded before this file)
 
 function showFieldActionMenu(player, zone, benchIdx, evt) {
   const p = G.players[player];
@@ -515,12 +475,7 @@ function attemptRetreat(player) {
   doRetreat(player, p); // async — fire and forget is fine here (no await needed at call site)
 }
 
-// Returns the total number of energy tokens an attachedEnergy array provides.
-// Double Colorless Energy counts as 2; all other cards count as 1.
-function energyValue(attachedEnergy) {
-  return (attachedEnergy || []).reduce((sum, e) =>
-    sum + (/double colorless/i.test(e.name || '') ? 2 : 1), 0);
-}
+// energyValue — defined in game-utils.js (loaded before this file)
 
 async function doRetreat(player, p) {
 
@@ -829,48 +784,7 @@ function pickNumber(title, min, max) {
 // ══════════════════════════════════════════════════
 // STATUS PARSING
 // ══════════════════════════════════════════════════
-function parseStatusEffects(text) {
-  if (!text) return [];
-  const effects = [];
-  const t = text;
-
-  // ── Special patterns that need single coin flip with branching outcomes ──
-
-  // "Poisoned; if tails, it is now Confused" → one flip: heads=Poison, tails=Confused
-  if (/poisoned.*if tails.*confused/i.test(t)) {
-    effects.push({ type: 'either', heads: 'poisoned', tails: 'confused', self: false });
-    return effects; // handled completely
-  }
-
-  // "Confused and Poisoned" → apply both directly, no flip
-  if (/confused and poisoned/i.test(t)) {
-    effects.push({ status: 'confused', coinRequired: false, self: false });
-    effects.push({ status: 'poisoned', coinRequired: false, self: false });
-    return effects;
-  }
-
-  // ── Standard patterns ──
-  const statuses = ['Paralyzed','Asleep','Poisoned','Confused','Burned'];
-  for (const status of statuses) {
-    const re = new RegExp(`(If (heads|tails), )?[^.]*(?:Defending|${text.match(/[A-Z][a-z]+(?= is now)/)?.[0]||''})[^.]*is now ${status}`, 'i');
-    const match = t.match(re);
-    if (match) {
-      const coinRequired = /if (heads|tails)/i.test(match[0]);
-      const onTails = /if tails/i.test(match[0]);
-      const selfStatus = /(?:Vileplume|Gloom|Primeape|Tauros|[A-Z][a-z]+) is now/i.test(match[0]) &&
-                         !/Defending/i.test(match[0]);
-      effects.push({ status: status.toLowerCase(), coinRequired, onTails, self: selfStatus });
-    }
-  }
-
-  // Deduplicate
-  const seen = new Set();
-  return effects.filter(e => {
-    const key = `${e.status || e.type}-${e.self}`;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
-}
+// parseStatusEffects — defined in game-utils.js (loaded before this file)
 
 function applyStatus(target, status) {
   target.status = status;
@@ -1027,71 +941,81 @@ async function resolveCoinFlipDamage(atk, energyCount, myActive, player) {
 
 
 // ── computeFinalDamage ─────────────────────────────────────────────────────────
-// Applies PlusPower, Weakness/Resistance, power modifiers (Kabuto Armor,
-// Transparency, Invisible Wall, Defender, Pounce), writes damage to oppActive,
-// fires the move flash, logs, calls checkKO and Strikes Back.
-// Returns { dmg, done } — done=true means performAttack should return immediately.
-async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, attackerSelfKOd) {
-  if (dmg > 0) {
-    // PlusPower bonus (card attached to attacker)
-    if (myActive?.plusPower) {
-      dmg += myActive.plusPower;
-      addLog(`PlusPower adds ${myActive.plusPower} damage!`);
-      myActive.plusPower = 0;
-    }
-    // Also check global plusPowerActive for backward compat
-    if (G.plusPowerActive) {
-      dmg += G.plusPowerActive;
-      addLog(`PlusPower adds ${G.plusPowerActive} damage!`);
-      G.plusPowerActive = 0;
-    }
+// ── applyPlusPower ───────────────────────────────────────────────────────────
+// Applies PlusPower bonus from the active card and the legacy global, returns
+// updated dmg. Separated so it's easy to test and reason about in isolation.
+function applyPlusPower(dmg, myActive) {
+  if (myActive?.plusPower) {
+    dmg += myActive.plusPower;
+    addLog(`PlusPower adds ${myActive.plusPower} damage!`);
+    myActive.plusPower = 0;
+  }
+  if (G.plusPowerActive) {
+    dmg += G.plusPowerActive;
+    addLog(`PlusPower adds ${G.plusPowerActive} damage!`);
+    G.plusPowerActive = 0;
+  }
+  return dmg;
+}
 
-    // Weakness — attacker's type vs defender's weakness (×2)
-    // If attacker is Ditto under Transform, use the Defending Pokémon's types/weaknesses
-    const dittoStats = (typeof getDittoTransformStats === 'function') ? getDittoTransformStats(player) : null;
-    const attackerTypes = dittoStats?.types || myActive?.types || [];
-    const weaknesses = oppActive.weaknesses || [];
-    const resistances = oppActive.resistances || [];
-    if (!atk._skipWR) {
-      for (const w of weaknesses) {
-        if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
-          dmg *= 2;
-          addLog(`Weakness! Damage doubled to ${dmg}.`);
-          break;
-        }
+// ── applyWeaknessResistance ───────────────────────────────────────────────────
+// Applies weakness (×2) and resistance (−30) to dmg, returns updated dmg.
+// Skipped if atk._skipWR is set. Logs each application.
+function applyWeaknessResistance(dmg, atk, myActive, oppActive, dittoStats) {
+  const attackerTypes = dittoStats?.types || myActive?.types || [];
+  const weaknesses    = oppActive.weaknesses  || [];
+  const resistances   = oppActive.resistances || [];
+  if (!atk._skipWR) {
+    for (const w of weaknesses) {
+      if (attackerTypes.some(t => t.toLowerCase() === w.type.toLowerCase())) {
+        dmg *= 2;
+        addLog(`Weakness! Damage doubled to ${dmg}.`);
+        break;
       }
-      // Resistance — subtract 30, min 0
-      for (const r of resistances) {
-        if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
-          dmg = Math.max(0, dmg - 30);
-          addLog(`Resistance! Damage reduced to ${dmg}.`);
-          break;
-        }
+    }
+    for (const r of resistances) {
+      if (attackerTypes.some(t => t.toLowerCase() === r.type.toLowerCase())) {
+        dmg = Math.max(0, dmg - 30);
+        addLog(`Resistance! Damage reduced to ${dmg}.`);
+        break;
       }
+    }
+  } else {
+    addLog(`${atk.name}: Weakness and Resistance ignored!`);
+  }
+  return dmg;
+}
+
+// ── applyDamageModifiers ──────────────────────────────────────────────────────
+// Applies Kabuto Armor, Transparency, Defender/Invisible Wall/Pounce reductions
+// in sequence. Returns { dmg, transparencyBlocked } so callers can skip
+// post-attack status effects on a transparency block.
+// This is async because Transparency requires a coin flip.
+async function applyDamageModifiers(dmg, atk, player, myActive, oppActive) {
+  // Kabuto Armor: halve damage (after W/R), rounded DOWN to nearest 10
+  if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Kabuto Armor') && dmg > 0) {
+    const before = dmg;
+    dmg = Math.floor(dmg / 20) * 10;
+    addLog(`Kabuto Armor: damage halved to ${dmg}!`, true);
+    showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 KABUTO ARMOR (${before}→${dmg})`);
+  }
+
+  // Transparency (Haunter): flip — heads = prevent all effects including damage
+  let transparencyBlocked = false;
+  if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency')) {
+    const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
+    if (transpHeads) {
+      addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `TRANSPARENCY — all effects prevented`);
+      dmg = 0;
+      transparencyBlocked = true;
     } else {
-      addLog(`${atk.name}: Weakness and Resistance ignored!`);
+      addLog(`Transparency: TAILS — attack applies normally.`);
     }
-    // Kabuto Armor: halve damage done to Kabuto (after W/R), rounded DOWN to nearest 10
-    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Kabuto Armor') && dmg > 0) {
-      const before = dmg;
-      dmg = Math.floor(dmg / 20) * 10;
-      addLog(`Kabuto Armor: damage halved to ${dmg}!`, true);
-      showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 KABUTO ARMOR (${before}→${dmg})`);
-    }
-    // Transparency (Haunter): flip — heads = prevent all effects including damage
-    // Card says "whenever an attack does anything" — fires even on 0-damage status attacks
-    if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency')) {
-      const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
-      if (transpHeads) {
-        addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
-        showBlockedFlash(player, myActive?.name || '?', atk.name, `TRANSPARENCY — all effects prevented`);
-        dmg = 0;
-        atk._transparencyBlocked = true;
-      } else {
-        addLog(`Transparency: TAILS — attack applies normally.`);
-      }
-    }
-    // Defender reduction — on the target, after weakness/resistance
+  }
+
+  if (!transparencyBlocked) {
+    // Defender / Invisible Wall / Pounce (only if not already zeroed by Transparency)
     if (oppActive.defenderFull) {
       addLog(`${oppActive.name} is fully protected — all damage prevented!`);
       showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} FULLY PROTECTED`);
@@ -1109,65 +1033,85 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
       addLog(`Defender reduces damage to ${dmg}.`);
     }
 
-    // Pounce (Persian) — reduce damage if defender used Pounce last turn
+    // Pounce (Persian): reduce damage if defender used Pounce last turn
     if (oppActive.pounceActive && dmg > 0) {
       dmg = Math.max(0, dmg - 10);
       addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
     }
+  }
 
-    oppActive.damage = (oppActive.damage || 0) + dmg;
-    const oppHp = parseInt(oppActive.hp) || 0;
-    // Transform (Ditto): when Ditto attacks, KO threshold uses Ditto's own HP, not the defender's
-    // (Ditto still has its own HP pool even though it copies attacks)
-    if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, dmg);
+  return { dmg, transparencyBlocked };
+}
 
-    // Flash shows final post-W/R damage with appropriate label
-    const wrSuffix = (() => {
-      const atkTypes = myActive?.types || [];
-      const wasWeak = (oppActive.weaknesses || []).some(w => atkTypes.some(t => t.toLowerCase() === w.type.toLowerCase()));
-      const wasResist = (oppActive.resistances || []).some(r => atkTypes.some(t => t.toLowerCase() === r.type.toLowerCase()));
-      if (wasWeak) return '⚡ WEAKNESS';
-      if (wasResist) return '🛡 RESISTANCE';
-      return '';
-    })();
-    showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?', wrSuffix);
+// ── computeFinalDamage ────────────────────────────────────────────────────────
+// Orchestrates the full damage pipeline: PlusPower → W/R → modifiers →
+// apply to oppActive → flash → log → checkKO → Strikes Back.
+// Returns { dmg, done } — done=true means performAttack should return immediately.
+async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, attackerSelfKOd) {
+  if (dmg > 0) {
+    dmg = applyPlusPower(dmg, myActive);
 
-    addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
-    const koResult = checkKO(player, opp, oppActive, false);
+    const dittoStats = (typeof getDittoTransformStats === 'function') ? getDittoTransformStats(player) : null;
+    dmg = applyWeaknessResistance(dmg, atk, myActive, oppActive, dittoStats);
 
-    // ── Strikes Back (Machamp) ────────────────────────────────────
-    // Whenever Machamp takes damage, deal 10 automatic damage to the attacker.
-    // No coin flip. Not usable if Machamp is Asleep, Confused, or Paralyzed.
-    if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
-        oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
-      if (myActive) {
-        myActive.damage = (myActive.damage || 0) + 10;
-        addLog(`Strikes Back! (${oppActive.name}) — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
-        showActionFlash(opp, 'STRIKES BACK', oppActive.name, `→ 10 damage to ${myActive.name}`);
-        const strikeKo = checkKO(opp, player, myActive, false);
-        if (strikeKo === 'win') { renderWhenIdle(); return { dmg, done: true }; }
-        if (strikeKo === 'promote') { renderWhenIdle(); return { dmg, done: true }; }
+    const modResult = await applyDamageModifiers(dmg, atk, player, myActive, oppActive);
+    dmg = modResult.dmg;
+    if (modResult.transparencyBlocked) atk._transparencyBlocked = true;
+
+    // Damage modifiers (Kabuto Armor, Transparency, Defender, Invisible Wall, Pounce)
+    // have already been applied by applyDamageModifiers above.
+
+    if (!modResult.transparencyBlocked) {
+      oppActive.damage = (oppActive.damage || 0) + dmg;
+      const oppHp = parseInt(oppActive.hp) || 0;
+      if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, dmg);
+
+      // Flash shows final post-W/R damage with appropriate label
+      const wrSuffix = (() => {
+        const atkTypes = myActive?.types || [];
+        const wasWeak   = (oppActive.weaknesses  || []).some(w => atkTypes.some(t => t.toLowerCase() === w.type.toLowerCase()));
+        const wasResist = (oppActive.resistances || []).some(r => atkTypes.some(t => t.toLowerCase() === r.type.toLowerCase()));
+        if (wasWeak)   return '⚡ WEAKNESS';
+        if (wasResist) return '🛡 RESISTANCE';
+        return '';
+      })();
+      showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive?.name || '?', wrSuffix);
+      addLog(`P${player} used ${atk.name}! ${dmg} damage to ${oppActive.name} (${oppActive.damage}/${oppHp} HP).`, true);
+
+      const koResult = checkKO(player, opp, oppActive, false);
+
+      // ── Strikes Back (Machamp) ─────────────────────────────────
+      // Whenever Machamp takes damage, deal 10 automatic damage to the attacker.
+      // No coin flip. Not usable if Machamp is Asleep, Confused, or Paralyzed.
+      if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
+          oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
+        if (myActive) {
+          myActive.damage = (myActive.damage || 0) + 10;
+          addLog(`Strikes Back! (${oppActive.name}) — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
+          showActionFlash(opp, 'STRIKES BACK', oppActive.name, `→ 10 damage to ${myActive.name}`);
+          const strikeKo = checkKO(opp, player, myActive, false);
+          if (strikeKo === 'win')     { renderWhenIdle(); return { dmg, done: true }; }
+          if (strikeKo === 'promote') { renderWhenIdle(); return { dmg, done: true }; }
+        }
       }
-    }
 
-    if (koResult === 'win') {
-      // Process attacker self-KO first if it happened simultaneously
-      if (attackerSelfKOd && myActive) {
-        addLog(`${myActive.name} was also knocked out by recoil!`, true);
-        G.players[player].discard.push(myActive);
-        G.players[player].active = null;
+      if (koResult === 'win') {
+        if (attackerSelfKOd && myActive) {
+          addLog(`${myActive.name} was also knocked out by recoil!`, true);
+          G.players[player].discard.push(myActive);
+          G.players[player].active = null;
+        }
+        renderWhenIdle(); return { dmg, done: true };
       }
-      renderWhenIdle(); return { dmg, done: true };
-    }
-    if (koResult === 'promote') {
-      // Process attacker self-KO first if it happened simultaneously
-      if (attackerSelfKOd && myActive) {
-        addLog(`${myActive.name} was also knocked out by recoil!`, true);
-        G.players[player].discard.push(myActive);
-        G.players[player].active = null;
+      if (koResult === 'promote') {
+        if (attackerSelfKOd && myActive) {
+          addLog(`${myActive.name} was also knocked out by recoil!`, true);
+          G.players[player].discard.push(myActive);
+          G.players[player].active = null;
+        }
+        renderWhenIdle(); return { dmg, done: true };
       }
-      renderWhenIdle(); return { dmg, done: true };
-    }
+    } // end if (!transparencyBlocked)
   } else {
     addLog(`P${player} used ${atk.name}!`, true);
     if (typeof recordLastAttack === 'function') recordLastAttack(player, atk.name, 0);

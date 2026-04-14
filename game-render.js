@@ -697,6 +697,19 @@ let ENERGY_ICONS = {};
   } catch(e) { console.warn('energy-icons.json not loaded — using SVG fallbacks:', e); }
 })();
 
+// GAME_STATE_DEFAULTS — mutable per-card fields that must survive every Firebase
+// round-trip and enrichCard merge. Add new fields HERE only; enrichCard picks
+// them up automatically in both code paths.
+const GAME_STATE_DEFAULTS = {
+  status:            null,
+  damage:            0,
+  defender:          false,
+  defenderFull:      false,
+  defenderThreshold: 0,
+  plusPower:         0,
+  nextAttackDouble:  false,
+};
+
 function enrichCard(card) {
   if (!card) return card;
   const full = CARD_DATA[card.id];
@@ -710,6 +723,15 @@ function enrichCard(card) {
     const fullAtk = full?.attacks?.[i] || {};
     return { ...fullAtk, ...atk, text: atk.text || fullAtk.text || '', cost: atk.cost || fullAtk.cost || [] };
   });
+
+  // Pick live game-state values off `card`, falling back to defaults.
+  // Both return paths share this so new fields in GAME_STATE_DEFAULTS are
+  // automatically covered — no need to edit two places.
+  const gameState = {};
+  for (const [k, def] of Object.entries(GAME_STATE_DEFAULTS)) {
+    gameState[k] = card[k] ?? def;
+  }
+
   if (!full) {
     return {
       ...card,
@@ -722,13 +744,7 @@ function enrichCard(card) {
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
       convertedRetreatCost: card.convertedRetreatCost || 0,
       attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
-      status:           card.status            ?? null,
-      damage:           card.damage            ?? 0,
-      defender:         card.defender          ?? false,
-      defenderFull:     card.defenderFull      ?? false,
-      defenderThreshold:card.defenderThreshold ?? 0,
-      plusPower:        card.plusPower         ?? 0,
-      nextAttackDouble: card.nextAttackDouble  ?? false,
+      ...gameState,
     };
   }
   return {
@@ -745,14 +761,8 @@ function enrichCard(card) {
     retreatCost: full.retreatCost || [],
     convertedRetreatCost: full.convertedRetreatCost || 0,
     attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
-    // Game-state fields — always carry through explicitly so they survive any merge
-    status:           card.status            ?? null,
-    damage:           card.damage            ?? 0,
-    defender:         card.defender          ?? false,
-    defenderFull:     card.defenderFull      ?? false,
-    defenderThreshold:card.defenderThreshold ?? 0,
-    plusPower:        card.plusPower         ?? 0,
-    nextAttackDouble: card.nextAttackDouble  ?? false,
+    // Game-state fields — applied from GAME_STATE_DEFAULTS above
+    ...gameState,
   };
 }
 

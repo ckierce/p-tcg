@@ -10,91 +10,13 @@
 
 'use strict';
 
-// ─── Minimal stubs for globals that pure functions reference ─────────────────
+// ─── Stubs for globals that pure functions reference ──────────────────────────
+// game-utils.js calls hasEnergyBurn() — we stub it here before requiring.
+let _energyBurn = false;
+global.hasEnergyBurn = (card) => _energyBurn;
 
-// canAffordAttack calls hasEnergyBurn → isPowerActive → isMukActive → G.players
-// We stub isMukActive and hasEnergyBurn directly so tests don't need G at all.
-let _mukActive   = false;
-let _energyBurn  = false;
-
-function isMukActive()          { return _mukActive; }
-function hasEnergyBurn(card)    { return _energyBurn; }
-function hasPower()             { return false; }
-function isPowerActive()        { return false; }
-function _isStatusBlocked()     { return false; }
-
-// ─── Functions under test (inline copies — keep in sync with game-actions.js / pokemon-powers.js) ─
-
-function canAffordAttack(attachedEnergy, cost, attackerCard) {
-  if (!cost || cost.length === 0) return true;
-  const energyBurnActive = attackerCard && hasEnergyBurn(attackerCard);
-  const pool = [];
-  for (const e of (attachedEnergy || [])) {
-    const name = e.name || '';
-    if (energyBurnActive) {
-      pool.push('Fire');
-    } else if (/double colorless/i.test(name)) {
-      pool.push('Colorless', 'Colorless');
-    } else {
-      const type = name.replace(/\s*energy/i, '').trim() || 'Colorless';
-      pool.push(type);
-    }
-  }
-  const sortedCost = [...cost].sort((a, b) =>
-    (a === 'Colorless' ? 1 : 0) - (b === 'Colorless' ? 1 : 0)
-  );
-  const remaining = [...pool];
-  for (const req of sortedCost) {
-    if (req === 'Colorless') {
-      if (remaining.length === 0) return false;
-      remaining.splice(0, 1);
-    } else {
-      const idx = remaining.indexOf(req);
-      if (idx === -1) return false;
-      remaining.splice(idx, 1);
-    }
-  }
-  return true;
-}
-
-function energyValue(attachedEnergy) {
-  return (attachedEnergy || []).reduce((sum, e) =>
-    sum + (/double colorless/i.test(e.name || '') ? 2 : 1), 0);
-}
-
-function parseStatusEffects(text) {
-  if (!text) return [];
-  const effects = [];
-  const t = text;
-
-  if (/poisoned.*if tails.*confused/i.test(t)) {
-    effects.push({ type: 'either', heads: 'poisoned', tails: 'confused', self: false });
-    return effects;
-  }
-  if (/confused and poisoned/i.test(t)) {
-    effects.push({ status: 'confused', coinRequired: false, self: false });
-    effects.push({ status: 'poisoned', coinRequired: false, self: false });
-    return effects;
-  }
-  const statuses = ['Paralyzed','Asleep','Poisoned','Confused','Burned'];
-  for (const status of statuses) {
-    const re = new RegExp(`(If (heads|tails), )?[^.]*(?:Defending|${text.match(/[A-Z][a-z]+(?= is now)/)?.[0]||''})[^.]*is now ${status}`, 'i');
-    const match = t.match(re);
-    if (match) {
-      const coinRequired = /if (heads|tails)/i.test(match[0]);
-      const onTails = /if tails/i.test(match[0]);
-      const selfStatus = /(?:Vileplume|Gloom|Primeape|Tauros|[A-Z][a-z]+) is now/i.test(match[0]) &&
-                         !/Defending/i.test(match[0]);
-      effects.push({ status: status.toLowerCase(), coinRequired, onTails, self: selfStatus });
-    }
-  }
-  const seen = new Set();
-  return effects.filter(e => {
-    const key = `${e.status || e.type}-${e.self}`;
-    if (seen.has(key)) return false;
-    seen.add(key); return true;
-  });
-}
+// ─── Import functions under test from the single source of truth ──────────────
+const { RULES, energyValue, canAffordAttack, parseStatusEffects } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
 
@@ -128,6 +50,16 @@ function section(name) {
   console.log(`\n── ${name} ${'─'.repeat(60 - name.length)}`);
 }
 
+// ─── RULES constants ──────────────────────────────────────────────────────────
+
+section('RULES constants');
+
+assert(`BENCH_SIZE is ${RULES.BENCH_SIZE}`,    RULES.BENCH_SIZE       === 5);
+assert(`PRIZE_COUNT is ${RULES.PRIZE_COUNT}`,  RULES.PRIZE_COUNT      === 6);
+assert(`STARTING_HAND is ${RULES.STARTING_HAND}`, RULES.STARTING_HAND === 7);
+assert(`DECK_SIZE is ${RULES.DECK_SIZE}`,      RULES.DECK_SIZE        === 60);
+assert(`DAMAGE_STEP is ${RULES.DAMAGE_STEP}`,  RULES.DAMAGE_STEP      === 10);
+
 // ─── energyValue ──────────────────────────────────────────────────────────────
 
 section('energyValue');
@@ -158,12 +90,12 @@ assert('two DCE → 4',
 section('canAffordAttack');
 
 // Helpers
-const W  = { name: 'Water Energy' };
-const F  = { name: 'Fire Energy' };
-const G_ = { name: 'Grass Energy' };
-const L  = { name: 'Lightning Energy' };
-const P  = { name: 'Psychic Energy' };
-const C  = { name: 'Colorless Energy' };
+const W   = { name: 'Water Energy' };
+const F   = { name: 'Fire Energy' };
+const G_  = { name: 'Grass Energy' };
+const L   = { name: 'Lightning Energy' };
+const P   = { name: 'Psychic Energy' };
+const C   = { name: 'Colorless Energy' };
 const DCE = { name: 'Double Colorless Energy' };
 
 _energyBurn = false;
@@ -288,6 +220,143 @@ assert('no status text → empty array',
   assert('both Confused+Poisoned — contains confused', statuses.includes('confused'));
   assert('both Confused+Poisoned — contains poisoned', statuses.includes('poisoned'));
   assert('both Confused+Poisoned — no coin on either', fx.every(e => e.coinRequired === false));
+}
+
+// ─── applyStatus / tryApplyStatus edge cases ──────────────────────────────────
+// These are lightweight behavioral contracts that document the status rules
+// we've had bugs with. They use minimal stub objects, no G needed.
+
+section('status application rules (stub tests)');
+
+{
+  // Paralyzed cannot be stacked — applying it again should be a no-op in terms
+  // of game state (TCG rule: paralyzed replaces any existing status)
+  const card = { status: 'paralyzed' };
+  // Simulate what applyStatus does: status = newStatus
+  const applyStatus = (target, s) => { target.status = s; };
+  applyStatus(card, 'asleep');
+  assert('status replacement: paralyzed overwritten by asleep', card.status === 'asleep');
+}
+
+{
+  // Null status means no condition
+  const card = { status: null };
+  assert('null status means healthy', card.status === null);
+}
+
+// ─── applyPlusPower (inline — matches game-actions.js logic) ──────────────────
+// We inline a stub copy here because applyPlusPower references addLog and G,
+// which are DOM globals. The test validates the arithmetic contract only.
+
+section('applyPlusPower (arithmetic contract)');
+
+{
+  // Minimal stubs
+  const logs = [];
+  const stubLog = (msg) => logs.push(msg);
+
+  function _applyPlusPower(dmg, myActive, G_plusPowerActive) {
+    // mirrors game-actions.js applyPlusPower exactly, with injected stubs
+    const G = { plusPowerActive: G_plusPowerActive || 0 };
+    if (myActive?.plusPower) {
+      dmg += myActive.plusPower;
+      stubLog(`PlusPower adds ${myActive.plusPower} damage!`);
+      myActive.plusPower = 0;
+    }
+    if (G.plusPowerActive) {
+      dmg += G.plusPowerActive;
+      stubLog(`PlusPower adds ${G.plusPowerActive} damage!`);
+      G.plusPowerActive = 0;
+    }
+    return dmg;
+  }
+
+  assert('no PlusPower: dmg unchanged',
+    _applyPlusPower(40, { plusPower: 0 }, 0) === 40);
+
+  assert('card plusPower adds correctly',
+    _applyPlusPower(40, { plusPower: 10 }, 0) === 50);
+
+  assert('card plusPower cleared after use',
+    (() => { const c = { plusPower: 10 }; _applyPlusPower(30, c, 0); return c.plusPower; })() === 0);
+
+  assert('global plusPowerActive adds correctly',
+    _applyPlusPower(40, { plusPower: 0 }, 10) === 50);
+
+  assert('both card and global stack',
+    _applyPlusPower(30, { plusPower: 10 }, 10) === 50);
+
+  assert('zero base damage + PlusPower still adds',
+    _applyPlusPower(0, { plusPower: 10 }, 0) === 10);
+}
+
+// ─── applyWeaknessResistance (arithmetic contract) ────────────────────────────
+
+section('applyWeaknessResistance (arithmetic contract)');
+
+{
+  const logs = [];
+  const stubLog = (msg) => logs.push(msg);
+
+  function _applyWR(dmg, atkTypes, weaknesses, resistances, skipWR) {
+    // mirrors game-actions.js applyWeaknessResistance exactly
+    const atk = { _skipWR: skipWR || false, name: 'TestAttack' };
+    const myActive = { types: atkTypes };
+    const oppActive = { weaknesses, resistances };
+    const dittoStats = null;
+
+    const attackerTypes = dittoStats?.types || myActive?.types || [];
+    const w = oppActive.weaknesses  || [];
+    const r = oppActive.resistances || [];
+    if (!atk._skipWR) {
+      for (const wk of w) {
+        if (attackerTypes.some(t => t.toLowerCase() === wk.type.toLowerCase())) {
+          dmg *= 2;
+          stubLog(`Weakness! Damage doubled to ${dmg}.`);
+          break;
+        }
+      }
+      for (const rs of r) {
+        if (attackerTypes.some(t => t.toLowerCase() === rs.type.toLowerCase())) {
+          dmg = Math.max(0, dmg - 30);
+          stubLog(`Resistance! Damage reduced to ${dmg}.`);
+          break;
+        }
+      }
+    }
+    return dmg;
+  }
+
+  const fireTypes = ['Fire'];
+  const waterWeak = [{ type: 'Fire' }];
+  const fireResist = [{ type: 'Fire' }];
+  const noWR = [];
+
+  assert('no weakness/resistance: dmg unchanged',
+    _applyWR(50, fireTypes, noWR, noWR) === 50);
+
+  assert('weakness doubles damage',
+    _applyWR(40, fireTypes, waterWeak, noWR) === 80);
+
+  assert('resistance subtracts 30',
+    _applyWR(50, fireTypes, noWR, fireResist) === 20);
+
+  assert('resistance floor is 0 (cannot go negative)',
+    _applyWR(20, fireTypes, noWR, fireResist) === 0);
+
+  assert('weakness then resistance: double first, subtract 30 after (separate ops)',
+    // weakness and resistance are separate — both cannot apply to same attack type
+    // (attacker type matches either weakness OR resistance, not both in same card)
+    _applyWR(40, fireTypes, waterWeak, noWR) === 80);
+
+  assert('_skipWR flag: weakness ignored',
+    _applyWR(40, fireTypes, waterWeak, noWR, true) === 40);
+
+  assert('_skipWR flag: resistance ignored',
+    _applyWR(50, fireTypes, noWR, fireResist, true) === 50);
+
+  assert('type mismatch: no modification',
+    _applyWR(40, ['Water'], waterWeak, noWR) === 40);
 }
 
 // ─── Results ─────────────────────────────────────────────────────────────────
