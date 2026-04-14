@@ -951,6 +951,32 @@ function playAgain() {
   setMidline('Load decks and press Start Game');
 }
 
+// Leave the current game and return to lobby WITHOUT deleting the Firebase room.
+// The game stays alive and can be rejoined via MATCHES.
+function returnToLobby() {
+  // Detach listener but keep the room in Firebase
+  if (gameRef) {
+    gameRef.off();
+    gameRef = null;
+  }
+  roomCode = null; myRole = null; vsComputer = false; aiThinking = false;
+  G = {
+    started: false, turn: 1, phase: 'SETUP', turnNum: 0,
+    energyPlayedThisTurn: false, plusPowerActive: false,
+    pendingAction: null, pendingPromotion: null, pendingExtraDraws: 0,
+    players: {
+      1: { name:'Player 1', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 },
+      2: { name:'Player 2', deck:[], hand:[], active:null, bench:[null,null,null,null,null], prizes:[], discard:[], deckData:null, mulligans:0 }
+    },
+    log: []
+  };
+  document.getElementById('win-screen').classList.remove('show');
+  document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
+  document.getElementById('setup-screen').style.display = '';
+  showLobby();
+  setMidline('Load decks and press Start Game');
+}
+
 function viewBoard() {
   // Just close the overlay so they can see the final board state
   document.getElementById('win-screen').classList.remove('show');

@@ -2417,10 +2417,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div style="font-size: 9px;color:var(--muted);margin-bottom:16px">Room code: <span id="room-code-display" style="color:var(--accent);letter-spacing:3px"></span> &nbsp;(click link to copy)</div>
     <div style="font-size: 11px;color:var(--muted);margin-bottom:16px" id="waiting-status">⏳ Waiting for Player 2 to join...</div>
     <div class="setup-players" style="justify-content:center">
-      <div class="setup-player p1" onclick="openLoadModal(1)">
-        <div class="setup-player-icon">🔵</div>
-        <div class="setup-player-label">YOUR DECK (P1)</div>
-        <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="setup-player p1" onclick="openLoadModal(1)">
+          <div class="setup-player-icon">🔵</div>
+          <div class="setup-player-label">YOUR DECK (P1)</div>
+          <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
+        </div>
+        <button onclick="loadRandomDeck(1, this)" style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;border-radius:3px;">🎲 Random Deck</button>
       </div>
     </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
@@ -2432,15 +2435,21 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <p style="font-size: 11px;color:var(--ok);margin-bottom:16px">VS COMPUTER — YOU ARE P1</p>
     <div style="font-size: 11px;color:var(--muted);margin-bottom:16px">Load your deck, then start the game</div>
     <div class="setup-players" style="justify-content:center;gap:20px">
-      <div class="setup-player p1" onclick="openLoadModal(1)">
-        <div class="setup-player-icon">🔵</div>
-        <div class="setup-player-label">YOUR DECK (P1)</div>
-        <div class="setup-player-status" id="p1-vs-cpu-status">No deck loaded</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="setup-player p1" onclick="openLoadModal(1)">
+          <div class="setup-player-icon">🔵</div>
+          <div class="setup-player-label">YOUR DECK (P1)</div>
+          <div class="setup-player-status" id="p1-vs-cpu-status">No deck loaded</div>
+        </div>
+        <button onclick="loadRandomDeck(1, this)" style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;border-radius:3px;">🎲 Random Deck</button>
       </div>
-      <div class="setup-player p2" onclick="openLoadModal(2)" style="cursor:pointer;">
-        <div class="setup-player-icon">🤖</div>
-        <div class="setup-player-label">AI DECK (P2)</div>
-        <div class="setup-player-status" id="p2-cpu-status">Click to choose deck</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="setup-player p2" onclick="openLoadModal(2)" style="cursor:pointer;">
+          <div class="setup-player-icon">🤖</div>
+          <div class="setup-player-label">AI DECK (P2)</div>
+          <div class="setup-player-status" id="p2-cpu-status">Click to choose deck</div>
+        </div>
+        <button onclick="loadRandomDeck(2, this)" style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;border-radius:3px;">🎲 Random Deck</button>
       </div>
     </div>
     <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size: 15px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
@@ -2469,10 +2478,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <p style="font-size: 11px;color:var(--p2color);margin-bottom:16px">JOINED — YOU ARE P2</p>
     <div style="font-size: 11px;color:var(--muted);margin-bottom:16px" id="joined-status">Waiting for Player 1 to start...</div>
     <div class="setup-players" style="justify-content:center">
-      <div class="setup-player p2" onclick="openLoadModal(2)">
-        <div class="setup-player-icon">🔴</div>
-        <div class="setup-player-label">YOUR DECK (P2)</div>
-        <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+        <div class="setup-player p2" onclick="openLoadModal(2)">
+          <div class="setup-player-icon">🔴</div>
+          <div class="setup-player-label">YOUR DECK (P2)</div>
+          <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
+        </div>
+        <button onclick="loadRandomDeck(2, this)" style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);border:1px solid var(--accent);color:var(--accent);cursor:pointer;border-radius:3px;">🎲 Random Deck</button>
       </div>
     </div>
     <div style="font-size: 9px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
@@ -2495,6 +2507,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       <span id="phase-badge">DRAW</span>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
+      <button class="top-bar-btn" onclick="returnToLobby()" title="Back to lobby">⬅ LOBBY</button>
     </div>
 
     <!-- Field body -->
@@ -2630,7 +2643,6 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     </div>
     <div id="saved-decks-list"></div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
-      <button class="modal-close-btn" id="random-deck-btn" onclick="loadRandomDeck()" style="background:var(--surface2);border-color:var(--accent);color:var(--accent)">🎲 RANDOM DECK</button>
       <button class="modal-close-btn" onclick="closeLoadModal()">CANCEL</button>
     </div>
   </div>
@@ -3088,14 +3100,16 @@ function selectPlayer(p) {
   document.querySelectorAll('.player-opt').forEach(b => b.classList.remove('sel'));
   document.querySelector(`.player-opt.p${p}`).classList.add('sel');
 }
-async function loadRandomDeck() {
-  const btn = document.getElementById('random-deck-btn');
-  btn.textContent = '🎲 Picking…';
-  btn.disabled = true;
+async function loadRandomDeck(player, btnEl) {
+  // Can be called from modal (no args, uses loadingForPlayer)
+  // or from a panel button (player=1|2, btnEl=the button element)
+  if (player !== undefined) loadingForPlayer = player;
+  const btn = btnEl || document.getElementById('random-deck-btn');
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
   try {
     const snap = await db.ref('decks').once('value');
     const data = snap.val() || {};
-    // Collect all decks across all folders
     const all = [];
     function isLegacyDeck(n) { return n && typeof n === 'object' && n.deck && n.name; }
     for (const [fKey, node] of Object.entries(data)) {
@@ -3110,12 +3124,11 @@ async function loadRandomDeck() {
     if (!all.length) { showToast('No decks found!', true); return; }
     const pick = all[Math.floor(Math.random() * all.length)];
     await loadDeck(pick.fKey, pick.deck.name);
-    showToast(`🎲 Random: ${pick.deck.name}`);
+    showToast(`🎲 ${pick.deck.name}`);
   } catch(e) {
     showToast('Could not load random deck', true);
   } finally {
-    btn.textContent = '🎲 RANDOM DECK';
-    btn.disabled = false;
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
 }
 
