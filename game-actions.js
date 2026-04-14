@@ -1678,6 +1678,8 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     }
     // Discard attached energy
     G.players[owner].active = null;
+    // Defensive pad — bench must always be exactly 5 slots
+    while (G.players[owner].bench.length < 5) G.players[owner].bench.push(null);
 
     // Clefairy Doll KO — no prize, no win check
     if (card.isDoll) {
@@ -1749,6 +1751,8 @@ function resolvePromotion(player, benchIdx) {
   if (!chosen) return;
   p.active = chosen;
   p.bench[benchIdx] = null;
+  // Ensure bench is always exactly 5 slots — defensive pad after any swap
+  while (p.bench.length < 5) p.bench.push(null);
   transitionPhase('MAIN');
   // Clear Mirror Move tracking — new active didn't see last attack
   if (typeof clearLastAttack === 'function') clearLastAttack(player);
