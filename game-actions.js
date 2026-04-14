@@ -392,8 +392,15 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         // Conversion 1 requires the opponent to have a Weakness — block it if they don't
         const isConversion1Blocked = atk.name === 'Conversion 1' &&
           !(G.players[player === 1 ? 2 : 1].active?.weaknesses || []).length;
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked;
-        const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
+        const isStatusBlocked = card.status === 'paralyzed' || card.status === 'asleep';
+        // Opponent is fully effect-immune (Agility/Barrier heads, Tail Wag heads)
+        // defenderFull alone (Withdraw/Stiffen) still allows attacking — damage just gets zeroed
+        const oppCard = G.players[player === 1 ? 2 : 1].active;
+        const oppImmune = !!(oppCard?.defenderFullEffects || oppCard?.immuneToAttack);
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked || oppImmune;
+        const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${card.status.toUpperCase()})` :
+                         oppImmune ? `${costStr} · ${oppCard.name} IS PROTECTED — no damage` :
+                         isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
                          isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
                          canAfford ? `${costStr} · ${dmg} dmg` :
@@ -1226,6 +1233,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     if (heads) {
       myActive.defender = true;
       myActive.defenderFull = true;
+      myActive.defenderFullEffects = true;
       addLog(`${atk.name}: HEADS — ${myActive.name} is fully protected from all attack effects next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
@@ -1419,6 +1427,24 @@ async function performAttack(player, atk) {
       endTurn();
       return;
     }
+  }
+
+  // ── Opponent immunity (Agility/Barrier heads, Tail Wag heads) ───────────────
+  // defenderFullEffects = all effects blocked (Agility/Barrier)
+  // defenderFull alone = damage only blocked (Withdraw/Stiffen) — attack still proceeds
+  if (oppActive?.defenderFullEffects) {
+    addLog(`${oppActive.name} is fully protected — ${myActive?.name}'s attack has no effect!`, true);
+    showToast(`${oppActive.name} is protected!`, true);
+    showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} FULLY PROTECTED`);
+    endTurn();
+    return;
+  }
+  if (oppActive?.immuneToAttack) {
+    addLog(`${oppActive.name} cannot be attacked this turn!`, true);
+    showToast(`${oppActive.name} cannot be attacked!`, true);
+    showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} IMMUNE TO ATTACK`);
+    endTurn();
+    return;
   }
 
   // ── Smokescreen ──────────────────────────────────────────────────────────────
@@ -1833,6 +1859,7 @@ function endTurn() {
     if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
     nextActive.defender = false;
     nextActive.defenderFull = false;
+    nextActive.defenderFullEffects = false;
     nextActive.defenderThreshold = 0;
     nextActive.defenderReduction = 0;
   }

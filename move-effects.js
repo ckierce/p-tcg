@@ -63,7 +63,7 @@ const _agilityFlip = () => ({
     if (!myActive) return;
     const heads = await flipCoin(`${atk.name}: Heads = immune to all attack effects next turn!`);
     if (heads) {
-      myActive.defender = true; myActive.defenderFull = true;
+      myActive.defender = true; myActive.defenderFull = true; myActive.defenderFullEffects = true;
       addLog(`${atk.name}: HEADS — ${myActive.name} fully protected next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
@@ -390,7 +390,7 @@ const MOVE_EFFECTS = {
   'Barrier': {
     postAttack: async ({ myActive, atk }) => {
       if (!myActive) return;
-      myActive.defender = true; myActive.defenderFull = true;
+      myActive.defender = true; myActive.defenderFull = true; myActive.defenderFullEffects = true;
       addLog(`${atk.name}: ${myActive.name} fully protected next turn!`, true);
     }
   },
