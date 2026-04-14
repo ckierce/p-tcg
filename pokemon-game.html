@@ -2352,7 +2352,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 <div id="setup-screen">
   <h1>POKéMON TCG<br>GAME BOARD</h1>
 
-  <!-- LOBBY -->
+  <!-- LOBBY -->\
   <div id="lobby-panel">
     <div id="trainer-badge" style="margin-bottom:12px;display:none">
       Signed in as <strong id="trainer-name-display">—</strong>
@@ -2363,33 +2363,47 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       Playing as <strong>Guest</strong>
       &nbsp;·&nbsp; <a href="#" onclick="showLoginScreen()" style="color:var(--accent);font-size:9px">sign in</a>
     </div>
-    <p style="font-size: 11px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-      <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
-      <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
-      <button class="lobby-btn" onclick="showResumePanel()" style="border-color:var(--accent)">♻ RESUME GAME<br><span>Rejoin active game</span></button>
-      <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
+      <button class="lobby-btn" onclick="showStartMatchPanel()">⚔️ START MATCH<br><span>vs Human or Computer</span></button>
+      <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN MATCH<br><span>You are Player 2</span></button>
+      <button class="lobby-btn" id="my-matches-btn" onclick="showResumePanel()" style="border-color:var(--accent);display:none">📋 MATCHES<br><span>Resume or close</span></button>
     </div>
     <div style="display:flex;justify-content:center;margin-top:18px">
       <a class="setup-back" href="deck-builder.html">← Back to Deck Builder</a>
     </div>
   </div>
 
+  <!-- START MATCH PANEL -->
+  <div id="start-match-panel" style="display:none;text-align:center;">
+    <p style="font-size:11px;color:var(--accent);margin-bottom:16px">START A MATCH</p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      <button class="lobby-btn" onclick="showWaitingPanel()" style="border-color:var(--p1color)">🔵 VS HUMAN<br><span>Create a room as P1</span></button>
+      <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
+    </div>
+    <div style="margin-top:14px">
+      <button class="lobby-btn" style="font-size:9px;color:var(--muted)" onclick="showLobby()">← BACK</button>
+    </div>
+  </div>
+
   <!-- RESUME GAME PANEL -->
   <div id="resume-panel" style="display:none;text-align:center;">
-    <p style="font-size:11px;color:var(--accent);margin-bottom:12px">RESUME GAME</p>
-    <p style="font-size:9px;color:var(--muted);margin-bottom:16px">Choose which player you are, then select a game</p>
-    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
+    <p style="font-size:11px;color:var(--accent);margin-bottom:8px">MY GAMES</p>
+    <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px">
+      <button id="filter-all"  onclick="setGameFilter('all')"    style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--accent);color:#000;border:none;cursor:pointer;border-radius:3px;">All</button>
+      <button id="filter-human" onclick="setGameFilter('human')" style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:pointer;border-radius:3px;">vs Human</button>
+      <button id="filter-ai"   onclick="setGameFilter('ai')"     style="font-family:var(--font);font-size:9px;padding:5px 12px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:pointer;border-radius:3px;">vs Computer</button>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-bottom:12px">
       <button id="resume-as-p1" onclick="setResumeRole(1)"
-        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">
+        style="font-family:var(--font);font-size:9px;padding:6px 14px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">
         Rejoin as P1
       </button>
       <button id="resume-as-p2" onclick="setResumeRole(2)"
-        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">
+        style="font-family:var(--font);font-size:9px;padding:6px 14px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">
         Rejoin as P2
       </button>
     </div>
-    <div id="resume-game-list" style="max-width:420px;margin:0 auto 16px;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;">
+    <div id="resume-game-list" style="max-width:440px;margin:0 auto 16px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;">
       <div style="font-size:9px;color:var(--muted)">Loading games...</div>
     </div>
     <button onclick="showLobby()" style="font-family:var(--font);font-size:8px;padding:6px 14px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;">← Back</button>
@@ -2615,7 +2629,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       <button class="player-opt p2" onclick="selectPlayer(2)">PLAYER 2</button>
     </div>
     <div id="saved-decks-list"></div>
-    <button class="modal-close-btn" onclick="closeLoadModal()">CANCEL</button>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:6px">
+      <button class="modal-close-btn" id="random-deck-btn" onclick="loadRandomDeck()" style="background:var(--surface2);border-color:var(--accent);color:var(--accent)">🎲 RANDOM DECK</button>
+      <button class="modal-close-btn" onclick="closeLoadModal()">CANCEL</button>
+    </div>
   </div>
 </div>
 
@@ -2796,6 +2813,7 @@ auth.onAuthStateChanged(async user => {
     document.getElementById('trainer-name-display').textContent = trainerName;
     document.getElementById('trainer-badge').style.display = '';
     document.getElementById('guest-badge').style.display = 'none';
+    refreshMatchesButton();
   } else {
     currentUser = null;
     trainerName = 'Guest';
@@ -2804,6 +2822,7 @@ auth.onAuthStateChanged(async user => {
     document.getElementById('setup-screen').style.display = '';
     document.getElementById('trainer-badge').style.display = 'none';
     document.getElementById('guest-badge').style.display = '';
+    refreshMatchesButton();
   }
 });
 
@@ -2816,7 +2835,7 @@ function setAuthMode(mode) {
   const toggle   = document.getElementById('login-mode-toggle');
   const pwInput  = document.getElementById('login-password');
   if (mode === 'signup') {
-    nameRow.style.display = '';
+    nameRow.style.display = 'block';
     submitBtn.textContent = 'CREATE ACCOUNT →';
     toggle.innerHTML = 'Already have an account? <a onclick="setAuthMode(\'signin\')">Sign in</a>';
     pwInput.placeholder = 'Choose a password (6+ chars)';
@@ -3069,6 +3088,37 @@ function selectPlayer(p) {
   document.querySelectorAll('.player-opt').forEach(b => b.classList.remove('sel'));
   document.querySelector(`.player-opt.p${p}`).classList.add('sel');
 }
+async function loadRandomDeck() {
+  const btn = document.getElementById('random-deck-btn');
+  btn.textContent = '🎲 Picking…';
+  btn.disabled = true;
+  try {
+    const snap = await db.ref('decks').once('value');
+    const data = snap.val() || {};
+    // Collect all decks across all folders
+    const all = [];
+    function isLegacyDeck(n) { return n && typeof n === 'object' && n.deck && n.name; }
+    for (const [fKey, node] of Object.entries(data)) {
+      if (isLegacyDeck(node)) {
+        all.push({ fKey, deck: node });
+      } else if (node && typeof node === 'object' && !node.deck) {
+        for (const child of Object.values(node)) {
+          if (isLegacyDeck(child)) all.push({ fKey, deck: child });
+        }
+      }
+    }
+    if (!all.length) { showToast('No decks found!', true); return; }
+    const pick = all[Math.floor(Math.random() * all.length)];
+    await loadDeck(pick.fKey, pick.deck.name);
+    showToast(`🎲 Random: ${pick.deck.name}`);
+  } catch(e) {
+    showToast('Could not load random deck', true);
+  } finally {
+    btn.textContent = '🎲 RANDOM DECK';
+    btn.disabled = false;
+  }
+}
+
 function closeLoadModal() {
   document.getElementById('load-modal').classList.remove('show');
 }
@@ -3643,8 +3693,19 @@ async function startVsCpuGame() {
   const cpuSt = document.getElementById('p2-cpu-status');
   if (cpuSt) { cpuSt.textContent = `✓ ${G.players[2].deckData.name}`; cpuSt.style.color = 'var(--p2color)'; }
 
-  // No Firebase for VS Computer
-  gameRef = null;
+  // Persist AI game to Firebase so it shows in My Games
+  roomCode = generateCode();
+  gameRef = db.ref(`games/${roomCode}`);
+  await gameRef.set({
+    created: Date.now(),
+    ownerUid: currentUser ? currentUser.uid : null,
+    isAiGame: true,
+    p1Name: trainerName || 'Player 1',
+    p2Name: '🤖 Computer',
+    p1DeckName: G.players[1].deckData?.name || null,
+    p2DeckName: G.players[2].deckData?.name || null,
+    state: null
+  });
 
   await startGame();
 
@@ -4197,8 +4258,35 @@ let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
 // ── Panel helpers ─────────────────────────────────
-function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+const _allPanels = ['lobby-panel','start-match-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'];
+function showLobby()   { _allPanels.forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); refreshMatchesButton(); }
+function showPanel(id) { _allPanels.forEach(i  => { const el = document.getElementById(i);  if(el) el.style.display = i  === id  ? '' : 'none'; }); }
+
+function showStartMatchPanel() { showPanel('start-match-panel'); }
+
+function showWaitingPanel() {
+  // createRoom() does Firebase setup then calls showPanel('waiting-panel') itself
+  createRoom();
+}
+
+// Show/hide the Matches button based on whether the user has active games
+async function refreshMatchesButton() {
+  const btn = document.getElementById('my-matches-btn');
+  if (!btn) return;
+  const uid = currentUser ? currentUser.uid : null;
+  try {
+    const snap = await db.ref('games').once('value');
+    const games = snap.val() || {};
+    const hasGames = Object.entries(games).some(([, d]) => {
+      if (!d.state || !d.state.started) return false;
+      if (uid) return !d.ownerUid || d.ownerUid === uid;
+      return true;
+    });
+    btn.style.display = hasGames ? '' : 'none';
+  } catch(e) {
+    btn.style.display = 'none';
+  }
+}
 
 let _resumeRole = 1;
 function setResumeRole(role) {
@@ -4209,41 +4297,104 @@ function setResumeRole(role) {
   document.getElementById('resume-as-p2').style.color = role === 2 ? '#000' : 'var(--p2color)';
 }
 
+let _gameFilter = 'all'; // 'all' | 'human' | 'ai'
+
+function setGameFilter(f) {
+  _gameFilter = f;
+  ['all','human','ai'].forEach(k => {
+    const btn = document.getElementById(`filter-${k}`);
+    if (!btn) return;
+    const active = k === f;
+    btn.style.background = active ? 'var(--accent)' : 'var(--surface2)';
+    btn.style.color = active ? '#000' : 'var(--muted)';
+    btn.style.border = active ? 'none' : '1px solid var(--border)';
+  });
+  renderGameList(window._cachedGames || []);
+}
+
+function renderGameList(entries) {
+  window._cachedGames = entries;
+  const list = document.getElementById('resume-game-list');
+  const uid = currentUser ? currentUser.uid : null;
+
+  const filtered = entries.filter(([, d]) => {
+    if (_gameFilter === 'human' && d.isAiGame) return false;
+    if (_gameFilter === 'ai'    && !d.isAiGame) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    const msg = _gameFilter === 'all' ? 'No active games found.'
+              : _gameFilter === 'ai'  ? 'No active AI games.'
+              : 'No active human games.';
+    list.innerHTML = `<div style="font-size:9px;color:var(--muted)">${msg}</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(([code, d]) => {
+    const s = d.state;
+    const isAi = !!d.isAiGame;
+    const typeTag = isAi
+      ? `<span style="font-size:8px;background:var(--surface);border:1px solid var(--ok);color:var(--ok);padding:1px 5px;border-radius:3px">🤖 AI</span>`
+      : `<span style="font-size:8px;background:var(--surface);border:1px solid var(--p2color);color:var(--p2color);padding:1px 5px;border-radius:3px">👥 PVP</span>`;
+    const turnLabel = !s ? 'Not started'
+      : s.phase === 'PROMOTE' ? `P${s.pendingPromotion} PROMOTING`
+      : `P${s.turn} TURN`;
+    const prizes1 = s ? (s.players?.[1]?.prizes || []) : [];
+    const prizes2 = s ? (s.players?.[2]?.prizes || []) : [];
+    const p1rem = Array.isArray(prizes1) ? prizes1.filter(p=>p).length : Object.values(prizes1).filter(p=>p).length;
+    const p2rem = Array.isArray(prizes2) ? prizes2.filter(p=>p).length : Object.values(prizes2).filter(p=>p).length;
+    const age = d.created ? Math.round((Date.now() - d.created) / 60000) : '?';
+    const ageStr = age < 60 ? `${age}m ago` : `${Math.round(age/60)}h ago`;
+    const p1label = d.p1Name || d.p1DeckName || '?';
+    const p2label = d.p2Name || d.p2DeckName || '?';
+    const canDelete = !uid || d.ownerUid === uid || !d.ownerUid;
+
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 12px;text-align:left;display:flex;align-items:center;gap:8px">
+      <div style="flex:1;cursor:pointer" onclick="resumeGame('${code}')">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+          ${typeTag}
+          <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${code}</span>
+          <span style="font-size:8px;color:var(--muted);margin-left:auto">${ageStr}</span>
+        </div>
+        <div style="font-size:9px;color:var(--text);margin-bottom:2px">
+          🔵 ${p1label} &nbsp;vs&nbsp; 🔴 ${p2label}
+        </div>
+        ${s ? `<div style="font-size:8px;color:var(--muted)">${turnLabel} &nbsp;·&nbsp; Prizes: ${p1rem} vs ${p2rem}</div>` : ''}
+      </div>
+      ${canDelete ? `<button onclick="event.stopPropagation();deleteGame('${code}')" title="Close game"
+        style="font-family:var(--font);font-size:14px;line-height:1;background:transparent;border:none;color:var(--muted);cursor:pointer;padding:4px 6px;border-radius:3px;flex-shrink:0"
+        onmouseover="this.style.color='var(--warn)'" onmouseout="this.style.color='var(--muted)'">×</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function showResumePanel() {
   showPanel('resume-panel');
   setResumeRole(1);
+  _gameFilter = 'all';
+  setGameFilter('all');
   const list = document.getElementById('resume-game-list');
   list.innerHTML = '<div style="font-size:9px;color:var(--muted)">Loading games...</div>';
+  const uid = currentUser ? currentUser.uid : null;
   db.ref('games').once('value', snap => {
     const games = snap.val();
     if (!games) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
-    const active = Object.entries(games)
+    let entries = Object.entries(games)
       .filter(([, d]) => d.state && d.state.started)
       .sort(([, a], [, b]) => (b.created || 0) - (a.created || 0));
-    if (!active.length) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
-    list.innerHTML = active.map(([code, d]) => {
-      const s = d.state;
-      const turnLabel = s.phase === 'PROMOTE' ? `P${s.pendingPromotion} PROMOTING` : `P${s.turn} TURN`;
-      const prizes1 = (s.players?.[1]?.prizes || []);
-      const prizes2 = (s.players?.[2]?.prizes || []);
-      const p1rem = Array.isArray(prizes1) ? prizes1.filter(p=>p).length : Object.values(prizes1).filter(p=>p).length;
-      const p2rem = Array.isArray(prizes2) ? prizes2.filter(p=>p).length : Object.values(prizes2).filter(p=>p).length;
-      const age = d.created ? Math.round((Date.now() - d.created) / 60000) : '?';
-      return `<div onclick="resumeGame('${code}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;cursor:pointer;text-align:left;transition:border-color .1s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${code}</span>
-          <span style="font-size:8px;color:var(--muted)">${age}m ago</span>
-        </div>
-        <div style="font-size:9px;color:var(--text2);margin-top:4px">
-          🔵 ${d.p1DeckName||'?'} &nbsp;vs&nbsp; 🔴 ${d.p2DeckName||'?'}
-        </div>
-        <div style="font-size:8px;color:var(--muted);margin-top:3px">
-          ${turnLabel} &nbsp;·&nbsp; P1 prizes: ${p1rem} left &nbsp;·&nbsp; P2 prizes: ${p2rem} left
-        </div>
-      </div>`;
-    }).join('');
+    if (uid) entries = entries.filter(([, d]) => !d.ownerUid || d.ownerUid === uid);
+    renderGameList(entries);
   });
 }
+
+async function deleteGame(code) {
+  if (!confirm(`Close game ${code}? This cannot be undone.`)) return;
+  await db.ref(`games/${code}`).remove();
+  window._cachedGames = (window._cachedGames || []).filter(([c]) => c !== code);
+  renderGameList(window._cachedGames);
+}
+
 
 function resumeGame(code) {
   const role = _resumeRole;
@@ -4338,6 +4489,8 @@ async function createRoom() {
     p2DeckName: null,
     p1Name: trainerName || 'Player 1',
     p2Name: null,
+    ownerUid: currentUser ? currentUser.uid : null,
+    isAiGame: false,
     state: null
   });
   // Set our own player name in G immediately
