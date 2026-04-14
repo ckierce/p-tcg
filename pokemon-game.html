@@ -2814,7 +2814,10 @@ function setAuthMode(mode) {
   document.getElementById('login-error').textContent = '';
 }
 
+let _authInFlight = false;
+
 async function doLoginOrSignup() {
+  if (_authInFlight) return;
   const email    = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
   const errEl    = document.getElementById('login-error');
@@ -2827,22 +2830,27 @@ async function doLoginOrSignup() {
     if (!name) { errEl.textContent = 'Enter a trainer name.'; return; }
     if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; return; }
     errEl.textContent = '';
+    _authInFlight = true;
     btn.disabled = true; btn.textContent = 'Creating account…';
     try {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
-      // Write display name — onAuthStateChanged will read it back
       await db.ref(`users/${cred.user.uid}/name`).set(name);
     } catch (e) {
       errEl.textContent = friendlyAuthError(e.code);
+    } finally {
+      _authInFlight = false;
       btn.disabled = false; btn.textContent = 'CREATE ACCOUNT →';
     }
   } else {
     errEl.textContent = '';
+    _authInFlight = true;
     btn.disabled = true; btn.textContent = 'Signing in…';
     try {
       await auth.signInWithEmailAndPassword(email, password);
+      // onAuthStateChanged hides the screen — don't re-enable here on success
     } catch (e) {
       errEl.textContent = friendlyAuthError(e.code);
+      _authInFlight = false;
       btn.disabled = false; btn.textContent = 'SIGN IN →';
     }
   }
@@ -2852,6 +2860,7 @@ async function doLoginOrSignup() {
 const doLogin = doLoginOrSignup;
 
 function doSignOut() {
+  _authInFlight = false;
   auth.signOut();
   setAuthMode('signin');
   document.getElementById('login-email').value = '';
