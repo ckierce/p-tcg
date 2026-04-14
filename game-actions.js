@@ -1365,6 +1365,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     if (myBenchLeft.length === 0) {
       G.started = false;
       showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
+      if (typeof pushGameState === 'function') pushGameState();
       renderWhenIdle(); return true;
     } else if (myBenchLeft.length === 1) {
       const idx = G.players[player].bench.findIndex(s => s !== null);
@@ -1714,6 +1715,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
         addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
         G.started = false;
         showWinScreen(prizeWinner, 'ALL 6 PRIZES TAKEN');
+        if (typeof pushGameState === 'function') pushGameState();
         return 'win';
       }
     }
@@ -1724,6 +1726,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
       G.started = false;
       showWinScreen(prizeWinner, 'OPPONENT HAS NO POKÉMON LEFT');
+      if (typeof pushGameState === 'function') pushGameState();
       return 'win';
     }
 
