@@ -89,22 +89,25 @@ function getActionsForCard(player, card, handIdx) {
 
   if (!isSetup && card.supertype === 'Energy') {
     const isWaterEnergy = /water/i.test(card.name);
-    const rainDance = rainDanceActive(player) && isWaterEnergy;
-    const canAttach = !G.energyPlayedThisTurn || rainDance;
+    const rainDanceAvailable = rainDanceActive(player) && isWaterEnergy;
+    const canAttach = !G.energyPlayedThisTurn || rainDanceAvailable;
     if (canAttach) {
-      // Rain Dance: can only attach to Water-type Pokémon
-      const activeIsWater = !rainDance || (p.active?.types || []).some(t => /water/i.test(t));
+      // Rain Dance label + Water-only restriction only applies when the normal once-per-turn
+      // attach is already used — otherwise this is just a regular attach that happens to be Water
+      const isRainDanceAttach = rainDanceAvailable && G.energyPlayedThisTurn;
+      // Rain Dance extra attach: can only target Water-type Pokémon
+      const activeIsWater = !isRainDanceAttach || (p.active?.types || []).some(t => /water/i.test(t));
       if (activeIsWater) {
         actions.push({
-          label: rainDance ? 'Attach to Active (Rain Dance)' : 'Attach to Active',
-          fn: () => attachEnergy(player, handIdx, 'active', null, rainDance)
+          label: isRainDanceAttach ? 'Attach to Active (Rain Dance)' : 'Attach to Active',
+          fn: () => attachEnergy(player, handIdx, 'active', null, isRainDanceAttach)
         });
       }
-      const waterBench = p.bench.filter((s, i) => s !== null && (!rainDance || (s.types || []).some(t => /water/i.test(t))));
-      if (waterBench.length > 0 || (!rainDance && p.bench.some(s => s !== null))) {
+      const waterBench = p.bench.filter((s, i) => s !== null && (!isRainDanceAttach || (s.types || []).some(t => /water/i.test(t))));
+      if (waterBench.length > 0 || (!isRainDanceAttach && p.bench.some(s => s !== null))) {
         actions.push({
-          label: rainDance ? 'Attach to Bench... (Rain Dance)' : 'Attach to Bench...',
-          fn: () => startEnergyAttach(player, handIdx, rainDance)
+          label: isRainDanceAttach ? 'Attach to Bench... (Rain Dance)' : 'Attach to Bench...',
+          fn: () => startEnergyAttach(player, handIdx, isRainDanceAttach)
         });
       }
     }
