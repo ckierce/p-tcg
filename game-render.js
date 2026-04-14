@@ -290,33 +290,48 @@ function renderHands() {
 
 function renderSidebarP2Hand() {
   const content = document.getElementById('sidebar-content');
-  // In networked mode: if I'm P2, sidebar shows P1's hand (face-down for P2 to see)
-  // Sidebar shows opponent's hand
+
+  // Only available in VS Computer mode
+  if (!vsComputer) {
+    content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">Only available in VS Computer mode.</div>`;
+    return;
+  }
+
   const sidePlayer = (myRole === 2) ? 1 : 2;
   const sideHand = G.players[sidePlayer].hand;
   const sideColor = sidePlayer === 1 ? 'var(--p1color)' : 'var(--p2color)';
   const label = myRole === 2 ? 'P1 HAND' : 'P2 HAND';
+
+  // Show gate screen until player explicitly reveals
+  if (!renderSidebarP2Hand._revealed) {
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;padding:16px 10px;gap:12px;text-align:center">
+        <div style="font-size:9px;color:var(--muted);line-height:1.5;max-width:160px">
+          This will show the computer player's hand.<br><br>
+          Technically cheating unless you're trying to debug something.
+        </div>
+        <button onclick="renderSidebarP2Hand._revealed=true;renderSidebarP2Hand();"
+          style="font-size:9px;padding:6px 12px;background:var(--surface2);color:var(--text);
+                 border:1px solid var(--border);border-radius:4px;cursor:pointer;letter-spacing:0.05em">
+          SHOW COMPUTER HAND
+        </button>
+        <img src="https://images.pokemontcg.io/base1/69.png" alt="Weedle"
+          style="width:72px;image-rendering:pixelated;opacity:0.85;margin-top:4px"
+          title="Weedle judges you">
+      </div>`;
+    return;
+  }
 
   if (!sideHand.length) {
     content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">${label}: no cards</div>`;
     return;
   }
 
-  // In networked mode, show opponent's hand face-down unless Clairvoyance is active
-  const showFaceUp = !!(G._clairvoyanceActive);
   content.innerHTML = `<div style="font-size:8px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
     <div id="hand-p2">` +
     sideHand.map((card, i) => {
-      if (!showFaceUp) {
-        // Face-down card back
-        return `<div class="hand-card face-down" style="background:var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;border-color:var(--border);">
-          <div class="hand-card-info" style="background:transparent;"><div class="hand-card-name" style="opacity:0">???</div></div>
-        </div>`;
-      }
       const imgSrc = card.images?.small || '';
-      const largeSrc = card.images?.large || imgSrc;
-      return `<div class="hand-card" id="hand-card-${sidePlayer}-${i}"
-        onclick="event.stopPropagation();selectHandCard(${sidePlayer},${i})">
+      return `<div class="hand-card" id="hand-card-${sidePlayer}-${i}">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
           <div class="hand-card-name">${card.name}</div>

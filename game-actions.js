@@ -92,10 +92,8 @@ function getActionsForCard(player, card, handIdx) {
     const rainDanceAvailable = rainDanceActive(player) && isWaterEnergy;
     const canAttach = !G.energyPlayedThisTurn || rainDanceAvailable;
     if (canAttach) {
-      // Rain Dance label + Water-only restriction only applies when the normal once-per-turn
-      // attach is already used — otherwise this is just a regular attach that happens to be Water
+      // Rain Dance label + Water-only restriction only when normal once-per-turn attach is spent
       const isRainDanceAttach = rainDanceAvailable && G.energyPlayedThisTurn;
-      // Rain Dance extra attach: can only target Water-type Pokémon
       const activeIsWater = !isRainDanceAttach || (p.active?.types || []).some(t => /water/i.test(t));
       if (activeIsWater) {
         actions.push({
@@ -396,13 +394,12 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const isConversion1Blocked = atk.name === 'Conversion 1' &&
           !(G.players[player === 1 ? 2 : 1].active?.weaknesses || []).length;
         const isStatusBlocked = card.status === 'paralyzed' || card.status === 'asleep';
-        // Opponent is fully effect-immune (Agility/Barrier heads, Tail Wag heads)
-        // defenderFull alone (Withdraw/Stiffen) still allows attacking — damage just gets zeroed
+        // Agility/Barrier (defenderFullEffects) and Tail Wag (immuneToAttack) block all effects
         const oppCard = G.players[player === 1 ? 2 : 1].active;
         const oppImmune = !!(oppCard?.defenderFullEffects || oppCard?.immuneToAttack);
         const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked || oppImmune;
         const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${card.status.toUpperCase()})` :
-                         oppImmune ? `${costStr} · ${oppCard.name} IS PROTECTED — no damage` :
+                         oppImmune ? `${costStr} · ${oppCard.name} IS PROTECTED` :
                          isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
                          isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
@@ -1236,7 +1233,6 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     if (heads) {
       myActive.defender = true;
       myActive.defenderFull = true;
-      myActive.defenderFullEffects = true;
       addLog(`${atk.name}: HEADS — ${myActive.name} is fully protected from all attack effects next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no protection.`);
@@ -1432,9 +1428,8 @@ async function performAttack(player, atk) {
     }
   }
 
-  // ── Opponent immunity (Agility/Barrier heads, Tail Wag heads) ───────────────
-  // defenderFullEffects = all effects blocked (Agility/Barrier)
-  // defenderFull alone = damage only blocked (Withdraw/Stiffen) — attack still proceeds
+  // ── Opponent full-effect immunity (Agility/Barrier heads, Tail Wag heads) ────
+  // defenderFull alone (Withdraw/Stiffen) only blocks damage — attack still proceeds
   if (oppActive?.defenderFullEffects) {
     addLog(`${oppActive.name} is fully protected — ${myActive?.name}'s attack has no effect!`, true);
     showToast(`${oppActive.name} is protected!`, true);
