@@ -389,9 +389,13 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
         const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
         const isLeekSlapUsed = card.leekSlapUsed && /can't use this attack again as long as/i.test(atk.text || '');
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed;
+        // Conversion 1 requires the opponent to have a Weakness — block it if they don't
+        const isConversion1Blocked = atk.name === 'Conversion 1' &&
+          !(G.players[player === 1 ? 2 : 1].active?.weaknesses || []).length;
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked;
         const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
+                         isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
                          canAfford ? `${costStr} · ${dmg} dmg` :
                          `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`;
         actions.push({
