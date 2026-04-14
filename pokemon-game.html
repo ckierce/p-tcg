@@ -3673,9 +3673,15 @@ setAiDiff('normal'); // default highlight
 
 function startVsComputer() {
   showPanel('vs-computer-panel');
-  // Wire P1 deck load to enable start button
-  const origLoad = loadDeck;
-  // We'll check readiness via the status element change
+  // Reset status displays — G was cleared on returnToLobby so stale deck names must be cleared too
+  const st1 = document.getElementById('p1-vs-cpu-status');
+  const st2 = document.getElementById('p2-cpu-status');
+  if (st1) { st1.textContent = 'No deck loaded'; st1.style.color = ''; }
+  if (st2) { st2.textContent = 'Click to choose deck'; st2.style.color = ''; }
+  document.querySelector('.setup-player.p1')?.classList.remove('loaded');
+  document.querySelector('#vs-computer-panel .setup-player.p2')?.classList.remove('loaded');
+  const btn = document.getElementById('start-cpu-btn');
+  if (btn) btn.disabled = true;
 }
 
 // Called when either player loads a deck in VS Computer mode
