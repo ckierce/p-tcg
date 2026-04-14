@@ -2319,7 +2319,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 <!-- ══════════════════════════════════════════════ -->
 <!-- LOGIN SCREEN                                   -->
 <!-- ══════════════════════════════════════════════ -->
-<div id="login-screen">
+<div id="login-screen" style="display:none">
   <h1>POKéMON TCG<br>GAME BOARD</h1>
   <div id="login-box">
     <div id="login-name-row">
@@ -2340,21 +2340,28 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div id="login-mode-toggle">
       No account? <a onclick="setAuthMode('signup')">Create one</a>
     </div>
+    <div style="text-align:center;margin-top:4px">
+      <a onclick="cancelLogin()" style="font-size:9px;color:var(--muted);cursor:pointer">← Back to guest</a>
+    </div>
   </div>
 </div>
 
 <!-- ══════════════════════════════════════════════ -->
 <!-- SETUP SCREEN                                   -->
 <!-- ══════════════════════════════════════════════ -->
-<div id="setup-screen" style="display:none">
+<div id="setup-screen">
   <h1>POKéMON TCG<br>GAME BOARD</h1>
 
   <!-- LOBBY -->
   <div id="lobby-panel">
-    <div id="trainer-badge" style="margin-bottom:12px">
+    <div id="trainer-badge" style="margin-bottom:12px;display:none">
       Signed in as <strong id="trainer-name-display">—</strong>
       &nbsp;·&nbsp; <span id="trainer-record">W: 0 / L: 0</span>
       &nbsp;·&nbsp; <a href="#" onclick="doSignOut()" style="color:var(--muted);font-size:9px">sign out</a>
+    </div>
+    <div id="guest-badge" style="margin-bottom:12px">
+      Playing as <strong>Guest</strong>
+      &nbsp;·&nbsp; <a href="#" onclick="showLoginScreen()" style="color:var(--accent);font-size:9px">sign in</a>
     </div>
     <p style="font-size: 11px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
@@ -2770,23 +2777,33 @@ let trainerName = '';     // display name (stored in users/{uid}/name)
 auth.onAuthStateChanged(async user => {
   if (user) {
     currentUser = user;
-    // Load display name from Firebase
-    const nameSnap = await db.ref(`users/${user.uid}/name`).once('value');
-    trainerName = nameSnap.val() || user.email.split('@')[0];
-    // Load win/loss record
-    const recSnap = await db.ref(`users/${user.uid}/record`).once('value');
-    const rec = recSnap.val() || { wins: 0, losses: 0 };
-    // Show lobby, hide login
+    _authInFlight = false;
+    // Show lobby immediately — don't block on DB reads
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('setup-screen').style.display = '';
-    // Populate trainer badge
+    // Load name + record in background, update badge when ready
+    try {
+      const nameSnap = await db.ref(`users/${user.uid}/name`).once('value');
+      trainerName = nameSnap.val() || user.email.split('@')[0];
+    } catch (e) {
+      trainerName = user.email.split('@')[0];
+    }
+    try {
+      const recSnap = await db.ref(`users/${user.uid}/record`).once('value');
+      const rec = recSnap.val() || { wins: 0, losses: 0 };
+      document.getElementById('trainer-record').textContent = `W: ${rec.wins || 0} / L: ${rec.losses || 0}`;
+    } catch (e) { /* rules may not allow read yet */ }
     document.getElementById('trainer-name-display').textContent = trainerName;
-    document.getElementById('trainer-record').textContent = `W: ${rec.wins || 0} / L: ${rec.losses || 0}`;
+    document.getElementById('trainer-badge').style.display = '';
+    document.getElementById('guest-badge').style.display = 'none';
   } else {
     currentUser = null;
-    trainerName = '';
-    document.getElementById('login-screen').style.display = '';
-    document.getElementById('setup-screen').style.display = 'none';
+    trainerName = 'Guest';
+    // Show lobby as guest — no login required
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('setup-screen').style.display = '';
+    document.getElementById('trainer-badge').style.display = 'none';
+    document.getElementById('guest-badge').style.display = '';
   }
 });
 
@@ -2846,7 +2863,10 @@ async function doLoginOrSignup() {
     _authInFlight = true;
     btn.disabled = true; btn.textContent = 'Signing in…';
     try {
-      await auth.signInWithEmailAndPassword(email, password);
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject({ code: 'auth/timeout' }), 10000)
+      );
+      await Promise.race([auth.signInWithEmailAndPassword(email, password), timeout]);
       // onAuthStateChanged hides the screen — don't re-enable here on success
     } catch (e) {
       errEl.textContent = friendlyAuthError(e.code);
@@ -2859,6 +2879,17 @@ async function doLoginOrSignup() {
 // Keep old name as alias so any lingering references don't break
 const doLogin = doLoginOrSignup;
 
+function cancelLogin() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('setup-screen').style.display = '';
+  document.getElementById('login-error').textContent = '';
+}
+
+function showLoginScreen() {
+  document.getElementById('login-screen').style.display = '';
+  document.getElementById('setup-screen').style.display = 'none';
+}
+
 function doSignOut() {
   _authInFlight = false;
   auth.signOut();
@@ -2866,18 +2897,21 @@ function doSignOut() {
   document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
   document.getElementById('login-name').value = '';
+  // onAuthStateChanged null branch restores guest lobby
 }
 
 function friendlyAuthError(code) {
   switch (code) {
     case 'auth/user-not-found':
     case 'auth/wrong-password':
-    case 'auth/invalid-credential': return 'Invalid email or password.';
+    case 'auth/invalid-credential':
+    case 'auth/invalid-login-credentials': return 'Invalid email or password.';
     case 'auth/email-already-in-use': return 'An account with that email already exists.';
     case 'auth/too-many-requests':  return 'Too many attempts. Try again later.';
     case 'auth/invalid-email':      return 'Invalid email address.';
     case 'auth/weak-password':      return 'Password must be at least 6 characters.';
-    default: return 'Sign in failed. Check your credentials.';
+    case 'auth/timeout':            return 'Request timed out — check your connection and try again.';
+    default: return `Sign in failed (${code || 'unknown'}).`;
   }
 }
 
