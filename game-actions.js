@@ -1829,9 +1829,13 @@ function endTurn() {
     addLog(`${prevActive.name} is no longer Paralyzed.`);
   }
 
-  // Also clear PlusPower from active (it was already applied or expires)
+  // Also clear PlusPower and Swords Dance boost from active (applied or expires at end of turn)
   if (G.players[prev].active?.plusPower) {
     G.players[prev].active.plusPower = 0;
+  }
+  if (G.players[prev].active?.swordsDanceActive) {
+    G.players[prev].active.swordsDanceActive = false;
+    addLog(`Swords Dance boost expired — Slash returns to 30 damage.`);
   }
   G.turn = prev === 1 ? 2 : 1;  // ← flip turn
   G.turnNum++;
