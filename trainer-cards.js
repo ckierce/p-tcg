@@ -696,7 +696,21 @@ const TRAINER_EFFECTS = {
     // Pokémon Breeder explicitly skips it.
     const stage1Name = stage2.evolvesFrom; // e.g. "Nidorina" for Nidoqueen
     let rootBasicName = null;
-    if (stage1Name && typeof CARD_DATA === 'object') {
+
+    // Explicit gender-line guard: Nidoran♀/♂ share the display name "Nidoran"
+    // in some card data, so CARD_DATA lookups can return the wrong root.
+    // Hard-code the correct lines here to prevent cross-gender evolution.
+    const GENDER_LINE_BASICS = {
+      'Nidoqueen': 'Nidoran♀',
+      'Nidorina':  'Nidoran♀',
+      'Nidoking':  'Nidoran♂',
+      'Nidorino':  'Nidoran♂',
+    };
+    if (stage2.name in GENDER_LINE_BASICS) {
+      rootBasicName = GENDER_LINE_BASICS[stage2.name];
+    }
+
+    if (!rootBasicName && stage1Name && typeof CARD_DATA === 'object') {
       // Search all cards in CARD_DATA for a Stage 1 with this name
       const stage1Card = Object.values(CARD_DATA).find(c =>
         c.name === stage1Name && c.subtypes?.includes('Stage 1')
