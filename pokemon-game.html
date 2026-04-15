@@ -3717,7 +3717,7 @@ async function refreshMatchesButton() {
     const games = snap.val() || {};
     const hasGames = Object.entries(games).some(([, d]) => {
       if (!d.state || !d.state.started) return false;
-      if (uid) return !d.ownerUid || d.ownerUid === uid;
+      if (uid) return !d.ownerUid || d.ownerUid === uid || d.p2Uid === uid;
       return true;
     });
     btn.style.display = hasGames ? '' : 'none';
@@ -3821,7 +3821,7 @@ function showResumePanel() {
     let entries = Object.entries(games)
       .filter(([, d]) => d.state && d.state.started)
       .sort(([, a], [, b]) => (b.created || 0) - (a.created || 0));
-    if (uid) entries = entries.filter(([, d]) => !d.ownerUid || d.ownerUid === uid);
+    if (uid) entries = entries.filter(([, d]) => !d.ownerUid || d.ownerUid === uid || d.p2Uid === uid);
     renderGameList(entries);
   });
 }
@@ -3984,7 +3984,7 @@ async function joinRoom() {
   showPanel('joined-panel');
 
   // Write P2 name into room, read P1 name for local G
-  await gameRef.update({ p2Name: trainerName || 'Player 2' });
+  await gameRef.update({ p2Name: trainerName || 'Player 2', p2Uid: currentUser ? currentUser.uid : null });
   const roomSnap = await gameRef.once('value');
   const roomData = roomSnap.val() || {};
   G.players[1].name = roomData.p1Name || 'Player 1';
