@@ -1698,6 +1698,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
         }
         setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
         showPromoteBanner(owner);
+        if (typeof pushGameState === 'function') pushGameState();
         return 'promote';
       }
       return 'ko';
@@ -1742,6 +1743,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
     showPromoteBanner(owner);
     addLog(`Player ${owner} must choose a new Active Pokémon.`, true);
+    if (typeof pushGameState === 'function') pushGameState();
     return 'promote';
   }
   return false;
