@@ -241,8 +241,6 @@ const TRAINER_EFFECTS = {
       const old = oppP.active;
       if (old?.status) { addLog(`${old.name}'s ${old.status} cleared on being benched.`); old.status = null; }
       oppP.active = s; oppP.bench[i] = old;
-      // Defensive pad — ensure both benches stay exactly 5 slots after swap
-      while (oppP.bench.length < 5) oppP.bench.push(null);
       addLog(`P${player} used Gust of Wind — opponent's ${oppP.active.name} forced to Active.`, true);
       renderAll();
     };
@@ -286,6 +284,7 @@ const TRAINER_EFFECTS = {
     consume();
     target.defender = true;
     addLog(`P${player} attached Defender to ${target.name} (-20 damage until end of opponent's next turn).`, true);
+    showActionFlash(player, 'DEFENDER', target.name, '−20 damage next attack');
     renderAll();
   },
 
