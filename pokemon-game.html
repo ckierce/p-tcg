@@ -4160,21 +4160,26 @@ function receiveGameState(state) {
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   initDragDrop();
   applyRoleVisibility();
-  if (!G.started && wasStarted) {
-    const p1prizes = G.players[1].prizes.filter(p => p).length;
-    const p2prizes = G.players[2].prizes.filter(p => p).length;
-    // Fewer prizes remaining = took more prizes = winner
-    // Fall back to checking bench/active if tied (deck-out or last-Pokémon win)
-    let winner;
-    if (p1prizes < p2prizes) winner = 1;
-    else if (p2prizes < p1prizes) winner = 2;
-    else {
-      // Same prizes remaining — win was by KO/deck-out; check who still has Pokémon
-      const p1alive = G.players[1].active || G.players[1].bench.some(b => b);
-      const p2alive = G.players[2].active || G.players[2].bench.some(b => b);
-      winner = p1alive && !p2alive ? 1 : p2alive && !p1alive ? 2 : 1;
+  if (!G.started) {
+    // Show win screen whenever game has ended — check if not already showing
+    // (don't guard on wasStarted: client may have missed the transition)
+    const winScreen = document.getElementById('win-screen');
+    if (!winScreen?.classList.contains('show')) {
+      const p1prizes = G.players[1].prizes.filter(p => p).length;
+      const p2prizes = G.players[2].prizes.filter(p => p).length;
+      // Fewer prizes remaining = took more prizes = winner
+      // Fall back to checking bench/active if tied (deck-out or last-Pokémon win)
+      let winner;
+      if (p1prizes < p2prizes) winner = 1;
+      else if (p2prizes < p1prizes) winner = 2;
+      else {
+        // Same prizes remaining — win was by KO/deck-out; check who still has Pokémon
+        const p1alive = G.players[1].active || G.players[1].bench.some(b => b);
+        const p2alive = G.players[2].active || G.players[2].bench.some(b => b);
+        winner = p1alive && !p2alive ? 1 : p2alive && !p1alive ? 2 : 1;
+      }
+      showWinScreen(winner, '');
     }
-    showWinScreen(winner, '');
     return;
   }
   // Show turn flash if turn just switched to this player

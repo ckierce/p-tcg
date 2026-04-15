@@ -1777,6 +1777,10 @@ function resolvePromotion(player, benchIdx) {
   hidePromoteBanner();
   clearHighlights();
   renderAll();
+  // Push state before endTurn so the cleared PROMOTE phase reaches both clients
+  // (endTurn's push only fires when myRole === G.turn, but the promoting player
+  // may not be the current turn player in multiplayer)
+  if (typeof pushGameState === 'function') pushGameState();
   endTurn();
 }
 
