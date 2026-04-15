@@ -1330,6 +1330,14 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
 
+    // If resolveCoinFlipDamage already handled this attack's coin flip,
+    // skip any status effects that require their own coin flip (they would be double-flipping
+    // the same flip that already determined damage). Unconditional status effects still apply.
+    if (atk._coinFlipHandled && (eff.coinRequired || eff.type === 'either')) continue;
+
+    // Don't apply status effects if the game ended (opponent was KO'd)
+    if (!G.started) continue;
+
     // "either" type: single flip, heads=one status, tails=another
     if (eff.type === 'either') {
       const headsName = eff.heads.charAt(0).toUpperCase() + eff.heads.slice(1);
@@ -1486,7 +1494,10 @@ async function performAttack(player, atk) {
   const _hasModifyDamage = typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name]?.modifyDamage;
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = _hasModifyDamage ? null : await resolveCoinFlipDamage(atk, energyCount, myActive, player);
-  if (coinDmg !== null) dmg = coinDmg;
+  if (coinDmg !== null) {
+    dmg = coinDmg;
+    atk._coinFlipHandled = true; // signal that a flip already resolved this attack's main coin
+  }
 
   // Pre-damage modifications (move-effects.js: Karate Chop, Flail, Rage, etc.)
   if (typeof preDamageModify === 'function') {
