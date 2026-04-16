@@ -1688,7 +1688,10 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
     if (card.prevStages && card.prevStages.length) {
       G.players[owner].discard.push(...card.prevStages);
     }
-    // Discard attached energy
+    // Discard attached energy to the owner's discard pile
+    if (card.attachedEnergy && card.attachedEnergy.length) {
+      G.players[owner].discard.push(...card.attachedEnergy);
+    }
     G.players[owner].active = null;
     // Defensive pad — bench must always be exactly 5 slots
     while (G.players[owner].bench.length < 5) G.players[owner].bench.push(null);
@@ -1877,8 +1880,7 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
-    // smokescreened: NOT cleared here — performAttack clears it after the coin flip,
-    // or on the following endTurn if the player passed/retreated without attacking.
+    nextActive.smokescreened = false; // smokescreen lasts one opponent turn regardless of whether they attacked
     // Defender expires at end of the opponent's next turn — that's now (the new current player
     // was the defending player last turn; their defender expires as their turn begins).
     if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
@@ -1893,9 +1895,6 @@ function endTurn() {
     // Clear flags that were set ON the previous player (attacker) during their turn
     // defenderReduction is for moves like Scrunch/Harden that set it on self
     lastActive.defenderReduction = 0;
-    // Smokescreen expires at the end of the smokescreened player's turn.
-    // performAttack clears it mid-turn if they attacked; this handles retreat/pass.
-    lastActive.smokescreened = false;
   }
   // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
   // so we do NOT clear it here — it clears itself when the attack fires.
