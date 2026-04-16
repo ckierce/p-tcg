@@ -895,7 +895,10 @@ const MOVE_EFFECTS = {
       if (!oppActive?.attacks?.length) { addLog(`${atk.name}: opponent has no attacks to copy!`); return; }
       let chosenAtk;
       if (oppActive.attacks.length === 1) { chosenAtk = oppActive.attacks[0]; }
-      else {
+      else if (player !== myRole) {
+        // AI picks randomly among the opponent's attacks
+        chosenAtk = oppActive.attacks[Math.floor(Math.random() * oppActive.attacks.length)];
+      } else {
         chosenAtk = await new Promise(resolve => {
           showActionMenu(`Metronome — copy attack from ${oppActive.name}`,
             oppActive.attacks.map(a => ({

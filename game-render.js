@@ -716,13 +716,28 @@ let ENERGY_ICONS = {};
 // round-trip and enrichCard merge. Add new fields HERE only; enrichCard picks
 // them up automatically in both code paths.
 const GAME_STATE_DEFAULTS = {
-  status:            null,
-  damage:            0,
-  defender:          false,
-  defenderFull:      false,
-  defenderThreshold: 0,
-  plusPower:         0,
-  nextAttackDouble:  false,
+  status:               null,
+  damage:               0,
+  defender:             false,
+  defenderFull:         false,
+  defenderFullEffects:  false,
+  defenderThreshold:    0,
+  defenderReduction:    0,
+  plusPower:            0,
+  nextAttackDouble:     false,
+  smokescreened:        false,
+  immuneToAttack:       false,
+  disabledAttack:       null,
+  cantRetreat:          false,
+  destinyBond:          false,
+  leekSlapUsed:         false,
+  pounceActive:         false,
+  pounceReduction:      0,
+  swordsDanceActive:    false,
+  attackReduction:      0,
+  conversionWeakness:   null,
+  conversionResistance: null,
+  trainerBlocked:       false,
 };
 
 function enrichCard(card) {
