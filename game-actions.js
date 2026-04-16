@@ -1157,21 +1157,6 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     addLog(`${myActive.name} removed all damage counters!`, true);
   }
 
-  // ── Attack energy cost discard: energy that must be discarded to use the attack ──
-  // Covers: "in order to use this attack" (Charizard Fire Spin) AND
-  //         "in order to [do/prevent]..." (Mewtwo Barrier, Arcanine Flamethrower, etc.)
-  const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to/i
-  );
-  if (discardCostMatch && myActive) {
-    const rawN = discardCostMatch[1].toLowerCase();
-    const discarded = rawN === 'all'
-      ? myActive.attachedEnergy.splice(0)
-      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
-    G.players[player].discard.push(...discarded);
-    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
-  }
-
 
   // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
   const _hasSelfProtectPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
@@ -1641,6 +1626,21 @@ async function performAttack(player, atk) {
     dmg = 0;
   }
 
+  // ── Attack energy cost discard (paid before damage — survives KO early-return) ──
+  // Covers: "in order to use this attack" (Charizard Fire Spin) AND
+  //         "in order to [do/prevent]..." (Mewtwo Barrier, Arcanine Flamethrower, etc.)
+  const discardCostMatch = (atk.text || '').match(
+    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to/i
+  );
+  if (discardCostMatch && myActive) {
+    const rawN = discardCostMatch[1].toLowerCase();
+    const discarded = rawN === 'all'
+      ? myActive.attachedEnergy.splice(0)
+      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+    G.players[player].discard.push(...discarded);
+    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
+  }
+
   // ── Apply damage: W/R, power mods, KO check ─────────────────────────────────
   const dmgResult = await computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, attackerSelfKOd);
   if (dmgResult.done) return;
@@ -1814,29 +1814,35 @@ function endTurn() {
     }
   }
   const prev = G.turn;
+  // Flip turn now so that if a poison/burn KO triggers PROMOTE and returns early,
+  // G.turn is already correct and the game doesn't freeze on the attacker's turn.
+  G.turn = prev === 1 ? 2 : 1;
+  G.turnNum++;
 
-  // Apply between-turn status effects to ALL active Pokémon (both players)
-  // Poison and Burn tick once per turn boundary regardless of whose turn it was
-  for (const pNum of [1, 2]) {
-    const active = G.players[pNum].active;
-    const oppNum = pNum === 1 ? 2 : 1;
-    if (!active) continue;
+  // Apply end-of-turn status effects to the PREVIOUS player's active Pokémon only.
+  // TCG rule: poison/burn ticks at the end of YOUR turn, not your opponent's.
+  // Ticking both players here was causing: (a) poison applying on the same turn it
+  // was inflicted, and (b) the next-player's tick incorrectly consuming their turn.
+  {
+    const active = G.players[prev].active;
+    const oppNum = prev === 1 ? 2 : 1;
+    if (active) {
+      if (active.status === 'poisoned' || active.status === 'poisoned-toxic') {
+        const dmg = active.status === 'poisoned-toxic' ? 20 : 10;
+        active.damage = (active.damage || 0) + dmg;
+        addLog(`${active.name} took ${dmg} Poison damage! (${active.damage}/${active.hp} HP)`);
+        const koResult = checkKO(oppNum, prev, active, false);
+        if (koResult === 'win') { renderAll(); return; }
+        if (koResult === 'promote') { renderAll(); return; }
+      }
 
-    if (active.status === 'poisoned' || active.status === 'poisoned-toxic') {
-      const dmg = active.status === 'poisoned-toxic' ? 20 : 10;
-      active.damage = (active.damage || 0) + dmg;
-      addLog(`${active.name} took ${dmg} Poison damage! (${active.damage}/${active.hp} HP)`);
-      const koResult = checkKO(oppNum, pNum, active, false);
-      if (koResult === 'win') { renderAll(); return; }
-      if (koResult === 'promote') { renderAll(); return; }
-    }
-
-    if (active.status === 'burned') {
-      active.damage = (active.damage || 0) + 20;
-      addLog(`${active.name} took 20 Burn damage! (${active.damage}/${active.hp} HP)`);
-      const koResult = checkKO(oppNum, pNum, active, false);
-      if (koResult === 'win') { renderAll(); return; }
-      if (koResult === 'promote') { renderAll(); return; }
+      if (active.status === 'burned') {
+        active.damage = (active.damage || 0) + 20;
+        addLog(`${active.name} took 20 Burn damage! (${active.damage}/${active.hp} HP)`);
+        const koResult = checkKO(oppNum, prev, active, false);
+        if (koResult === 'win') { renderAll(); return; }
+        if (koResult === 'promote') { renderAll(); return; }
+      }
     }
   }
 
@@ -1855,9 +1861,6 @@ function endTurn() {
     G.players[prev].active.swordsDanceActive = false;
     addLog(`Swords Dance boost expired — Slash returns to 30 damage.`);
   }
-  G.turn = prev === 1 ? 2 : 1;  // ← flip turn
-  G.turnNum++;
-
   // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
   if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
   transitionPhase('DRAW');
