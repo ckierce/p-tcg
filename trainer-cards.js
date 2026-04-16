@@ -730,17 +730,20 @@ const TRAINER_EFFECTS = {
       return;
     }
 
-    // Valid targets: matching Basic on the field that wasn't played this turn
+    // Valid targets: matching Basic on the field that wasn't played this turn.
+    // Normalize gender symbols (♀/♂) when matching because cards.json stores
+    // "Nidoran" without the symbol but the hardcoded GENDER_LINE_BASICS uses "Nidoran♀/♂".
+    const _normName = n => (n || '').replace(/[♀♂]/g, '').trim();
     const allInPlay = [p.active, ...p.bench].filter(Boolean);
     const validTargets = allInPlay.filter(c =>
       c.supertype === 'Pokémon' &&
       c.subtypes?.includes('Basic') &&
-      c.name === rootBasicName &&
+      _normName(c.name) === _normName(rootBasicName) &&
       !(G.evolvedThisTurn || []).includes(c.uid)
     );
 
     if (!validTargets.length) {
-      const hasBasic = allInPlay.some(c => c.name === rootBasicName);
+      const hasBasic = allInPlay.some(c => _normName(c.name) === _normName(rootBasicName));
       showToast(hasBasic
         ? `${rootBasicName} was played this turn and can't be evolved yet!`
         : `No ${rootBasicName} in play to evolve into ${stage2.name}!`, true);
