@@ -1384,7 +1384,12 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
 
 }
 
+let _performAttackLocked = false;
+
 async function performAttack(player, atk) {
+  if (_performAttackLocked) { showToast('Action in progress — please wait.', true); return; }
+  _performAttackLocked = true;
+  try {
   const opp = player === 1 ? 2 : 1;
   const myActive = G.players[player].active;
   const oppActive = G.players[opp].active;
@@ -1663,6 +1668,9 @@ async function performAttack(player, atk) {
   renderWhenIdle();
   _flashQueue.push({ fn: () => endTurn(), duration: 0 });
   _runFlashQueue();
+  } finally {
+    _performAttackLocked = false;
+  }
 }
 
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
@@ -1927,6 +1935,9 @@ function endTurn() {
   drawCard(G.turn, true);
   renderAll();
   showTurnFlash(G.turn);
+  // Push state after every turn end so between-turn effects (poison, burn)
+  // reach both clients immediately — not just on KO/promote paths.
+  if (typeof pushGameState === 'function') pushGameState();
 
   if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
     const sleepName = G.pendingSleepFlip;
