@@ -1052,6 +1052,7 @@ function spawnConfetti(winnerNum) {
 let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
+let _cardPickerCards = []; // cards array for energy value calculation
 
 async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone = false } = {}) {
   // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
@@ -1067,6 +1068,7 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
     const options = { showDone };
     _cardPickerSelected = [];
     _cardPickerMax = maxSelect;
+    _cardPickerCards = cards;
 
     document.getElementById('card-picker-title').textContent = title;
     document.getElementById('card-picker-subtitle').textContent = subtitle || '';
@@ -1133,10 +1135,17 @@ function togglePickerCard(idx) {
   const confirmBtn = document.getElementById('card-picker-confirm');
   confirmBtn.disabled = _cardPickerSelected.length === 0;
 
-  // Update subtitle with selection count
+  // Update subtitle with selection count — use energy value if cards are energy
   const sub = document.getElementById('card-picker-subtitle');
   if (_cardPickerMax > 1) {
-    sub.textContent = `Selected: ${_cardPickerSelected.length} / ${_cardPickerMax}`;
+    const allEnergy = _cardPickerCards.every(c => c.supertype === 'Energy');
+    if (allEnergy && typeof energyValue === 'function') {
+      const selectedCards = _cardPickerSelected.map(i => _cardPickerCards[i]);
+      const val = energyValue(selectedCards);
+      sub.textContent = `Selected: ${val} / ${_cardPickerMax} energy`;
+    } else {
+      sub.textContent = `Selected: ${_cardPickerSelected.length} / ${_cardPickerMax}`;
+    }
   }
 }
 
