@@ -101,8 +101,10 @@ function hasInvisibleWall(card) {
 }
 
 // Charizard — Energy Burn: all attached energy counts as Fire.
+// This is a passive type-conversion property, not an activatable Power —
+// it is NOT suppressed by Charizard's own status condition (only by Muk).
 function hasEnergyBurn(card) {
-  return isPowerActive(card, 'Energy Burn');
+  return hasPower(card, 'Energy Burn') && !isMukActive();
 }
 
 // Blastoise — Rain Dance: may attach unlimited Water energy to Water Pokémon per turn.
