@@ -359,6 +359,22 @@ section('applyWeaknessResistance (arithmetic contract)');
     _applyWR(40, ['Water'], waterWeak, noWR) === 40);
 }
 
+
+// Energy Burn with DCE — DCE must contribute 2 Fire tokens, not 1
+section('canAffordAttack — Energy Burn + DCE');
+_energyBurn = true;
+
+assert('Energy Burn: DCE counts as 2 Fire → satisfies FFFF cost (DCE+F+F)',
+  canAffordAttack([DCE, F, F], ['Fire', 'Fire', 'Fire', 'Fire'], { name: 'Charizard' }) === true);
+
+assert('Energy Burn: DCE alone counts as 2 Fire → satisfies FF cost',
+  canAffordAttack([DCE], ['Fire', 'Fire'], { name: 'Charizard' }) === true);
+
+assert('Energy Burn: DCE alone does NOT satisfy FFF cost (only 2 tokens)',
+  canAffordAttack([DCE], ['Fire', 'Fire', 'Fire'], { name: 'Charizard' }) === false);
+
+_energyBurn = false;
+
 // ─── Results ─────────────────────────────────────────────────────────────────
 
 console.log(`\n${'═'.repeat(64)}`);

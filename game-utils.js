@@ -49,7 +49,9 @@ function canAffordAttack(attachedEnergy, cost, attackerCard) {
   for (const e of (attachedEnergy || [])) {
     const name = e.name || '';
     if (energyBurn) {
-      pool.push('Fire');
+      // DCE still counts as 2 energy under Energy Burn — both become Fire
+      const count = /double colorless/i.test(name) ? 2 : 1;
+      for (let i = 0; i < count; i++) pool.push('Fire');
     } else if (/double colorless/i.test(name)) {
       pool.push('Colorless', 'Colorless');
     } else {
