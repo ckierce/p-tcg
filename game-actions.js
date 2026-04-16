@@ -458,7 +458,7 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
 function attemptRetreat(player) {
   const p = G.players[player];
   if (!p.active) return;
-  if (p.active.canRetreat === false) { showToast(`${p.active.name} cannot retreat!`, true); return; }
+  if (p.active.cantRetreat) { showToast(`${p.active.name} cannot retreat this turn!`, true); return; }
 
   // Paralyzed and Asleep Pokémon cannot retreat (TCG rule)
   if (p.active.status === 'paralyzed') {
@@ -512,6 +512,7 @@ async function doRetreat(player, p) {
     document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
   });
   setMidline(`Choose a bench Pokémon to switch in for ${p.active.name}`);
+  showToast(`Choose a bench Pokémon to retreat to!`, false);
 }
 
 async function executeRetreat(player, benchIdx) {
