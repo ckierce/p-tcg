@@ -3846,6 +3846,9 @@ function resumeGame(code) {
     [1,2].forEach(p => {
       const pl = G.players[p];
       if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
+      else if (!pl.bench) pl.bench = [];
+      // Always pad bench to exactly 5 slots — Firebase drops trailing nulls
+      while (pl.bench.length < 5) pl.bench.push(null);
       if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
       if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
       if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
@@ -3864,6 +3867,9 @@ function resumeGame(code) {
         [1,2].forEach(p => {
           const pl = G.players[p];
           if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
+          else if (!pl.bench) pl.bench = [];
+          // Always pad bench to exactly 5 slots — Firebase drops trailing nulls
+          while (pl.bench.length < 5) pl.bench.push(null);
           if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
           if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
           if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
