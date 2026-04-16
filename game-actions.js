@@ -1880,7 +1880,8 @@ function endTurn() {
     nextActive.cantRetreat = false;
     nextActive.attackReduction = 0;
     nextActive.disabledAttack = null;
-    nextActive.smokescreened = false; // smokescreen lasts one opponent turn regardless of whether they attacked
+    // smokescreened: NOT cleared here — performAttack clears it after the coin flip,
+    // or on the following endTurn via lastActive if the player passed/retreated.
     // Defender expires at end of the opponent's next turn — that's now (the new current player
     // was the defending player last turn; their defender expires as their turn begins).
     if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
@@ -1895,6 +1896,9 @@ function endTurn() {
     // Clear flags that were set ON the previous player (attacker) during their turn
     // defenderReduction is for moves like Scrunch/Harden that set it on self
     lastActive.defenderReduction = 0;
+    // Smokescreen expires at end of the smokescreened player's turn.
+    // performAttack clears it mid-turn if they attacked; this handles retreat/pass.
+    lastActive.smokescreened = false;
   }
   // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
   // so we do NOT clear it here — it clears itself when the attack fires.
