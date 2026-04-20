@@ -2257,6 +2257,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div class="setup-player-status" id="p1-deck-status">No deck loaded</div>
       </div>
     </div>
+    <div style="margin-top:8px">
+      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM DECK</button>
+    </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
     <div id="setup-hint" style="font-size: 9px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
   </div>
@@ -2276,6 +2279,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div class="setup-player-label">AI DECK (P2)</div>
         <div class="setup-player-status" id="p2-cpu-status">Click to choose deck</div>
       </div>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:20px;justify-content:center">
+      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM</button>
+      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM</button>
     </div>
     <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size: 15px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
     <div id="cpu-difficulty-row" style="margin-top:12px;display:flex;gap:10px;justify-content:center;align-items:center">
@@ -2308,6 +2315,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div class="setup-player-label">YOUR DECK (P2)</div>
         <div class="setup-player-status" id="p2-deck-status">No deck loaded</div>
       </div>
+    </div>
+    <div style="margin-top:8px">
+      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM DECK</button>
     </div>
     <div style="font-size: 9px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
   </div>
@@ -2731,6 +2741,41 @@ function selectPlayer(p) {
 }
 function closeLoadModal() {
   document.getElementById('load-modal').classList.remove('show');
+}
+
+// ── Load a random deck from Firebase for the given player slot ──────────────
+// Walks the same folder structure as openLoadModal() — both legacy flat decks
+// (under decks/<name>) and folder-grouped decks (under decks/<folder>/<name>).
+// Picks one uniformly at random and routes through loadDeck() so the slot UI,
+// broadcast, and in-memory deck state all update consistently.
+async function loadRandomDeck(player) {
+  loadingForPlayer = player;
+  showToast('🎲 Picking a random deck...');
+  try {
+    const snap = await db.ref('decks').once('value');
+    const data = snap.val() || {};
+    function isLegacyDeck(node) { return node && typeof node === 'object' && node.deck && node.name; }
+    // Collect every (fKey, deckName) pair across both layouts.
+    const all = [];
+    for (const [fKey, node] of Object.entries(data)) {
+      if (isLegacyDeck(node)) {
+        all.push({ fKey: '_uncategorized', deckName: node.name });
+      } else if (node && typeof node === 'object' && !node.deck) {
+        for (const child of Object.values(node)) {
+          if (isLegacyDeck(child)) all.push({ fKey, deckName: child.name });
+        }
+      }
+    }
+    if (!all.length) {
+      showToast('No decks found! Build one in the deck builder first.', true);
+      return;
+    }
+    const pick = all[Math.floor(Math.random() * all.length)];
+    await loadDeck(pick.fKey, pick.deckName);
+  } catch (e) {
+    showToast('Error picking random deck', true);
+    console.error('loadRandomDeck error:', e);
+  }
 }
 
 async function loadDeck(fKey, deckName) {
