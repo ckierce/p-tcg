@@ -294,6 +294,15 @@ h1, h2, h3 { font-family: var(--font-title); }
   text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
 }
 
+.opp-aux-count {
+  font-size: 12px;
+  color: var(--p2color);
+  font-weight: 600;
+  line-height: 1;
+  min-width: 16px;
+  text-align: center;
+}
+
 /* Opp hand indicator */
 .opp-hand-count {
   font-size: 11px;
@@ -391,6 +400,11 @@ h1, h2, h3 { font-family: var(--font-title); }
   gap: 4px;
   align-items: center;
   flex-shrink: 0;
+}
+.opp-aux-pair {
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 .opp-deck-slot {
   width: 56px;
@@ -775,13 +789,23 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .player-deck-slot:hover { border-color: var(--accent); }
 
 #deck-count-p1 {
-  font-size: 15px;
-  color: #fff;
+  font-size: 13px;
+  color: var(--p1color);
   line-height: 1;
-  margin-bottom: 3px;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
 }
-#deck-count-p1 span { font-size: 8px; color: #ddd; display: block; margin-top: 2px; text-shadow: 0 1px 3px rgba(0,0,0,0.9); }
+.player-aux-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.player-aux-count {
+  font-size: 13px;
+  color: var(--p1color);
+  font-weight: 600;
+  line-height: 1;
+  min-width: 18px;
+  text-align: right;
+}
 
 .player-discard-slot {
   width: var(--card-w-sm);
@@ -2334,10 +2358,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div id="opp-right">
           <div class="opp-prizes" id="prizes-p2"></div>
           <div class="opp-aux-row">
-            <div class="opp-deck-slot">
-              <div id="deck-count-p2" style="font-size: 12px;color:var(--muted);text-align:center;line-height:1.4">0<br><span style="font-size: 8px">deck</span></div>
+            <div class="opp-aux-pair">
+              <div id="deck-count-p2" class="opp-aux-count">0</div>
+              <div class="opp-deck-slot"></div>
             </div>
-            <div class="opp-discard" id="discard-p2"><span style="font-size: 8px">DISC</span></div>
+            <div class="opp-aux-pair">
+              <div id="discard-count-p2" class="opp-aux-count">0</div>
+              <div class="opp-discard" id="discard-p2"><span style="font-size: 8px">DISC</span></div>
+            </div>
           </div>
           <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
         </div>
@@ -2382,13 +2410,18 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div class="prize-grid" id="prizes-p1"></div>
       </div>
 
-      <!-- Deck + discard — right side, below midline -->
+      <!-- Deck + discard — right side, below midline.
+           Counts sit BESIDE the cards, never overlaid on the art. -->
       <div id="player-aux">
-        <div class="player-deck-slot" onclick="drawCard(G.turn)">
-          <div id="deck-count-p1">0<span>cards</span></div>
+        <div class="player-aux-row">
+          <div id="deck-count-p1" class="player-aux-count">0</div>
+          <div class="player-deck-slot" onclick="drawCard(G.turn)"></div>
         </div>
-        <div class="player-discard-slot" id="discard-p1">
-          <span style="font-size: 8px">DISCARD</span>
+        <div class="player-aux-row">
+          <div id="discard-count-p1" class="player-aux-count">0</div>
+          <div class="player-discard-slot" id="discard-p1">
+            <span style="font-size: 8px">DISCARD</span>
+          </div>
         </div>
       </div>
 
@@ -4297,15 +4330,24 @@ async function performAttack(player, atk) {
   }
   const _dmgDealt = dmg;
 
-  // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
-  if (/draw a card/i.test(atk.text || '')) {
+  // Skip the generic draw-a-card / draw-N-cards regexes below when a named
+  // MOVE_EFFECTS handler exists for this attack — that handler is responsible
+  // for the draw and the regex would otherwise double up. This is the same
+  // pattern as the self-protect guard further down (`_hasSelfProtectPostAttack`).
+  // Examples this prevents from double-drawing:
+  //   • Kangaskhan "Fetch"   — text "Draw a card." + named handler
+  //   • Meowth     "Pay Day" — text "...if heads, draw a card." + named handler
+  const _hasNamedPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+
+  // ── Draw a card: "Draw a card." (generic fallback) ──
+  if (!_hasNamedPostAttack && /draw a card/i.test(atk.text || '')) {
     drawCard(player, true);
     addLog(`${atk.name}: ${myActive?.name || 'attacker'} drew a card.`, true);
   }
 
-  // ── Draw N cards: "Draw N cards." ──
+  // ── Draw N cards: "Draw N cards." (generic fallback) ──
   const drawNMatch = (atk.text || '').match(/draw (\d+) cards?/i);
-  if (drawNMatch) {
+  if (!_hasNamedPostAttack && drawNMatch) {
     const n = parseInt(drawNMatch[1]);
     for (let i = 0; i < n; i++) drawCard(player, true);
     addLog(`${atk.name}: drew ${n} card(s).`, true);
@@ -4524,6 +4566,8 @@ async function performAttack(player, atk) {
     if (myBenchLeft.length === 0) {
       G.started = false;
       showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
+      // Push the win state explicitly — see comment at the prize-win site.
+      if (typeof pushGameState === 'function') pushGameState();
       renderWhenIdle(); return;
     } else if (myBenchLeft.length === 1) {
       const idx = G.players[player].bench.findIndex(s => s !== null);
@@ -4621,6 +4665,10 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
         addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
         G.started = false;
         showWinScreen(prizeWinner, 'ALL 6 PRIZES TAKEN');
+        // Push the win state explicitly: renderAll() gates pushGameState on
+        // G.started=true, so without this the losing client would never see
+        // the game-over transition and could keep playing.
+        if (typeof pushGameState === 'function') pushGameState();
         return 'win';
       }
     }
@@ -4631,6 +4679,8 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
       G.started = false;
       showWinScreen(prizeWinner, 'OPPONENT HAS NO POKÉMON LEFT');
+      // Push the win state explicitly — see comment at the prize-win site.
+      if (typeof pushGameState === 'function') pushGameState();
       return 'win';
     }
 
@@ -4887,12 +4937,14 @@ function renderField(player) {
       if (slotEl) renderSlotP1(slotEl, p.bench[i]);
     }
     const discardEl = document.getElementById('discard-p1');
+    const discardCountEl1 = document.getElementById('discard-count-p1');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}</div>`;
+      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}">`;
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISCARD</span>`;
     }
+    if (discardCountEl1) discardCountEl1.textContent = p.discard.length;
     // Bottom hand label color
     const label1 = document.getElementById('hand-label-p1');
     if (label1) label1.style.color = isP2Perspective ? 'var(--p2color)' : 'var(--p1color)';
@@ -4984,12 +5036,14 @@ function renderField(player) {
     }
     // Opponent discard
     const discardEl = document.getElementById('discard-p2');
+    const discardCountEl2 = document.getElementById('discard-count-p2');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}"><div class="discard-count">${p.discard.length}</div>`;
+      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}">`;
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISC</span>`;
     }
+    if (discardCountEl2) discardCountEl2.textContent = p.discard.length;
   }
 }
 

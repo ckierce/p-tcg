@@ -896,6 +896,150 @@ function mergeIncomingForReceiver(localG, incomingState, myRole) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: KO-win must push state even though G.started becomes false
+//
+// Bug: in networked 2P, when checkKO() detects a win it sets G.started = false
+// and calls showWinScreen() locally, then returns 'win'. The caller invokes
+// renderAll(), which gates pushGameState() on G.started === true — so the
+// transition never reaches Firebase and the LOSING client never sees that the
+// game ended. They keep playing on a board the attacker considers over.
+//
+// Fix lives in pokemon-game.html checkKO(): after each showWinScreen() call,
+// invoke pushGameState() explicitly. The deck-out path in drawCard() already
+// does this; KO win sites needed the same.
+//
+// This test models the rule: "if the local client has just transitioned from
+// started to not-started, a push must be issued." The push happens at three
+// total sites: deck-out, prize-take win, last-Pokémon-KO win.
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n── regression: game-end must push to Firebase ─────────────────');
+
+// Model the gating rule used by renderAll: pushGameState only fires when
+// G.started is true. This means any code path that flips started to false
+// must push EXPLICITLY before returning, otherwise the opponent never learns.
+function renderAllWouldPush(g, myRole, vsComputer) {
+  return myRole !== null && g.started === true && !vsComputer;
+}
+
+{
+  const gAfterWin = { started: false, phase: 'MAIN' };
+  assert('renderAll() will NOT push after a win (G.started=false)',
+    renderAllWouldPush(gAfterWin, /*myRole=*/1, /*vsComputer=*/false) === false);
+  assert('Therefore: KO win sites MUST call pushGameState() explicitly',
+    true); // documentation assertion — the real check is grep-based below
+}
+
+// Grep-based check: every site that sets G.started = false in pokemon-game.html
+// must be followed (within ~5 lines) by a pushGameState() call. This catches
+// future regressions where a new win/loss site is added without the explicit push.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'pokemon-game.html');
+  if (fs.existsSync(htmlPath)) {
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const lines = html.split('\n');
+    const issues = [];
+    lines.forEach((line, i) => {
+      if (/G\.started\s*=\s*false/.test(line)) {
+        // Look ahead 6 lines for either pushGameState() or playAgain()/reset
+        // (playAgain is the cleanup path, doesn't need to push)
+        const window = lines.slice(i, i + 7).join('\n');
+        const isCleanup = /\bplayAgain\b|\bG\s*=\s*\{/.test(window);
+        const hasPush = /pushGameState\s*\(/.test(window);
+        if (!isCleanup && !hasPush) {
+          issues.push(`line ${i+1}: ${line.trim()}`);
+        }
+      }
+    });
+    assert('Every G.started=false site is followed by pushGameState() (or is cleanup)',
+      issues.length === 0);
+    if (issues.length > 0) {
+      console.error('    Sites missing pushGameState():');
+      issues.forEach(s => console.error('      ' + s));
+    }
+  } else {
+    console.log('  (pokemon-game.html not found — skipping grep check)');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Generic draw-a-card regex must not double-fire with named handler
+//
+// Bug: Kangaskhan's Fetch attack has text "Draw a card." Its named handler in
+// move-effects.js (`'Fetch': { postAttack: ... drawCard }`) draws one card.
+// But pokemon-game.html ALSO has a generic regex /draw a card/i that matches
+// the same text and draws another card. Result: 2 cards drawn per Fetch.
+//
+// Same bug applies to Meowth's Pay Day on a heads flip: the named handler
+// draws (gated on coin flip) AND the generic regex draws (unconditional).
+//
+// Fix: the generic draw-card regexes are guarded by _hasNamedPostAttack —
+// when MOVE_EFFECTS[atk.name]?.postAttack exists, the generic regex is skipped.
+// This mirrors the existing _hasSelfProtectPostAttack pattern in the same file.
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n── regression: named handler suppresses generic draw-card regex ─');
+
+// Model the dispatch rule: when both a named handler and a generic regex would
+// fire for the same effect category, only the named handler should run.
+function shouldFireGenericDraw(atkText, hasNamedPostAttack) {
+  return !hasNamedPostAttack && /draw a card/i.test(atkText || '');
+}
+
+{
+  // Kangaskhan Fetch
+  assert('Fetch: named handler exists → generic draw is SUPPRESSED',
+    shouldFireGenericDraw('Draw a card.', /*hasNamedPostAttack=*/true) === false);
+  // Future hypothetical attack with no named handler
+  assert('Hypothetical "Draw a card." attack with NO handler → generic still fires',
+    shouldFireGenericDraw('Draw a card.', /*hasNamedPostAttack=*/false) === true);
+}
+{
+  // Pay Day's text contains "draw a card" inside a coin-flip clause.
+  // The named handler does the conditional draw; generic regex must be suppressed.
+  const payDayText = 'Flip a coin. If heads, draw a card.';
+  assert('Pay Day: named handler exists → generic draw is SUPPRESSED',
+    shouldFireGenericDraw(payDayText, /*hasNamedPostAttack=*/true) === false);
+  assert('Pay Day text WOULD match generic /draw a card/i if unguarded',
+    /draw a card/i.test(payDayText) === true);
+}
+{
+  // Attack with no draw-card text — generic regex shouldn't fire regardless
+  assert('Attack without draw-card text: generic does not fire even with no handler',
+    shouldFireGenericDraw('Does 30 damage.', false) === false);
+}
+
+// Grep-based check: every generic draw-card regex in pokemon-game.html must be
+// guarded by a named-handler check. Catches future regressions if someone adds
+// a new generic effect-text regex without the guard.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'pokemon-game.html');
+  if (fs.existsSync(htmlPath)) {
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const lines = html.split('\n');
+    const issues = [];
+    lines.forEach((line, i) => {
+      if (/\/draw a card\/i\.test/.test(line) || /\/draw \(\\d\+\) cards/.test(line)) {
+        // Look at the surrounding ~6 lines for the named-handler guard
+        const window = lines.slice(Math.max(0, i - 3), i + 4).join('\n');
+        const guarded = /_hasNamedPostAttack|MOVE_EFFECTS\[atk\.name\]/.test(window);
+        if (!guarded) issues.push(`line ${i+1}: ${line.trim()}`);
+      }
+    });
+    assert('Every generic draw-card regex is guarded by named-handler check',
+      issues.length === 0);
+    if (issues.length > 0) {
+      console.error('    Unguarded sites:');
+      issues.forEach(s => console.error('      ' + s));
+    }
+  } else {
+    console.log('  (pokemon-game.html not found — skipping grep check)');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Results
 // ═══════════════════════════════════════════════════════════════════════════════
 
