@@ -2910,9 +2910,21 @@ async function doneSetup() {
   G.energyPlayedThisTurn = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
 
-  // First player draws their opening card + any extra draws owed from opponent mulligans
-  const extras = G.pendingExtraDraws?.[firstPlayer] || 0;
-  for (let i = 0; i <= extras; i++) drawCard(firstPlayer, true);
+  // Opening draw — must happen on the firstPlayer's OWN client in networked
+  // play. If P1 (the host) drew for P2 here, P1's view of P2's hand is stale
+  // (still the original 7-deal — P2's actual played-out cards aren't reflected
+  // because P2 only pushed setup_p2 = {active, bench} during SETUP). That stale
+  // mutated hand would then wipe out P2's authoritative local state on receive.
+  // So: only draw locally if it's our own first turn or non-networked play.
+  // For networked games where the OTHER player goes first, the receive path
+  // on their client will run the opening draw locally with their correct deck.
+  const isNetworked = myRole !== null && !vsComputer;
+  const shouldDrawHere = !isNetworked || firstPlayer === myRole;
+  if (shouldDrawHere) {
+    const extras = G.pendingExtraDraws?.[firstPlayer] || 0;
+    if (extras > 0) G.pendingExtraDraws[firstPlayer] = 0; // consumed, don't redo on receive
+    for (let i = 0; i <= extras; i++) drawCard(firstPlayer, true);
+  }
 
   const winner = vsComputer
     ? (firstPlayer === 1 ? 'You go first!' : '🤖 Computer goes first!')
@@ -7436,6 +7448,32 @@ function receiveGameState(state) {
     ...state,
     players: { 1: incomingP1, 2: incomingP2 }
   };
+
+  // ── Local opening draw (mirror of doneSetup's deferred-draw behavior) ─────
+  // doneSetup skips the opening draw for the firstPlayer when that player is
+  // NOT the host (P1), because P1's view of P2's hand/deck is stale during
+  // SETUP. Now that P2 has received the SETUP→DRAW transition with their own
+  // authoritative hand/deck preserved above, we do the opening draw locally.
+  // Guards: only on the SETUP→DRAW transition; only if we're the new turn-owner;
+  // only if we haven't drawn yet (G.phase still 'DRAW'); deck must be non-empty.
+  if (wasStarted && wasSetup && G.phase === 'DRAW' && G.turn === myRole && myRole !== null) {
+    const me = G.players[myRole];
+    if (me.deck.length > 0) {
+      const extras = G.pendingExtraDraws?.[myRole] || 0;
+      if (extras > 0) G.pendingExtraDraws[myRole] = 0;
+      for (let i = 0; i <= extras; i++) {
+        if (me.deck.length === 0) break;
+        const card = me.deck.shift();
+        me.hand.push(card);
+      }
+      // Phase advances to MAIN once we've drawn (matches drawCard's behavior)
+      G.phase = 'MAIN';
+      // Push the post-draw state so the host sees our authoritative hand/deck.
+      // (renderHands/updateDeckCounts below will trigger renderAll's push too,
+      // but pushing explicitly here makes the timing tight and the intent clear.)
+      pushGameState();
+    }
+  }
 
   // Hide setup screen and show board
   document.getElementById('setup-screen').style.display = 'none';
