@@ -24,6 +24,7 @@ const {
   isValidDeckSize, countCopies,
   applyPlusPowerValue, computeDamageAfterWR,
   coerceCardArrays, mergeGameStateDefaults,
+  computeBetweenTurnDamage,
 } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -893,6 +894,133 @@ function mergeIncomingForReceiver(localG, incomingState, myRole) {
   const merged = mergeIncomingForReceiver(localG, incomingState, /*myRole=*/2);
   assert('Mid-game: incoming hand is accepted (not preserved)',
     merged.players[2].hand[0].name === 'FRESH');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: between-turn poison/burn ticks BOTH players' actives every endTurn
+//
+// Bug history (multiple regressions):
+//   • Original: poison only ticked the player-whose-turn-just-ended's active.
+//     A poisoned P2 Pokémon got hit only on P2's turn end, never on P1's.
+//   • Fix #1 (April 2026): for-loop over [1,2] in endTurn.
+//   • Recurring symptom (April 2026): user reports "P2 not taking poison
+//     between turns properly" — both clients agreed on a wrong value, so
+//     the writer's loop was somehow skipping a player.
+//
+// Hypothesis behind the defensive rewrite: a poison KO on pNum=1 nulls
+// G.players[1].active inside checkKO. If the loop re-reads G.players[2].active
+// fresh on the next iteration, it still works. But any auto-promote that
+// reassigns .active during the loop body could cause confusion. Snapshotting
+// the planned ticks BEFORE applying any sidesteps the whole class of issue.
+//
+// computeBetweenTurnDamage is the pure version of that planning step. These
+// tests lock the rule: every active with a damaging status produces exactly
+// one tick entry per call. Caller is responsible for applying them.
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n── regression: between-turn poison/burn — both players tick ─────');
+
+{
+  // Both players have poisoned actives — both must tick.
+  const players = {
+    1: { active: { name: 'Clefairy', status: 'poisoned',  damage: 0,  hp: '40' } },
+    2: { active: { name: 'Magikarp', status: 'poisoned',  damage: 10, hp: '30' } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Two poisoned actives → two ticks planned', ticks.length === 2);
+  assert('P1 tick: 10 damage on Clefairy',
+    ticks[0].player === 1 && ticks[0].dmg === 10 && ticks[0].newDamage === 10);
+  assert('P2 tick: 10 damage on Magikarp (stacks on existing 10)',
+    ticks[1].player === 2 && ticks[1].dmg === 10 && ticks[1].newDamage === 20);
+}
+
+{
+  // Only P2 poisoned — exactly one tick, for P2.
+  const players = {
+    1: { active: { name: 'Geodude', status: null, damage: 0, hp: '50' } },
+    2: { active: { name: 'Squirtle', status: 'poisoned', damage: 0, hp: '40' } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Only P2 poisoned → exactly one tick (the original recurring bug)',
+    ticks.length === 1 && ticks[0].player === 2 && ticks[0].dmg === 10);
+}
+
+{
+  // Only P1 poisoned — symmetric check.
+  const players = {
+    1: { active: { name: 'Pikachu', status: 'poisoned', damage: 20, hp: '40' } },
+    2: { active: { name: 'Onix', status: null, damage: 0, hp: '90' } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Only P1 poisoned → exactly one tick for P1',
+    ticks.length === 1 && ticks[0].player === 1 && ticks[0].newDamage === 30);
+}
+
+{
+  // Toxic does 20, regular poison does 10.
+  const players = {
+    1: { active: { name: 'Nidoking', status: 'poisoned-toxic', damage: 0, hp: '90' } },
+    2: { active: { name: 'Nidoqueen', status: 'poisoned',      damage: 0, hp: '90' } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Toxic ticks for 20', ticks[0].dmg === 20 && ticks[0].status === 'poisoned-toxic');
+  assert('Regular poison ticks for 10', ticks[1].dmg === 10);
+}
+
+{
+  // Burn ticks for 20.
+  const players = {
+    1: { active: { name: 'Charmander', status: 'burned', damage: 0, hp: '50' } },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Burn ticks for 20', ticks.length === 1 && ticks[0].dmg === 20);
+}
+
+{
+  // Both players empty — no ticks.
+  const ticks = computeBetweenTurnDamage({ 1:{active:null}, 2:{active:null} });
+  assert('No actives → no ticks', ticks.length === 0);
+}
+
+{
+  // Status that doesn't tick damage (paralyzed, asleep, confused) → no ticks.
+  const players = {
+    1: { active: { name: 'A', status: 'paralyzed', damage: 0, hp: '50' } },
+    2: { active: { name: 'B', status: 'confused',  damage: 0, hp: '50' } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Paralyzed/confused do not tick damage', ticks.length === 0);
+}
+
+{
+  // Asleep also doesn't tick.
+  const players = {
+    1: { active: { name: 'A', status: 'asleep', damage: 0, hp: '50' } },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Asleep does not tick damage', ticks.length === 0);
+}
+
+{
+  // Defensive: missing/malformed players input doesn't throw.
+  let threw = false;
+  try { computeBetweenTurnDamage(null); } catch { threw = true; }
+  assert('Null players input does not throw', threw === false);
+  let threw2 = false;
+  try { computeBetweenTurnDamage({}); } catch { threw2 = true; }
+  assert('Empty players object does not throw', threw2 === false);
+}
+
+{
+  // The helper does NOT mutate input cards — it just reports planned damage.
+  // Caller is responsible for applying. This separates "what" from "do".
+  const card = { name: 'Test', status: 'poisoned', damage: 0, hp: '50' };
+  const players = { 1: { active: card }, 2: { active: null } };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Helper plans the tick (newDamage=10)', ticks[0].newDamage === 10);
+  assert('Helper does NOT mutate card.damage (still 0)', card.damage === 0);
+  assert('Helper does NOT mutate card.status', card.status === 'poisoned');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

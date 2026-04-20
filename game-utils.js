@@ -282,7 +282,41 @@ function mergeGameStateDefaults(card) {
   return out;
 }
 
-// ── Node.js export (for game-tests.js) ───────────────────────────────────────
+// ── computeBetweenTurnDamage ──────────────────────────────────────────────────
+// TCG rule: at every turn boundary, EVERY active Pokémon with poison/burn
+// takes a tick of damage. Not "the player whose turn just ended" — both.
+// One full round (P1→P2→P1) ticks each poisoned Pokémon twice.
+//
+// Returns an array of {player, status, dmg, newDamage} entries describing
+// what damage SHOULD be applied — caller is responsible for mutating cards,
+// logging, and running KO checks. Pure: no mutation, no side effects.
+//
+// Why a helper? The inline loop in endTurn was reportedly skipping P2's tick
+// in some cases. Extracting and unit-testing the computation locks the rule
+// down so the caller can't subtly miss it.
+//
+// `players` shape: { 1: { active: card|null }, 2: { active: card|null } }
+function computeBetweenTurnDamage(players) {
+  const out = [];
+  for (const pNum of [1, 2]) {
+    const active = players?.[pNum]?.active;
+    if (!active || !active.status) continue;
+    let dmg = 0;
+    if (active.status === 'poisoned')        dmg = 10;
+    else if (active.status === 'poisoned-toxic') dmg = 20;
+    else if (active.status === 'burned')     dmg = 20;
+    if (dmg === 0) continue;
+    out.push({
+      player:    pNum,
+      status:    active.status,
+      dmg,
+      newDamage: (active.damage || 0) + dmg,
+    });
+  }
+  return out;
+}
+
+
 if (typeof module !== 'undefined') {
   module.exports = {
     RULES, GAME_STATE_DEFAULTS,
@@ -291,5 +325,6 @@ if (typeof module !== 'undefined') {
     isValidDeckSize, countCopies,
     applyPlusPowerValue, computeDamageAfterWR,
     coerceCardArrays, mergeGameStateDefaults,
+    computeBetweenTurnDamage,
   };
 }

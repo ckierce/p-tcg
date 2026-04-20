@@ -4795,29 +4795,59 @@ function endTurn() {
   }
   const prev = G.turn;
 
-  // Apply between-turn status effects to ALL active Pokémon (both players)
-  // Poison and Burn tick once per turn boundary regardless of whose turn it was
+  // ── Between-turn status damage ─────────────────────────────────────────────
+  // TCG rule: at every turn boundary, every Active Pokémon with poison/burn
+  // takes a tick of damage — regardless of whose turn just ended. One full
+  // round (P1→P2→P1) ticks each poisoned Pokémon twice.
+  //
+  // Defensive design (history of regressions here):
+  //  • Snapshot the actives BEFORE damage so a poison KO that nulls active
+  //    doesn't cause the next iteration to skip its own poison check.
+  //  • Capture intended ticks first, then apply — separates "what should happen"
+  //    from "what's happening" for debuggability.
+  //  • Console-log the plan so a future regression shows up in DevTools.
+  //  • Verify post-conditions and warn if a planned tick didn't land.
+  const ticks = [];
   for (const pNum of [1, 2]) {
     const active = G.players[pNum].active;
-    const oppNum = pNum === 1 ? 2 : 1;
-    if (!active) continue;
-
-    if (active.status === 'poisoned' || active.status === 'poisoned-toxic') {
-      const dmg = active.status === 'poisoned-toxic' ? 20 : 10;
-      active.damage = (active.damage || 0) + dmg;
-      addLog(`${active.name} took ${dmg} Poison damage! (${active.damage}/${active.hp} HP)`);
-      const koResult = checkKO(oppNum, pNum, active, false);
-      if (koResult === 'win') { renderAll(); return; }
-      if (koResult === 'promote') { renderAll(); return; }
+    if (!active || !active.status) continue;
+    let dmg = 0;
+    if (active.status === 'poisoned')             dmg = 10;
+    else if (active.status === 'poisoned-toxic')  dmg = 20;
+    else if (active.status === 'burned')          dmg = 20;
+    if (dmg > 0) {
+      ticks.push({
+        pNum,
+        oppNum: pNum === 1 ? 2 : 1,
+        cardRef: active,        // we hold the ref so a later mutation of G.players[pNum].active doesn't lose us
+        cardName: active.name,
+        status: active.status,
+        dmg,
+      });
     }
-
-    if (active.status === 'burned') {
-      active.damage = (active.damage || 0) + 20;
-      addLog(`${active.name} took 20 Burn damage! (${active.damage}/${active.hp} HP)`);
-      const koResult = checkKO(oppNum, pNum, active, false);
-      if (koResult === 'win') { renderAll(); return; }
-      if (koResult === 'promote') { renderAll(); return; }
+  }
+  if (ticks.length) {
+    console.log('[endTurn] between-turn ticks planned:',
+      ticks.map(t => `P${t.pNum} ${t.cardName} ${t.status} +${t.dmg}`).join(' | '));
+  }
+  for (const t of ticks) {
+    // Re-resolve in case a previous tick's KO+promotion replaced this active.
+    // After auto-promote, G.players[t.pNum].active is a different card — and that
+    // new card legitimately should NOT take this turn's poison (it just came in).
+    if (G.players[t.pNum].active !== t.cardRef) {
+      console.log(`[endTurn] skipping ${t.cardName} tick: card no longer active (likely promoted in)`);
+      continue;
     }
+    const before = t.cardRef.damage || 0;
+    t.cardRef.damage = before + t.dmg;
+    const after = t.cardRef.damage;
+    addLog(`${t.cardName} took ${t.dmg} ${t.status === 'burned' ? 'Burn' : 'Poison'} damage! (${after}/${t.cardRef.hp} HP)`);
+    if (after !== before + t.dmg) {
+      console.warn(`[endTurn] EXPECTED damage ${before + t.dmg} but found ${after} on ${t.cardName} after tick`);
+    }
+    const koResult = checkKO(t.oppNum, t.pNum, t.cardRef, false);
+    if (koResult === 'win') { renderAll(); return; }
+    if (koResult === 'promote') { renderAll(); return; }
   }
 
   // Paralysis wears off on the player whose turn just ended
