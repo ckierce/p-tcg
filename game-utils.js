@@ -282,7 +282,49 @@ function mergeGameStateDefaults(card) {
   return out;
 }
 
-// ── computeBetweenTurnDamage ──────────────────────────────────────────────────
+// ── parseDiscardEnergyCost ────────────────────────────────────────────────────
+// Parses an attack's "Discard N [Type] Energy card(s) attached..." cost text.
+// Returns { isAll, n, requiredType } or null if the text doesn't match.
+//   isAll:        true if the attack discards ALL attached energy
+//   n:            number to discard (Infinity if isAll)
+//   requiredType: lowercase type word ('fire', 'water', 'psychic', '') —
+//                 empty string means any type satisfies
+function parseDiscardEnergyCost(text) {
+  const m = (text || '').match(
+    /discard (all|\d+|an?)\s+(?:(\S+) )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+  );
+  if (!m) return null;
+  const rawN = m[1].toLowerCase();
+  const requiredType = (m[2] || '').toLowerCase();
+  const isAll = rawN === 'all';
+  const n = isAll ? Infinity : (/^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+  return { isAll, n, requiredType };
+}
+
+// ── eligibleEnergyForDiscard ──────────────────────────────────────────────────
+// Given the attached-energy array and a parsed cost, returns the indices of
+// cards eligible to satisfy that discard. A typed cost ('fire') only accepts
+// energy cards whose name contains that type AND is not Double Colorless.
+//
+// This is the rule that prevents Charizard's Energy Burn from polluting the
+// discard mechanic: even though Energy Burn lets DCE pay a Fire cost, a DCE
+// is still a "Colorless Energy card" — it does not satisfy "Discard 1 Fire
+// Energy card."
+//
+// `attachedEnergy` is the raw attached array; entries look like { name: 'Fire Energy', ... }.
+function eligibleEnergyForDiscard(attachedEnergy, requiredType) {
+  return (attachedEnergy || [])
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => {
+      if (!requiredType) return true;
+      const nm = (e.name || '').toLowerCase();
+      if (/double colorless/.test(nm)) return false;
+      return nm.includes(requiredType);
+    })
+    .map(({ i }) => i);
+}
+
+
 // TCG rule: at every turn boundary, EVERY active Pokémon with poison/burn
 // takes a tick of damage. Not "the player whose turn just ended" — both.
 // One full round (P1→P2→P1) ticks each poisoned Pokémon twice.
@@ -326,5 +368,6 @@ if (typeof module !== 'undefined') {
     applyPlusPowerValue, computeDamageAfterWR,
     coerceCardArrays, mergeGameStateDefaults,
     computeBetweenTurnDamage,
+    parseDiscardEnergyCost, eligibleEnergyForDiscard,
   };
 }

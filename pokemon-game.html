@@ -4406,16 +4406,77 @@ async function performAttack(player, atk) {
   }
 
   // ── Attack energy cost discard: "Discard N/all [Type] Energy card(s) attached to [Pokémon] in order to use this attack" ──
+  // The user must be able to CHOOSE which cards to discard when there's a choice
+  // to be made (e.g. Fire Spin's "Discard 2 Energy cards" with Fire+Fire+DCE+DCE
+  // attached — picking 2 Fires vs 2 DCEs is a meaningful strategic choice).
+  // Type-restricted variants ("Discard 1 Fire Energy card") only let you pick
+  // among matching-type cards. Note: DCE is a Colorless card — it does NOT
+  // satisfy a "Fire Energy card" discard even when Energy Burn would let it
+  // pay a Fire cost. The two rules are independent.
   const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to use this attack/i
+    /discard (all|\d+|an?)\s+(?:(\S+) )?energy card[s]?\s+attached[^.]*in order to use this attack/i
   );
   if (discardCostMatch && myActive) {
     const rawN = discardCostMatch[1].toLowerCase();
-    const discarded = rawN === 'all'
-      ? myActive.attachedEnergy.splice(0)
-      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+    const requiredType = (discardCostMatch[2] || '').toLowerCase(); // '' = any type
+    const isAll = rawN === 'all';
+    const n = isAll ? Infinity : (/^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+
+    // Filter eligible energy cards. A typed discard ("Fire Energy card") only
+    // accepts cards whose name contains that type and is NOT DCE.
+    const allEnergy = myActive.attachedEnergy || [];
+    const eligibleIdx = allEnergy.map((e, i) => ({ e, i })).filter(({ e }) => {
+      if (!requiredType) return true; // any energy is fine
+      const nm = (e.name || '').toLowerCase();
+      if (/double colorless/.test(nm)) return false; // DCE is Colorless, never Fire/etc.
+      return nm.includes(requiredType);
+    });
+
+    let toDiscardIdx = [];
+    if (isAll) {
+      // Discard ALL attached energy — no choice to make
+      toDiscardIdx = allEnergy.map((_, i) => i);
+    } else if (eligibleIdx.length <= n) {
+      // Only enough (or fewer) eligible cards to satisfy — no choice
+      toDiscardIdx = eligibleIdx.map(({ i }) => i);
+    } else {
+      // Multiple eligible cards, must choose
+      const pickerCards = eligibleIdx.map(({ e }) => ({
+        ...e,
+        // Picker shows energy nicely; tag DCE so the player sees it counts as 2 pips visually
+        images: e.images || { small: '' },
+        name: e.name,
+      }));
+      const picked = await openCardPicker({
+        title: `${atk.name}: discard ${n} energy`,
+        subtitle: requiredType
+          ? `Choose ${n} ${requiredType.charAt(0).toUpperCase() + requiredType.slice(1)} Energy card${n > 1 ? 's' : ''} to discard`
+          : `Choose ${n} Energy card${n > 1 ? 's' : ''} to discard`,
+        cards: pickerCards,
+        maxSelect: n,
+      });
+      if (!picked || picked.length < n) {
+        // Player cancelled / didn't pick enough — abort the attack effect.
+        // (We can't actually un-do the attack damage that already landed, but
+        // also can't pretend the cost was paid; auto-fall-back to first-N to
+        // keep the game moving rather than leave the cost unpaid.)
+        toDiscardIdx = eligibleIdx.slice(0, n).map(({ i }) => i);
+        addLog(`${atk.name}: no selection made — auto-discarded first ${n} eligible energy.`);
+      } else {
+        // picked is an array of indices INTO pickerCards/eligibleIdx, not into allEnergy
+        toDiscardIdx = picked.map(p => eligibleIdx[p].i);
+      }
+    }
+
+    // Splice OUT in descending index order so earlier indices don't shift
+    toDiscardIdx.sort((a, b) => b - a);
+    const discarded = [];
+    for (const idx of toDiscardIdx) {
+      const [removed] = myActive.attachedEnergy.splice(idx, 1);
+      if (removed) discarded.push(removed);
+    }
     G.players[player].discard.push(...discarded);
-    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
+    addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}${discarded.length ? ` (${discarded.map(e => e.name).join(', ')})` : ''}.`);
   }
 
 

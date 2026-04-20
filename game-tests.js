@@ -25,6 +25,7 @@ const {
   applyPlusPowerValue, computeDamageAfterWR,
   coerceCardArrays, mergeGameStateDefaults,
   computeBetweenTurnDamage,
+  parseDiscardEnergyCost, eligibleEnergyForDiscard,
 } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -1168,8 +1169,129 @@ function shouldFireGenericDraw(atkText, hasNamedPostAttack) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Results
+// REGRESSION: attack-cost discards let player choose which energy to discard
+//
+// Bug: Charizard's Fire Spin ("Discard 2 Energy cards attached") was discarding
+// the first 2 cards in attachedEnergy via a blind splice — no player choice.
+// With Fire+Fire+DCE+DCE attached, this auto-discarded both DCEs (4 energy
+// worth) when the player would have preferred to discard the 2 Fires.
+//
+// The discard logic now uses a card-picker UI when there's a choice, and
+// pre-filters to the required type. Two helpers in game-utils.js encode the
+// pure rules: parseDiscardEnergyCost (text → spec) and
+// eligibleEnergyForDiscard (attached + spec → eligible indices).
+//
+// Critical sub-rule: typed discards ("Fire Energy card") never accept DCE
+// even though Energy Burn lets DCE PAY a Fire cost. The two rules are
+// independent: cost payment vs. card identity for discard.
 // ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n── regression: attack-cost discard energy parsing ───────────────');
+
+{
+  // Charizard Fire Spin
+  const spec = parseDiscardEnergyCost('Discard 2 Energy cards attached to Charizard in order to use this attack.');
+  assert('Fire Spin: parsed as N=2, no required type',
+    spec && spec.n === 2 && spec.requiredType === '' && !spec.isAll);
+}
+{
+  // Ninetales Fire Blast
+  const spec = parseDiscardEnergyCost('Discard 1 Fire Energy card attached to Ninetales in order to use this attack.');
+  assert('Fire Blast: parsed as N=1, requiredType="fire"',
+    spec && spec.n === 1 && spec.requiredType === 'fire' && !spec.isAll);
+}
+{
+  // Zapdos Thunderbolt
+  const spec = parseDiscardEnergyCost('Discard all Energy cards attached to Zapdos in order to use this attack.');
+  assert('Thunderbolt: parsed as isAll=true', spec && spec.isAll === true);
+}
+{
+  // Kadabra Recover (typed psychic)
+  const spec = parseDiscardEnergyCost('Discard 1 Psychic Energy card attached to Kadabra in order to use this attack. Remove all damage counters from Kadabra.');
+  assert('Recover: parsed as N=1, requiredType="psychic"',
+    spec && spec.n === 1 && spec.requiredType === 'psychic');
+}
+{
+  // Non-discard text → null
+  assert('Non-discard text returns null',
+    parseDiscardEnergyCost('Does 30 damage.') === null);
+  assert('Empty/null text returns null',
+    parseDiscardEnergyCost('') === null && parseDiscardEnergyCost(null) === null);
+}
+
+console.log('\n── regression: eligible energy for typed/untyped discards ───────');
+
+{
+  // Fire Spin scenario: user's actual reported case.
+  // Charizard with [Fire, Fire, DCE, DCE] using Fire Spin (untyped, N=2).
+  // All 4 cards are eligible — player should get to pick which 2.
+  const attached = [
+    { name: 'Fire Energy' },
+    { name: 'Fire Energy' },
+    { name: 'Double Colorless Energy' },
+    { name: 'Double Colorless Energy' },
+  ];
+  const eligible = eligibleEnergyForDiscard(attached, '');
+  assert('Fire Spin (untyped): all 4 cards eligible (player picks 2)',
+    eligible.length === 4 && JSON.stringify(eligible) === '[0,1,2,3]');
+}
+
+{
+  // Ninetales Fire Blast (typed='fire'): only the 2 Fire cards eligible.
+  // DCE is Colorless and explicitly NOT a Fire Energy card for discard purposes,
+  // even though Energy Burn (a different Charizard rule) lets it pay Fire costs.
+  const attached = [
+    { name: 'Fire Energy' },
+    { name: 'Fire Energy' },
+    { name: 'Double Colorless Energy' },
+    { name: 'Double Colorless Energy' },
+  ];
+  const eligible = eligibleEnergyForDiscard(attached, 'fire');
+  assert('Fire Blast (typed=fire): only the 2 Fire cards eligible',
+    eligible.length === 2 && JSON.stringify(eligible) === '[0,1]');
+}
+
+{
+  // Critical rule: DCE never satisfies a typed discard, even Fire (Energy Burn).
+  // This is the main "don't let Energy Burn pollute the discard rule" check.
+  const attached = [{ name: 'Double Colorless Energy' }];
+  const eligible = eligibleEnergyForDiscard(attached, 'fire');
+  assert('DCE-only attached + Fire Blast: ZERO eligible (DCE is Colorless)',
+    eligible.length === 0);
+}
+
+{
+  // Mixed types under a typed psychic discard
+  const attached = [
+    { name: 'Psychic Energy' },
+    { name: 'Water Energy' },
+    { name: 'Psychic Energy' },
+  ];
+  const eligible = eligibleEnergyForDiscard(attached, 'psychic');
+  assert('Mixed types + psychic discard: only the 2 Psychic eligible',
+    eligible.length === 2 && JSON.stringify(eligible) === '[0,2]');
+}
+
+{
+  // Empty attached — no eligible regardless of type
+  assert('Empty attached → no eligible',
+    eligibleEnergyForDiscard([], 'fire').length === 0);
+  assert('Null attached → no eligible (no throw)',
+    eligibleEnergyForDiscard(null, '').length === 0);
+}
+
+{
+  // Untyped discard accepts everything
+  const attached = [
+    { name: 'Fire Energy' },
+    { name: 'Double Colorless Energy' },
+    { name: 'Lightning Energy' },
+  ];
+  const eligible = eligibleEnergyForDiscard(attached, '');
+  assert('Untyped discard accepts all 3',
+    eligible.length === 3);
+}
+
+
 
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
