@@ -4,7 +4,15 @@
 // No DOM, no Firebase, no G — completely stateless pure functions.
 // Loaded before game-actions.js in the browser; required directly by game-tests.js.
 //
-// Exports (Node/CommonJS):  canAffordAttack, energyValue, parseStatusEffects
+// Exports (Node/CommonJS):
+//   RULES, energyValue, canAffordAttack, parseStatusEffects,
+//   padBench, isLegalRetreatStatus, invisibleWallBlocks,
+//   isValidDeckSize, countCopies, computeDamageAfterWR, applyPlusPowerValue,
+//   coerceCardArrays, mergeGameStateDefaults, GAME_STATE_DEFAULTS
+//
+// Any time you fix a bug, add a pure helper here (or a test against an existing
+// helper) — the push script runs `node game-tests.js` and will block the push
+// if anything fails.
 // ══════════════════════════════════════════════════════════════════════════════
 
 'use strict';
@@ -22,6 +30,37 @@ const RULES = {
   SUPER_POTION_HEAL:40,  // Super Potion removes 4 counters
   FULL_HEAL_HEAL:   80,  // Full Heal / Full Restore max
   MAX_CARD_COPIES:  4,   // max copies of any non-basic-energy card
+  INVISIBLE_WALL_THRESHOLD: 30, // Mr. Mime blocks attacks doing >= this much damage
+};
+
+// ── GAME_STATE_DEFAULTS ───────────────────────────────────────────────────────
+// Mutable per-card fields that must survive every Firebase round-trip.
+// Mirrored in game-render.js (the browser-side definition); kept here so
+// tests can verify the schema without loading the renderer.
+// If you add a field in one place, add it in the other too.
+const GAME_STATE_DEFAULTS = {
+  status:               null,
+  damage:               0,
+  defender:             false,
+  defenderFull:         false,
+  defenderFullEffects:  false,
+  defenderThreshold:    0,
+  defenderReduction:    0,
+  plusPower:            0,
+  nextAttackDouble:     false,
+  smokescreened:        false,
+  immuneToAttack:       false,
+  disabledAttack:       null,
+  cantRetreat:          false,
+  destinyBond:          false,
+  leekSlapUsed:         false,
+  pounceActive:         false,
+  pounceReduction:      0,
+  swordsDanceActive:    false,
+  attackReduction:      0,
+  conversionWeakness:   null,
+  conversionResistance: null,
+  trainerBlocked:       false,
 };
 
 // ── energyValue ───────────────────────────────────────────────────────────────
@@ -131,7 +170,126 @@ function parseStatusEffects(text) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// BUG-REGRESSION HELPERS
+// Each of these encodes a rule that was either wrong in the past or is easy
+// to get wrong in the future. The live game code mirrors these rules inline;
+// these helpers exist primarily to be test-locked. Callers may optionally
+// switch to these helpers to reduce duplication.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── padBench ──────────────────────────────────────────────────────────────────
+// Firebase Realtime Database drops trailing nulls from arrays during
+// serialization. After every read from Firebase, bench arrays must be padded
+// back to BENCH_SIZE so index-based placement/evolution/retreat logic works.
+// Returns a NEW array (does not mutate input).
+function padBench(bench) {
+  const out = Array.isArray(bench) ? [...bench] : [];
+  while (out.length < RULES.BENCH_SIZE) out.push(null);
+  return out.slice(0, RULES.BENCH_SIZE);
+}
+
+// ── isLegalRetreatStatus ──────────────────────────────────────────────────────
+// TCG rule: Paralyzed and Asleep Pokémon cannot retreat at all.
+// Confused Pokémon can attempt to retreat but must flip a coin (handled
+// separately). Healthy, Poisoned, Burned Pokémon may proceed to the normal
+// retreat-cost check.
+// Returns: 'yes' | 'no' | 'coinflip'
+function isLegalRetreatStatus(status) {
+  if (status === 'paralyzed' || status === 'asleep') return 'no';
+  if (status === 'confused') return 'coinflip';
+  return 'yes'; // null, poisoned, burned
+}
+
+// ── invisibleWallBlocks ───────────────────────────────────────────────────────
+// Mr. Mime's Invisible Wall Power: prevents an attack that would do
+// 30 or more damage before applying weakness/resistance.
+// (Precondition: Mr. Mime is the Defender and his Power is not suppressed.)
+function invisibleWallBlocks(damage) {
+  return damage >= RULES.INVISIBLE_WALL_THRESHOLD;
+}
+
+// ── isValidDeckSize / countCopies ─────────────────────────────────────────────
+// Deck construction rules: exactly 60 cards, no more than 4 copies of any
+// single non-basic-energy card.
+function isValidDeckSize(deck) {
+  return Array.isArray(deck) && deck.length === RULES.DECK_SIZE;
+}
+
+function countCopies(deck, predicate) {
+  return (deck || []).filter(predicate).length;
+}
+
+// ── applyPlusPowerValue ───────────────────────────────────────────────────────
+// Returns the damage number after PlusPower bonuses. Both per-card
+// `plusPower` and per-turn-global `plusPowerActive` stack.
+// This is a PURE computation — the in-game version also mutates state and
+// logs, but those side effects are not this helper's job.
+function applyPlusPowerValue(damage, cardPlusPower = 0, globalPlusPower = 0) {
+  return damage + (cardPlusPower || 0) + (globalPlusPower || 0);
+}
+
+// ── computeDamageAfterWR ──────────────────────────────────────────────────────
+// Apply weakness and resistance to a damage number.
+//   - Weakness doubles damage (only one weakness applies; match any type).
+//   - Resistance subtracts 30, floor at 0 (only one resistance applies).
+//   - skipWR=true disables both (used by Gust of Wind, some rare attacks).
+// W and R for a given defender rarely overlap, but if both match the
+// attacker's types, weakness applies first, then resistance.
+function computeDamageAfterWR(damage, attackerTypes, weaknesses, resistances, skipWR = false) {
+  if (skipWR || damage === 0) return damage;
+  const types = (attackerTypes || []).map(t => t.toLowerCase());
+  let dmg = damage;
+  for (const wk of (weaknesses || [])) {
+    if (types.includes((wk.type || '').toLowerCase())) { dmg *= 2; break; }
+  }
+  for (const rs of (resistances || [])) {
+    if (types.includes((rs.type || '').toLowerCase())) { dmg = Math.max(0, dmg - 30); break; }
+  }
+  return dmg;
+}
+
+// ── coerceCardArrays ──────────────────────────────────────────────────────────
+// Firebase round-trips drop empty arrays and can turn them into undefined.
+// After reading a card from Firebase, every array-valued field must be
+// coerced back to an array. This mirrors the defensive coercion inside
+// enrichCard (game-render.js) — it exists here so the contract is testable.
+// Returns a NEW object (does not mutate input).
+function coerceCardArrays(card) {
+  if (!card || typeof card !== 'object') return card;
+  const arrayFields = [
+    'types', 'subtypes', 'attacks', 'abilities',
+    'weaknesses', 'resistances', 'retreatCost', 'attachedEnergy',
+  ];
+  const out = { ...card };
+  for (const f of arrayFields) {
+    if (!Array.isArray(out[f])) out[f] = [];
+  }
+  return out;
+}
+
+// ── mergeGameStateDefaults ────────────────────────────────────────────────────
+// Given a card (possibly fresh from Firebase, possibly missing fields),
+// returns it with every GAME_STATE_DEFAULTS field filled in. Uses ?? so
+// existing `false`, `0`, `null` values are preserved (only undefined falls
+// back to default). Returns a NEW object; does not mutate input.
+function mergeGameStateDefaults(card) {
+  if (!card) return card;
+  const out = { ...card };
+  for (const [k, def] of Object.entries(GAME_STATE_DEFAULTS)) {
+    out[k] = out[k] ?? def;
+  }
+  return out;
+}
+
 // ── Node.js export (for game-tests.js) ───────────────────────────────────────
 if (typeof module !== 'undefined') {
-  module.exports = { RULES, energyValue, canAffordAttack, parseStatusEffects };
+  module.exports = {
+    RULES, GAME_STATE_DEFAULTS,
+    energyValue, canAffordAttack, parseStatusEffects,
+    padBench, isLegalRetreatStatus, invisibleWallBlocks,
+    isValidDeckSize, countCopies,
+    applyPlusPowerValue, computeDamageAfterWR,
+    coerceCardArrays, mergeGameStateDefaults,
+  };
 }
