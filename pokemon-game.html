@@ -4213,16 +4213,60 @@ function applyRoleVisibility() {
 }
 
 // ── Check URL on load for auto-join ──────────────
+// If someone opened a join link (?room=CODE), auto-advance them to the join
+// panel and fire the join. Logs to the console on every step so when this
+// breaks the next time, DevTools shows exactly where it stopped.
 (function checkUrlRoom() {
   const urlCode = new URLSearchParams(location.search).get('room');
-  if (urlCode) {
-    // Auto-open join panel with pre-filled code
-    myRole = 2;
-    showPanel('join-panel');
-    setTimeout(() => {
-      const input = document.getElementById('join-code-input');
-      if (input) { input.value = urlCode.toUpperCase(); joinRoom(); }
-    }, 300);
+  if (!urlCode) { console.log('[checkUrlRoom] no ?room= in URL'); return; }
+  console.log('[checkUrlRoom] found ?room=' + urlCode);
+
+  // Pre-fill the join input immediately so a manual click on "JOIN ROOM" works
+  // even if the auto-flow below fails for any reason.
+  const prefill = () => {
+    const input = document.getElementById('join-code-input');
+    if (input) {
+      input.value = urlCode.toUpperCase();
+      console.log('[checkUrlRoom] pre-filled join-code-input');
+    } else {
+      console.warn('[checkUrlRoom] join-code-input element not found');
+    }
+  };
+
+  const go = () => {
+    try {
+      myRole = 2;
+      if (typeof showPanel !== 'function') {
+        console.error('[checkUrlRoom] showPanel is not defined — inline script did not fully load');
+        return;
+      }
+      showPanel('join-panel');
+      console.log('[checkUrlRoom] switched to join-panel');
+      prefill();
+      // Delay the actual join call by one tick so Firebase and the DOM have
+      // settled. Wrapped in try/catch so any error surfaces in the console
+      // instead of silently leaving the user on the lobby.
+      setTimeout(() => {
+        try {
+          if (typeof joinRoom !== 'function') {
+            console.error('[checkUrlRoom] joinRoom is not defined');
+            return;
+          }
+          console.log('[checkUrlRoom] calling joinRoom()');
+          joinRoom();
+        } catch (e) {
+          console.error('[checkUrlRoom] joinRoom threw:', e);
+        }
+      }, 300);
+    } catch (e) {
+      console.error('[checkUrlRoom] failed:', e);
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', go);
+  } else {
+    go();
   }
 })();
 
