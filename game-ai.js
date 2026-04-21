@@ -355,6 +355,23 @@ function aiChooseEnergyTarget(p2, energyName) {
     return minDeficit;
   }
 
+  // Does attaching this energy ENABLE an attack that isn't currently affordable?
+  // This is the single most important signal — if the active can attack this turn
+  // thanks to this energy, that nearly always beats bench-stacking for future turns.
+  function enablesAttack(card) {
+    if (!card?.attacks?.length) return false;
+    const attached = card.attachedEnergy || [];
+    const withEnergy = [...attached, { name: energyName || 'Colorless Energy' }];
+    for (const atk of card.attacks) {
+      const cost = atk.cost || [];
+      if (cost.length === 0) continue; // free attacks already affordable
+      const alreadyAffordable = canAffordAttack(attached, cost, card);
+      if (alreadyAffordable) continue;
+      if (canAffordAttack(withEnergy, cost, card)) return true;
+    }
+    return false;
+  }
+
   function targetScore(card) {
     if (!card) return -1;
     const deficit = energyNeeded(card);
@@ -364,14 +381,22 @@ function aiChooseEnergyTarget(p2, energyName) {
   }
 
   const active = p2.active;
+  const activeEnables = active ? enablesAttack(active) : false;
   const activeScore = targetScore(active);
-  let bestBenchIdx = -1, bestBenchScore = -1;
+
+  let bestBenchIdx = -1, bestBenchScore = -1, bestBenchEnables = false;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     const b = p2.bench[i];
     if (!b) continue;
     const s = targetScore(b);
-    if (s > bestBenchScore) { bestBenchScore = s; bestBenchIdx = i; }
+    if (s > bestBenchScore) { bestBenchScore = s; bestBenchIdx = i; bestBenchEnables = enablesAttack(b); }
   }
+
+  // Highest priority: attach to the active if it enables an attack THIS turn.
+  // Only the active attacks this turn, so "enables attack now" on the active
+  // beats any bench setup benefit. A benched Pokémon becoming attack-ready is
+  // only useful once it's promoted, which may be several turns away.
+  if (active && activeEnables) return { zone: 'active', idx: null };
 
   if (activeScore > 0 && activeScore >= bestBenchScore) return { zone: 'active', idx: null };
   if (bestBenchIdx !== -1 && bestBenchScore > 0) return { zone: 'bench', idx: bestBenchIdx };
@@ -856,3 +881,14 @@ window.addEventListener('load', () => {
   // Initial UI state
   setMidline('Load decks and press Start Game');
 });
+
+// ── Node export for tests — no-op in the browser ──────────────────────────────
+// Guarded so nothing else is exported. The browser never executes this branch
+// (module is undefined), so game-ai.js keeps working as a plain <script>.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    aiChooseEnergyTarget,
+    aiEnergyDeficit,
+    aiCanAttack,
+  };
+}

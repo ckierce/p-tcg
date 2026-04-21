@@ -1291,6 +1291,160 @@ console.log('\n── regression: eligible energy for typed/untyped discards ─
     eligible.length === 3);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// aiChooseEnergyTarget — AI picks the right Pokémon to attach energy to
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('aiChooseEnergyTarget');
+
+// game-ai.js references `document`, `window`, `setMidline` at top level.
+// Stub them before require() so the module loads cleanly in Node.
+global.document = {
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+};
+global.window = { addEventListener: () => {} };
+global.setMidline = () => {};
+// Other globals game-ai.js functions reference (only used inside the tested fn path)
+global.RULES = RULES;
+global.energyValue = energyValue;
+global.canAffordAttack = canAffordAttack;
+global.isPowerActive = () => false;
+global.dittoAttacks = () => null;
+
+const { aiChooseEnergyTarget: _aiChooseEnergyTarget } = require('./game-ai.js');
+
+// Kangaskhan (Jungle): Fetch [C] / Comet Punch [CCCC] — all Colorless costs
+const KANGASKHAN = {
+  name: 'Kangaskhan',
+  attacks: [
+    { name: 'Fetch',       cost: ['Colorless'],                                              damage: '' },
+    { name: 'Comet Punch', cost: ['Colorless','Colorless','Colorless','Colorless'],          damage: '20×' },
+  ],
+  attachedEnergy: [],
+};
+
+// Squirtle (Base): Bubble [W] / Withdraw [WC]
+const SQUIRTLE = {
+  name: 'Squirtle',
+  attacks: [
+    { name: 'Bubble',   cost: ['Water'],              damage: '10' },
+    { name: 'Withdraw', cost: ['Water','Colorless'],  damage: '' },
+  ],
+  attachedEnergy: [],
+};
+
+// Charmander (Base): Scratch [C] / Ember [FC]
+const CHARMANDER = {
+  name: 'Charmander',
+  attacks: [
+    { name: 'Scratch', cost: ['Colorless'],      damage: '10' },
+    { name: 'Ember',   cost: ['Fire','Colorless'], damage: '30' },
+  ],
+  attachedEnergy: [],
+};
+
+// ── The reported regression ───────────────────────────────────────────────────
+// Active Kangaskhan with 0 energy, benched Squirtle with 0 energy, hand has a
+// Water Energy. Fetch costs only [C], so the Water Energy enables it on the
+// active THIS turn — human players would attach to Kangaskhan, not Squirtle.
+{
+  const p2 = {
+    active: { ...KANGASKHAN, attachedEnergy: [] },
+    bench: [{ ...SQUIRTLE, attachedEnergy: [] }, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Water Energy');
+  assert('Active Kangaskhan with 0 energy gets the Water Energy (enables Fetch this turn) instead of bench Squirtle',
+    target && target.zone === 'active');
+}
+
+// Also: Water Energy should still go to the bench Squirtle if the active
+// already has enough energy to attack.
+{
+  const p2 = {
+    active: {
+      ...KANGASKHAN,
+      attachedEnergy: [{ name: 'Grass Energy' }], // Fetch already affordable
+    },
+    bench: [{ ...SQUIRTLE, attachedEnergy: [] }, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Water Energy');
+  assert('Active Kangaskhan already able to attack → Water Energy goes to benched Squirtle for setup',
+    target && target.zone === 'bench' && target.idx === 0);
+}
+
+// Active has 0 energy, cost requires a typed non-matching energy we don't have;
+// the energy in hand enables nothing on active but does help bench. Should prefer bench.
+{
+  const p2 = {
+    active: {
+      name: 'PureWaterMon',
+      attacks: [{ name: 'Splash', cost: ['Water','Water'], damage: '40' }],
+      attachedEnergy: [],
+    },
+    bench: [{ ...CHARMANDER, attachedEnergy: [] }, null, null, null, null],
+  };
+  // Fire energy can't help PureWaterMon (needs 2 Water, and Fire won't satisfy Water).
+  // Charmander's Scratch is [C] which Fire satisfies. Bench wins.
+  const target = _aiChooseEnergyTarget(p2, 'Fire Energy');
+  assert('Fire Energy goes to benched Charmander (enables Scratch) when active needs specifically Water',
+    target && target.zone === 'bench' && target.idx === 0);
+}
+
+// Active has 0 energy, both active and a bench Pokémon would be enabled to
+// attack. Active wins because only the active attacks THIS turn.
+{
+  const p2 = {
+    active: { ...KANGASKHAN, attachedEnergy: [] },
+    bench: [{ ...CHARMANDER, attachedEnergy: [] }, null, null, null, null],
+  };
+  // Colorless Energy enables Fetch on Kangaskhan AND Scratch on Charmander.
+  // Active must win.
+  const target = _aiChooseEnergyTarget(p2, 'Colorless Energy');
+  assert('When energy enables an attack on both active and bench, active wins (only active attacks this turn)',
+    target && target.zone === 'active');
+}
+
+// No active, bench-only target still picked up.
+{
+  const p2 = {
+    active: null,
+    bench: [{ ...SQUIRTLE, attachedEnergy: [] }, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Water Energy');
+  assert('No active → falls back to best bench target',
+    target && target.zone === 'bench' && target.idx === 0);
+}
+
+// No valid targets at all.
+{
+  const p2 = {
+    active: null,
+    bench: [null, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Water Energy');
+  assert('No active, no bench → returns null',
+    target === null);
+}
+
+// Edge case: active already has an attack affordable; bench Pokémon has 0 energy
+// and the hand energy doesn't enable anything on it either. Should still go
+// somewhere useful — either active (existing behavior) or bench for partial
+// setup. We just assert it doesn't crash and returns something.
+{
+  const p2 = {
+    active: {
+      ...KANGASKHAN,
+      attachedEnergy: [{ name: 'Water Energy' }, { name: 'Water Energy' }],
+    },
+    bench: [{ ...KANGASKHAN, attachedEnergy: [] }, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Water Energy');
+  assert('Returns a valid target when both active and bench could use more energy',
+    target && (target.zone === 'active' || target.zone === 'bench'));
+}
+
 
 
 console.log(`\n${'═'.repeat(64)}`);
