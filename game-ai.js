@@ -117,14 +117,24 @@ function aiDoSetup() {
   const p2 = G.players[2];
   const hand = p2.hand;
 
-  // Pick a Basic for Active — prefer Pokémon with attacks
+  function basicScore(c) {
+    if (!c.attacks?.length) return 0;
+    const hp = parseInt(c.hp) || 0;
+    const minCost = c.attacks.reduce((min, atk) => Math.min(min, atk.cost?.length || 0), 99);
+    const maxDmg = c.attacks.reduce((max, atk) => {
+      const d = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      return Math.max(max, d);
+    }, 0);
+    return hp / 10 + maxDmg / 10 - minCost * 5;
+  }
+
   const basics = hand.reduce((acc, c, i) => {
     if (c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) acc.push({ c, i });
     return acc;
   }, []);
-  if (!basics.length) return; // no basics — shouldn't happen after mulligan
+  if (!basics.length) return;
 
-  basics.sort((a, b) => (b.c.attacks?.length || 0) - (a.c.attacks?.length || 0));
+  basics.sort((a, b) => basicScore(b.c) - basicScore(a.c));
 
   const activeChoice = basics[0];
   p2.active = activeChoice.c;
@@ -133,20 +143,20 @@ function aiDoSetup() {
   G.evolvedThisTurn.push(activeChoice.c.uid);
   addLog(`🤖 Computer placed ${activeChoice.c.name} as Active.`, true);
 
-  // Place remaining basics on bench (up to 2 on easy, 4 on normal/hard)
   const maxBench = aiDifficulty === 'easy' ? 2 : 4;
+  const remaining = basics.slice(1).sort((a, b) => basicScore(b.c) - basicScore(a.c));
   let placed = 0;
-  for (let attempt = hand.length - 1; attempt >= 0 && placed < maxBench; attempt--) {
-    const card = hand[attempt];
-    if (card.supertype === 'Pokémon' && card.subtypes?.includes('Basic')) {
-      const slot = p2.bench.findIndex(s => s === null);
-      if (slot === -1) break;
-      p2.bench[slot] = card;
-      G.evolvedThisTurn.push(card.uid);
-      hand.splice(attempt, 1);
-      addLog(`🤖 Computer placed ${card.name} on bench.`);
-      placed++;
-    }
+  for (const { c } of remaining) {
+    if (placed >= maxBench) break;
+    const slot = p2.bench.findIndex(s => s === null);
+    if (slot === -1) break;
+    const handIdx = hand.findIndex(h => h === c);
+    if (handIdx === -1) continue;
+    p2.bench[slot] = c;
+    G.evolvedThisTurn.push(c.uid);
+    hand.splice(handIdx, 1);
+    addLog(`🤖 Computer placed ${c.name} on bench.`);
+    placed++;
   }
 
   renderAll();
@@ -241,18 +251,25 @@ async function aiTakeTurn() {
       }
     }
 
-    // 4. Play trainer cards
+    // 4. Consider retreating — before trainers/energy so PlusPower isn't wasted on a benched Pokémon
+    if (aiDifficulty !== 'easy') {
+      const retreated = await aiConsiderRetreat(p2);
+      if (retreated) await delay(AI_DELAY);
+    }
+
+    // 5. Play trainer cards
     await aiPlayTrainers();
     await delay(AI_DELAY * 0.5);
 
-    // 5. Attach energy (one per turn unless Rain Dance)
+    // 6. Attach energy (one per turn unless Rain Dance)
     if (!G.energyPlayedThisTurn) {
       const hand = p2.hand;
       const energyIdx = hand.findIndex(c => c.supertype === 'Energy');
       if (energyIdx !== -1) {
-        const target = aiChooseEnergyTarget(p2);
+        const energyName = hand[energyIdx]?.name || '';
+        const target = aiChooseEnergyTarget(p2, energyName);
         if (target !== null) {
-          const isRainDance = /water/i.test(hand[energyIdx].name) && rainDanceActive(2);
+          const isRainDance = /water/i.test(energyName) && rainDanceActive(2);
           attachEnergy(2, energyIdx, target.zone, target.idx, isRainDance);
           addLog(`🤖 Computer attached energy to ${target.zone === 'active' ? p2.active?.name : p2.bench[target.idx]?.name}.`);
           renderAll();
@@ -261,10 +278,25 @@ async function aiTakeTurn() {
       }
     }
 
-    // 6. Consider retreating if active is badly damaged
-    if (aiDifficulty !== 'easy') {
-      const retreated = await aiConsiderRetreat(p2);
-      if (retreated) await delay(AI_DELAY);
+    // 6b. Rain Dance: keep attaching Water energy while possible
+    if (rainDanceActive(2)) {
+      let keepAttaching = true;
+      while (keepAttaching) {
+        keepAttaching = false;
+        const hand = p2.hand;
+        const waterIdx = hand.findIndex(c => c.supertype === 'Energy' && /water/i.test(c.name));
+        if (waterIdx !== -1) {
+          const energyName = hand[waterIdx]?.name || '';
+          const target = aiChooseEnergyTarget(p2, energyName);
+          if (target !== null) {
+            attachEnergy(2, waterIdx, target.zone, target.idx, true);
+            addLog(`🤖 Computer attached Water Energy via Rain Dance to ${target.zone === 'active' ? p2.active?.name : p2.bench[target.idx]?.name}.`);
+            renderAll();
+            await delay(AI_DELAY * 0.5);
+            keepAttaching = true;
+          }
+        }
+      }
     }
 
     // 7. Attack if possible
@@ -285,8 +317,30 @@ async function aiTakeTurn() {
 }
 
 // ── Energy targeting ──────────────────────────────────────────────────────────
-function aiChooseEnergyTarget(p2) {
-  // How many more energy does a Pokémon need to fire its cheapest attack?
+
+function aiEnergyDeficit(card, energyName) {
+  if (!card?.attacks?.length) return 0;
+  const attached = card.attachedEnergy || [];
+  const isDCE = /double colorless/i.test(energyName);
+  const incomingType = isDCE ? 'Colorless' : (energyName.replace(/\s*energy/i, '').trim() || 'Colorless');
+  let bestScore = 0;
+  for (const atk of card.attacks) {
+    const cost = atk.cost || [];
+    if (cost.length === 0) continue;
+    if (!canAffordAttack(attached, cost, card)) {
+      const testPool = [...attached, { name: energyName }];
+      const before = cost.filter(req => req === 'Colorless' || attached.some(e => e.name.replace(/\s*energy/i,'').trim().toLowerCase() === req.toLowerCase())).length;
+      const after  = cost.filter(req => req === 'Colorless' || testPool.some(e => e.name.replace(/\s*energy/i,'').trim().toLowerCase() === req.toLowerCase())).length;
+      const gain = after - before;
+      const typedMatch = cost.some(req => req !== 'Colorless' && req.toLowerCase() === incomingType.toLowerCase());
+      const score = gain + (typedMatch ? 1 : 0);
+      if (score > bestScore) bestScore = score;
+    }
+  }
+  return bestScore;
+}
+
+function aiChooseEnergyTarget(p2, energyName) {
   function energyNeeded(card) {
     if (!card?.attacks?.length) return 99;
     const attached = card.attachedEnergy || [];
@@ -301,22 +355,28 @@ function aiChooseEnergyTarget(p2) {
     return minDeficit;
   }
 
-  const active = p2.active;
-  if (active) {
-    if (energyNeeded(active) > 0) return { zone: 'active', idx: null };
+  function targetScore(card) {
+    if (!card) return -1;
+    const deficit = energyNeeded(card);
+    if (deficit === 0) return 0;
+    const typeBonus = energyName ? aiEnergyDeficit(card, energyName) : 0;
+    return deficit + typeBonus * 2;
   }
 
-  // Active is fully powered — charge the bench slot most in need
-  let bestIdx = -1, bestDeficit = 0;
+  const active = p2.active;
+  const activeScore = targetScore(active);
+  let bestBenchIdx = -1, bestBenchScore = -1;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     const b = p2.bench[i];
     if (!b) continue;
-    const deficit = energyNeeded(b);
-    if (deficit > bestDeficit) { bestDeficit = deficit; bestIdx = i; }
+    const s = targetScore(b);
+    if (s > bestBenchScore) { bestBenchScore = s; bestBenchIdx = i; }
   }
-  if (bestIdx !== -1) return { zone: 'bench', idx: bestIdx };
 
-  return null; // everyone fully powered
+  if (activeScore > 0 && activeScore >= bestBenchScore) return { zone: 'active', idx: null };
+  if (bestBenchIdx !== -1 && bestBenchScore > 0) return { zone: 'bench', idx: bestBenchIdx };
+  if (active) return { zone: 'active', idx: null };
+  return null;
 }
 
 // ── Retreat consideration ─────────────────────────────────────────────────────
@@ -327,22 +387,39 @@ async function aiConsiderRetreat(p2, force = false) {
   const dmg = active.damage || 0;
   const pctDmg = hp > 0 ? dmg / hp : 0;
 
-  if (!force && pctDmg < 0.6) return false;
   const retreatCost = active.convertedRetreatCost || 0;
   if (energyValue(active.attachedEnergy) < retreatCost) return false;
 
-  let bestBench = -1, bestScore = -1;
+  function benchCandidateScore(b) {
+    if (!b) return -Infinity;
+    const remainingHp = (parseInt(b.hp) || 0) - (b.damage || 0);
+    const canAttack = aiCanAttack(b);
+    return remainingHp + (canAttack ? 100 : 0);
+  }
+
+  let bestBench = -1, bestScore = -Infinity;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     const b = p2.bench[i];
     if (!b) continue;
-    const score = (parseInt(b.hp) || 0) - (b.damage || 0);
-    if (score > bestScore) { bestScore = score; bestBench = i; }
+    const s = benchCandidateScore(b);
+    if (s > bestScore) { bestScore = s; bestBench = i; }
   }
-
   if (bestBench === -1) return false;
 
+  const bench = p2.bench[bestBench];
+  const activeCanAttack = aiCanAttack(active);
+  const benchCanAttack = aiCanAttack(bench);
+
+  const shouldRetreat = force
+    || pctDmg >= 0.65
+    || (!activeCanAttack && benchCanAttack)
+    || (benchCandidateScore(bench) > benchCandidateScore(active) + 50 && pctDmg >= 0.4);
+
+  if (!shouldRetreat) return false;
+
+  const outName = bench?.name || '?';
   executeRetreat(2, bestBench);
-  addLog(`🤖 Computer retreated ${active.name}.`, true);
+  addLog(`🤖 Computer retreated ${active.name} → sent out ${outName}.`, true);
   renderAll();
   return true;
 }
@@ -354,131 +431,274 @@ async function aiPlayTrainers() {
   const p2 = G.players[2];
   const hand = p2.hand;
   const opp = G.players[1];
-  const activeStatus = p2.active?.status;
-  const isStatusBad = activeStatus === 'paralyzed' || activeStatus === 'asleep' || activeStatus === 'confused';
 
-  // Priority: cure bad status conditions
-  if (isStatusBad) {
+  function aiExpectedDamage() {
+    const card = p2.active;
+    if (!card?.attacks?.length) return 0;
+    const affordable = card.attacks.filter(atk => canAffordAttack(card.attachedEnergy, atk.cost, card));
+    if (!affordable.length) return 0;
+    return Math.max(...affordable.map(atk => parseInt((atk.damage || '0').replace(/[^0-9]/g,'')) || 0));
+  }
+
+  function canKOWithPlusPower() {
+    if (!opp.active) return false;
+    const remaining = (parseInt(opp.active.hp) || 0) - (opp.active.damage || 0);
+    const baseDmg = aiExpectedDamage();
+    return baseDmg > 0 && baseDmg + 10 >= remaining && baseDmg < remaining;
+  }
+
+  function benchTotalDamage() {
+    return p2.bench.reduce((sum, b) => sum + (b?.damage || 0), 0);
+  }
+
+  let played = true;
+  let trainerPlays = 0;
+  const MAX_TRAINER_PLAYS = aiDifficulty === 'hard' ? 5 : 3;
+
+  while (played && trainerPlays < MAX_TRAINER_PLAYS) {
+    played = false;
+    const activeStatus = p2.active?.status;
+    const isStatusBad = activeStatus === 'paralyzed' || activeStatus === 'asleep' || activeStatus === 'confused';
+
+    // 1. Status cures
+    if (isStatusBad) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        const card = hand[i];
+        if (card.supertype !== 'Trainer') continue;
+        const name = card.name;
+        if (name === 'Full Heal' || name === 'Full Restore') {
+          hand.splice(i, 1); p2.discard.push(card);
+          const cured = p2.active.status; p2.active.status = null;
+          if (name === 'Full Restore') p2.active.damage = 0;
+          addLog(`🤖 Computer played ${name} — cured ${p2.active.name} of ${cured}!`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+        if (name === 'Switch') {
+          const benchSlots = p2.bench.map((s, bi) => ({ s, bi })).filter(x => x.s !== null);
+          if (benchSlots.length) {
+            let bestIdx = benchSlots[0].bi, bestScore = -1;
+            for (const { s, bi } of benchSlots) {
+              const score = (parseInt(s.hp)||0) - (s.damage||0) + (aiCanAttack(s) ? 100 : 0);
+              if (score > bestScore) { bestScore = score; bestIdx = bi; }
+            }
+            hand.splice(i, 1); p2.discard.push(card);
+            const old = p2.active; old.status = null;
+            p2.active = p2.bench[bestIdx]; p2.bench[bestIdx] = old;
+            addLog(`🤖 Computer played Switch — escaped ${activeStatus}! Sent out ${p2.active.name}.`, true);
+            renderAll(); trainerPlays++; played = true; break;
+          }
+        }
+        if (name === 'Scoop Up' && (activeStatus === 'paralyzed' || activeStatus === 'asleep')) {
+          const benchSlots = p2.bench.filter(s => s !== null);
+          if (benchSlots.length) {
+            hand.splice(i, 1); p2.discard.push(card);
+            const scooped = p2.active;
+            scooped.damage = 0; scooped.attachedEnergy = []; scooped.status = null;
+            p2.hand.push(scooped); p2.active = null;
+            let bestBench = 0, bestScore = -1;
+            for (let b = 0; b < RULES.BENCH_SIZE; b++) {
+              if (!p2.bench[b]) continue;
+              const score = (parseInt(p2.bench[b].hp)||0) - (p2.bench[b].damage||0) + (aiCanAttack(p2.bench[b]) ? 100 : 0);
+              if (score > bestScore) { bestScore = score; bestBench = b; }
+            }
+            p2.active = p2.bench[bestBench]; p2.bench[bestBench] = null;
+            addLog(`🤖 Computer played Scoop Up — returned ${scooped.name} to hand, sent out ${p2.active.name}!`, true);
+            renderAll(); trainerPlays++; played = true; break;
+          }
+        }
+      }
+      if (played) continue;
+      if (activeStatus === 'paralyzed' || activeStatus === 'asleep') {
+        await aiConsiderRetreat(p2, true); return;
+      }
+    }
+
+    // 2. PlusPower for KO
+    if (aiDifficulty !== 'easy' && canKOWithPlusPower() && p2.active && aiCanAttack(p2.active)) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'PlusPower') continue;
+        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+        p2.active.plusPower = (p2.active.plusPower || 0) + 10;
+        addLog(`🤖 Computer played PlusPower — going for the KO on ${opp.active?.name}!`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (played) continue;
+    }
+
+    // 3. Gust of Wind
+    if (aiDifficulty !== 'easy' && opp.bench.some(s => s !== null)) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'Gust of Wind') continue;
+        const oppActiveHpLeft = opp.active ? (parseInt(opp.active.hp)||0) - (opp.active.damage||0) : Infinity;
+        let bestTarget = -1, bestTargetScore = Infinity;
+        for (let b = 0; b < RULES.BENCH_SIZE; b++) {
+          const bench = opp.bench[b]; if (!bench) continue;
+          const hpLeft = (parseInt(bench.hp)||0) - (bench.damage||0);
+          const score = hpLeft - energyValue(bench.attachedEnergy) * 10;
+          if (score < bestTargetScore) { bestTargetScore = score; bestTarget = b; }
+        }
+        if (bestTarget !== -1 && bestTargetScore < oppActiveHpLeft - 10) {
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          const pulled = opp.bench[bestTarget];
+          opp.bench[bestTarget] = opp.active; opp.active = pulled;
+          // Defensive pad — ensure bench stays exactly 5 slots after swap
+          while (opp.bench.length < 5) opp.bench.push(null);
+          while (p2.bench.length < 5) p2.bench.push(null);
+          addLog(`🤖 Computer played Gust of Wind — pulled ${pulled.name} into the Active spot!`, true);
+          renderAll(); trainerPlays++; played = true;
+        }
+        break;
+      }
+      if (played) continue;
+    }
+
+    // 4. Energy Removal
+    if (aiDifficulty !== 'easy' && opp.active && (opp.active.attachedEnergy?.length || 0) > 0) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'Energy Removal') continue;
+        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+        const removed = opp.active.attachedEnergy.splice(opp.active.attachedEnergy.length - 1, 1);
+        opp.discard.push(...removed);
+        addLog(`🤖 Computer played Energy Removal on ${opp.active.name}!`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (played) continue;
+    }
+
+    // 5. Super Energy Removal (hard only)
+    if (aiDifficulty === 'hard' && opp.active && (opp.active.attachedEnergy?.length || 0) >= 2) {
+      const myWithEnergy = [p2.active, ...p2.bench].filter(c => c && (c.attachedEnergy?.length || 0) > 0);
+      if (myWithEnergy.length > 0) {
+        for (let i = hand.length - 1; i >= 0; i--) {
+          if (hand[i].name !== 'Super Energy Removal') continue;
+          myWithEnergy[myWithEnergy.length - 1].attachedEnergy.splice(0, 1);
+          const toRemove = Math.min(2, opp.active.attachedEnergy.length);
+          const removed = opp.active.attachedEnergy.splice(opp.active.attachedEnergy.length - toRemove, toRemove);
+          opp.discard.push(...removed);
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          addLog(`🤖 Computer played Super Energy Removal — stripped ${toRemove} energy from ${opp.active.name}!`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+        if (played) continue;
+      }
+    }
+
+    // 6. Defender
+    if (p2.active && (p2.active.damage || 0) >= 30 && aiDifficulty !== 'easy') {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'Defender') continue;
+        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+        p2.active.defenderBonus = (p2.active.defenderBonus || 0) + 20;
+        addLog(`🤖 Computer played Defender on ${p2.active.name}.`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (played) continue;
+    }
+
+    // 7. Revive
+    if (aiDifficulty !== 'easy' && p2.bench.some(s => s === null)) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'Revive') continue;
+        const basics = p2.discard.filter(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
+        if (!basics.length) break;
+        const best = basics.reduce((a, b) => (parseInt(a.hp)||0) > (parseInt(b.hp)||0) ? a : b);
+        p2.discard.splice(p2.discard.indexOf(best), 1);
+        best.damage = Math.floor((parseInt(best.hp)||0) / 2);
+        p2.bench[p2.bench.findIndex(s => s === null)] = best;
+        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+        addLog(`🤖 Computer played Revive — brought back ${best.name}!`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (played) continue;
+    }
+
+    // 8. Pokémon Center
+    {
+      const totalDmg = benchTotalDamage() + (p2.active?.damage || 0);
+      const energyCount = [p2.active, ...p2.bench].filter(Boolean).reduce((s, c) => s + (c.attachedEnergy?.length || 0), 0);
+      if (totalDmg >= 80 && totalDmg >= energyCount * 20) {
+        for (let i = hand.length - 1; i >= 0; i--) {
+          if (hand[i].name !== 'Pokémon Center') continue;
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          [p2.active, ...p2.bench].filter(Boolean).forEach(c => {
+            if (c.damage > 0) { c.attachedEnergy.forEach(e => p2.discard.push(e)); c.attachedEnergy = []; c.damage = 0; }
+          });
+          addLog(`🤖 Computer played Pokémon Center — healed all Pokémon!`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+        if (played) continue;
+      }
+    }
+
+    // 9. Potion / Super Potion
+    if (p2.active && (p2.active.damage || 0) >= 30) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        const name = hand[i].name;
+        if (name === 'Super Potion' && (p2.active.damage||0) >= 50 && (p2.active.attachedEnergy?.length||0) > 0) {
+          p2.discard.push(...p2.active.attachedEnergy.splice(0, 1));
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          p2.active.damage = Math.max(0, (p2.active.damage||0) - RULES.SUPER_POTION_HEAL);
+          addLog(`🤖 Computer played Super Potion — healed ${p2.active.name}.`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+        if (name === 'Potion') {
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          p2.active.damage = Math.max(0, (p2.active.damage||0) - RULES.POTION_HEAL);
+          addLog(`🤖 Computer played Potion — healed ${p2.active.name}.`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+      }
+      if (played) continue;
+    }
+
+    // 10. PlusPower (general)
+    if (aiDifficulty !== 'easy' && p2.active && aiCanAttack(p2.active)) {
+      for (let i = hand.length - 1; i >= 0; i--) {
+        if (hand[i].name !== 'PlusPower') continue;
+        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+        p2.active.plusPower = (p2.active.plusPower || 0) + 10;
+        addLog(`🤖 Computer played PlusPower on ${p2.active.name}.`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (played) continue;
+    }
+
+    // 11. Draw trainers
     for (let i = hand.length - 1; i >= 0; i--) {
       const card = hand[i];
       if (card.supertype !== 'Trainer') continue;
       const name = card.name;
-
-      if (name === 'Full Heal' || name === 'Full Restore') {
-        hand.splice(i, 1);
-        p2.discard.push(card);
-        const cured = p2.active.status;
-        p2.active.status = null;
-        if (name === 'Full Restore') p2.active.damage = 0;
-        addLog(`🤖 Computer played ${name} — cured ${p2.active.name} of ${cured}!`, true);
-        renderAll();
-        return;
+      if (name === 'Bill') {
+        hand.splice(i, 1); p2.discard.push(card);
+        for (let d = 0; d < 2 && p2.deck.length; d++) drawCard(2, true);
+        addLog(`🤖 Computer played Bill — drew 2 cards.`, true);
+        renderAll(); trainerPlays++; played = true; break;
       }
-
-      if (name === 'Switch') {
-        const benchSlots = p2.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-        if (benchSlots.length) {
-          let bestIdx = benchSlots[0].i, bestScore = -1;
-          for (const { s, i: bi } of benchSlots) {
-            const score = (parseInt(s.hp) || 0) - (s.damage || 0);
-            if (score > bestScore) { bestScore = score; bestIdx = bi; }
-          }
-          hand.splice(i, 1);
-          p2.discard.push(card);
-          const old = p2.active;
-          const clearedStatus = old.status;
-          old.status = null;
-          p2.active = p2.bench[bestIdx];
-          p2.bench[bestIdx] = old;
-          if (clearedStatus) addLog(`🤖 Computer played Switch — ${old.name}'s ${clearedStatus} cleared! Sent out ${p2.active.name}.`, true);
-          else addLog(`🤖 Computer played Switch — swapped ${old.name} for ${p2.active.name}!`, true);
-          renderAll();
-          return;
+      const oakThreshold = aiDifficulty === 'hard' ? 6 : 4;
+      if (name === 'Professor Oak' && hand.length <= oakThreshold) {
+        p2.discard.push(...hand.splice(0));
+        for (let d = 0; d < 7 && p2.deck.length; d++) drawCard(2, true);
+        addLog(`🤖 Computer played Professor Oak — drew 7 cards.`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (name === 'Gambler' && hand.length <= 2) {
+        hand.splice(i, 1); p2.discard.push(card);
+        for (let d = 0; d < 8 && p2.deck.length; d++) drawCard(2, true);
+        addLog(`🤖 Computer played Gambler.`, true);
+        renderAll(); trainerPlays++; played = true; break;
+      }
+      if (name === 'Maintenance' && aiDifficulty === 'hard' && hand.length >= 3) {
+        const others = hand.filter((c, ci) => ci !== i);
+        if (others.length >= 2) {
+          const toShuffle = others.slice(0, 2);
+          toShuffle.forEach(c => { const idx = hand.indexOf(c); if (idx !== -1) hand.splice(idx, 1); p2.deck.push(c); });
+          for (let s = p2.deck.length - 1; s > 0; s--) { const r = Math.floor(Math.random()*(s+1)); [p2.deck[s],p2.deck[r]]=[p2.deck[r],p2.deck[s]]; }
+          hand.splice(hand.indexOf(card), 1); p2.discard.push(card);
+          drawCard(2, true);
+          addLog(`🤖 Computer played Maintenance.`, true);
+          renderAll(); trainerPlays++; played = true; break;
         }
       }
-
-      if (name === 'Scoop Up' && activeStatus === 'paralyzed') {
-        const benchSlots = p2.bench.filter(s => s !== null);
-        if (benchSlots.length) {
-          hand.splice(i, 1);
-          p2.discard.push(card);
-          const scooped = p2.active;
-          scooped.damage = 0; scooped.attachedEnergy = []; scooped.status = null;
-          p2.hand.push(scooped);
-          p2.active = null;
-          let bestBench = 0, bestScore = -1;
-          for (let b = 0; b < RULES.BENCH_SIZE; b++) {
-            if (!p2.bench[b]) continue;
-            const score = (parseInt(p2.bench[b].hp) || 0) - (p2.bench[b].damage || 0);
-            if (score > bestScore) { bestScore = score; bestBench = b; }
-          }
-          p2.active = p2.bench[bestBench];
-          p2.bench[bestBench] = null;
-          addLog(`🤖 Computer played Scoop Up — returned ${scooped.name} to hand, sent out ${p2.active.name}!`, true);
-          renderAll();
-          return;
-        }
-      }
-    }
-
-    // No cure trainer — try retreating to escape status
-    if (activeStatus === 'paralyzed' || activeStatus === 'asleep') {
-      const retreated = await aiConsiderRetreat(p2, true);
-      if (retreated) return;
-    }
-  }
-
-  // Draw trainers and utility plays
-  for (let i = hand.length - 1; i >= 0; i--) {
-    const card = hand[i];
-    if (card.supertype !== 'Trainer') continue;
-    const name = card.name;
-
-    if (name === 'Bill') {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      for (let d = 0; d < 2 && p2.deck.length; d++) drawCard(2, true);
-      addLog(`🤖 Computer played Bill — drew 2 cards.`, true);
-      renderAll();
-      return;
-    }
-
-    if (name === 'Professor Oak' && hand.length < 5) {
-      p2.discard.push(...hand.splice(0));
-      hand.length = 0;
-      for (let d = 0; d < 7 && p2.deck.length; d++) drawCard(2, true);
-      addLog(`🤖 Computer played Professor Oak — drew 7 cards.`, true);
-      renderAll();
-      return;
-    }
-
-    if (name === 'Potion' && p2.active && (p2.active.damage || 0) >= 30) {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.damage = Math.max(0, (p2.active.damage || 0) - RULES.POTION_HEAL);
-      addLog(`🤖 Computer played Potion — healed ${p2.active.name} for ${RULES.POTION_HEAL}.`, true);
-      renderAll();
-      return;
-    }
-
-    if (name === 'Super Potion' && p2.active && (p2.active.damage || 0) >= 50 && (p2.active.attachedEnergy?.length || 0) > 0) {
-      const removed = p2.active.attachedEnergy.splice(0, 1);
-      p2.discard.push(...removed);
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.damage = Math.max(0, (p2.active.damage || 0) - RULES.SUPER_POTION_HEAL);
-      addLog(`🤖 Computer played Super Potion — healed ${p2.active.name} for ${RULES.SUPER_POTION_HEAL}.`, true);
-      renderAll();
-      return;
-    }
-
-    if (name === 'PlusPower' && p2.active && aiCanAttack(p2.active)) {
-      hand.splice(i, 1);
-      p2.discard.push(card);
-      p2.active.plusPower = (p2.active.plusPower || 0) + 10;
-      addLog(`🤖 Computer played PlusPower on ${p2.active.name}.`, true);
-      renderAll();
-      return;
     }
   }
 }
@@ -497,37 +717,51 @@ async function aiChooseAndAttack() {
   const card = p2.active;
   if (card.status === 'paralyzed' || card.status === 'asleep') return false;
 
+  const oppActive = p1.active;
+
   const attacks = (card && isPowerActive(card, 'Transform') && dittoAttacks(2)) || card?.attacks || [];
   if (!attacks.length) return false;
 
-  const affordable = attacks.filter(atk =>
-    canAffordAttack(card.attachedEnergy, atk.cost, card) &&
-    !(card.disabledAttack && card.disabledAttack === atk.name)
-  );
+  const oppWeaknesses  = oppActive.weaknesses  || [];
+  const oppResistances = oppActive.resistances || [];
+
+  function effectiveDamage(atk) {
+    let dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+    if (dmg === 0) return 0;
+    const atkTypes = card.types || [];
+    if (oppWeaknesses.some(w => atkTypes.some(t => t.toLowerCase() === w.type.toLowerCase()))) dmg *= 2;
+    if (oppResistances.some(r => atkTypes.some(t => t.toLowerCase() === r.type.toLowerCase()))) dmg = Math.max(0, dmg - 30);
+    return dmg;
+  }
+
+  const affordable = attacks.filter(atk => {
+    if (!canAffordAttack(card.attachedEnergy, atk.cost, card)) return false;
+    if (card.disabledAttack && card.disabledAttack === atk.name) return false;
+    if (atk.name === 'Conversion 1' && !oppWeaknesses.length) return false;
+    return true;
+  });
   if (!affordable.length) return false;
 
   if (aiDifficulty === 'easy' && Math.random() < 0.25) return false;
 
-  let chosen;
-  if (aiDifficulty === 'hard') {
-    const oppHp = parseInt(p1.active.hp) || 0;
-    const oppDmg = p1.active.damage || 0;
-    const remaining = oppHp - oppDmg;
-    chosen = affordable.reduce((best, atk) => {
-      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      return dmg >= remaining ? atk : (dmg > bestDmg ? atk : best);
-    });
-  } else {
-    chosen = affordable.reduce((best, atk) => {
-      const dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      const bestDmg = parseInt((best.damage || '0').replace(/[^0-9]/g, '')) || 0;
-      return dmg > bestDmg ? atk : best;
-    });
+  const oppHpLeft = (parseInt(oppActive.hp) || 0) - (oppActive.damage || 0);
+
+  function attackScore(atk) {
+    const eff = effectiveDamage(atk);
+    const koBonus = eff >= oppHpLeft ? 1000 : 0;
+    return eff + koBonus;
   }
 
+  const chosen = aiDifficulty === 'easy'
+    ? affordable.reduce((best, atk) => {
+        const dmg = parseInt((atk.damage||'0').replace(/[^0-9]/g,''))||0;
+        const bestDmg = parseInt((best.damage||'0').replace(/[^0-9]/g,''))||0;
+        return dmg > bestDmg ? atk : best;
+      })
+    : affordable.reduce((best, atk) => attackScore(atk) > attackScore(best) ? atk : best);
+
   addLog(`🤖 Computer uses ${chosen.name}!`, true);
-  aiThinking = false; // release before async attack
+  aiThinking = false;
   await performAttack(2, chosen);
   return true;
 }
@@ -536,15 +770,24 @@ async function aiChooseAndAttack() {
 function aiDoPromotion() {
   if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
   const p2 = G.players[2];
-  let bestIdx = -1, bestScore = -1;
+  let bestIdx = -1, bestScore = -Infinity;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     if (!p2.bench[i]) continue;
     const hp = parseInt(p2.bench[i].hp) || 0;
     const dmg = p2.bench[i].damage || 0;
-    const score = hp - dmg;
+    const canAttack = aiCanAttack(p2.bench[i]);
+    const score = (hp - dmg) + (canAttack ? 200 : 0);
     if (score > bestScore) { bestScore = score; bestIdx = i; }
   }
-  if (bestIdx === -1) return;
+  if (bestIdx === -1) {
+    // No bench Pokémon left — P1 wins
+    if (G.started) {
+      addLog(`Computer has no Pokémon left — Player 1 wins!`, true);
+      G.started = false;
+      showWinScreen(1, 'OPPONENT HAS NO POKÉMON LEFT');
+    }
+    return;
+  }
   resolvePromotion(2, bestIdx);
 }
 
@@ -582,7 +825,7 @@ window.addEventListener('load', () => {
     checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
       const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
       if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
-        setTimeout(() => aiDoPromotion(), 700);
+        setTimeout(() => aiDoPromotion(), 400);
       }
       return result;
     };

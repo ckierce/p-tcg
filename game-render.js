@@ -712,33 +712,14 @@ let ENERGY_ICONS = {};
   } catch(e) { console.warn('energy-icons.json not loaded — using SVG fallbacks:', e); }
 })();
 
-// GAME_STATE_DEFAULTS — mutable per-card fields that must survive every Firebase
-// round-trip and enrichCard merge. Add new fields HERE only; enrichCard picks
-// them up automatically in both code paths.
-const GAME_STATE_DEFAULTS = {
-  status:               null,
-  damage:               0,
-  defender:             false,
-  defenderFull:         false,
-  defenderFullEffects:  false,
-  defenderThreshold:    0,
-  defenderReduction:    0,
-  plusPower:            0,
-  nextAttackDouble:     false,
-  smokescreened:        false,
-  immuneToAttack:       false,
-  disabledAttack:       null,
-  cantRetreat:          false,
-  destinyBond:          false,
-  leekSlapUsed:         false,
-  pounceActive:         false,
-  pounceReduction:      0,
-  swordsDanceActive:    false,
-  attackReduction:      0,
-  conversionWeakness:   null,
-  conversionResistance: null,
-  trainerBlocked:       false,
-};
+// GAME_STATE_DEFAULTS is defined in game-utils.js (loaded before this file).
+// Historical note: earlier versions mirrored it here so either file could be loaded
+// in isolation. In the current architecture BOTH files are always loaded together
+// with game-utils.js first, so a duplicate `const` here would be a SyntaxError
+// (two top-level `const`s with the same name in the same realm's lexical env).
+// To add a game-state field, edit the definition in game-utils.js — enrichCard
+// below iterates Object.entries(GAME_STATE_DEFAULTS), so new fields are
+// automatically picked up in both paths.
 
 function enrichCard(card) {
   if (!card) return card;
