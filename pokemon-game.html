@@ -474,16 +474,16 @@ h1, h2, h3 { font-family: var(--font-title); }
   padding: 2px 0;
 }
 
-/* Opp prizes — 2×3 grid (3 cols, 2 rows), card-shaped */
+/* Opp prizes — 2×3 grid to match player side */
 .opp-prizes {
   display: grid;
-  grid-template-columns: repeat(3, 32px);
-  grid-template-rows: repeat(2, 45px);
-  gap: 3px;
+  grid-template-columns: repeat(2, var(--prize-w));
+  grid-template-rows: repeat(3, var(--prize-h));
+  gap: 4px;
   flex-shrink: 0;
 }
 .opp-prize-pip {
-  width: 32px; height: 45px;
+  width: var(--prize-w); height: var(--prize-h);
   background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -503,10 +503,10 @@ h1, h2, h3 { font-family: var(--font-title); }
   gap: 3px;
 }
 .opp-deck-slot {
-  width: 56px;
-  height: 78px;
+  width: var(--card-w-sm);
+  height: var(--card-h-sm);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
   display: flex;
   flex-direction: column;
@@ -517,10 +517,10 @@ h1, h2, h3 { font-family: var(--font-title); }
   flex-shrink: 0;
 }
 .opp-discard {
-  width: 56px;
-  height: 78px;
+  width: var(--card-w-sm);
+  height: var(--card-h-sm);
   border: 1px dashed var(--border);
-  border-radius: 4px;
+  border-radius: 5px;
   background: var(--surface);
   display: flex;
   align-items: center;
@@ -532,6 +532,13 @@ h1, h2, h3 { font-family: var(--font-title); }
   flex-shrink: 0;
 }
 .opp-discard img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Unified "DISC"/"DISCARD" placeholder inside the empty discard pile */
+.discard-placeholder {
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: .5px;
+}
 .discard-count {
   position: absolute; bottom: 2px; right: 3px;
   font-size: 8px;
@@ -2096,7 +2103,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     grid-template-areas:
       "prizes bench aux"
       "prizes active aux";
-    grid-template-columns: 44px 1fr 44px;
+    grid-template-columns: auto 1fr auto;
     grid-template-rows: auto auto;
     align-items: center;
     justify-items: center;
@@ -2148,8 +2155,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     align-self: center;
     align-items: center;
   }
-  .opp-deck-slot { width: 36px; height: 50px; }
-  .opp-discard   { width: 36px; height: 50px; }
+  .opp-deck-slot {
+    width: clamp(36px, 9vw, 52px);
+    height: clamp(50px, 12.5vw, 72px);
+  }
+  .opp-discard {
+    width: clamp(36px, 9vw, 52px);
+    height: clamp(50px, 12.5vw, 72px);
+  }
 
   /* Hand count hidden — too little space */
   .opp-hand-count { display: none; }
@@ -2509,7 +2522,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
             </div>
             <div class="opp-aux-pair">
               <div id="discard-count-p2" class="opp-aux-count">0</div>
-              <div class="opp-discard" id="discard-p2"><span style="font-size: 8px">DISC</span></div>
+              <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISC</span></div>
             </div>
           </div>
           <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
@@ -2565,7 +2578,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
         <div class="player-aux-row">
           <div id="discard-count-p1" class="player-aux-count">0</div>
           <div class="player-discard-slot" id="discard-p1">
-            <span style="font-size: 8px">DISCARD</span>
+            <span class="discard-placeholder">DISCARD</span>
           </div>
         </div>
       </div>
@@ -3914,67 +3927,10 @@ function wireDropTarget(el, zone, benchIdx) {
 // (removed: aiChooseAndAttack — now lives in extracted .js file)
 
 
-// ── Hook into endTurn to trigger AI ─────────────────
-{
-  const _orig = endTurn;
-  endTurn = function() {
-    _orig();
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
-
-// ── Hook into resolvePromotion to handle AI promotion ─
-{
-  const _orig = resolvePromotion;
-  resolvePromotion = function(player, benchIdx) {
-    _orig(player, benchIdx);
-    if (vsComputer && G.started && G.turn === 2 && G.phase !== 'PROMOTE') {
-      aiThinking = false;
-      setTimeout(() => aiTakeTurn(), 900);
-    }
-  };
-}
-
-// ── AI auto-handles its own promotion ───────────────
-// Intercept checkKO to detect when AI needs to pick a new active
-{
-  const _orig = checkKO;
-  checkKO = function(attackingPlayer, defendingPlayer, card, isSelf) {
-    const result = _orig(attackingPlayer, defendingPlayer, card, isSelf);
-    if (vsComputer && result === 'promote' && G.pendingPromotion === 2) {
-      setTimeout(() => aiDoPromotion(), 700);
-    }
-    return result;
-  };
-}
-// (removed: aiDoPromotion — now lives in extracted .js file)
-
-
-// ── Hook into doneSetup to trigger AI setup completion ─
-{
-  const _orig = doneSetup;
-  doneSetup = async function() {
-    if (vsComputer && !G.players[2].active) {
-      aiDoSetup();
-    }
-    await _orig();
-  };
-}
-
-// ── Watch loadDeck to detect P1 deck load in VS CPU mode ─
-// Patch loadDeck to detect VS CPU deck load completion
-{
-  const _origLoad = loadDeck;
-  loadDeck = async function(fKey, deckName) {
-    await _origLoad(fKey, deckName);
-    if (document.getElementById('vs-computer-panel')?.style.display !== 'none') {
-      checkVsCpuReady();
-    }
-  };
-}
+// ── AI hooks (endTurn, resolvePromotion, checkKO, doneSetup, loadDeck) ───
+// All of these hooks live in game-ai.js, applied via window.addEventListener('load').
+// Do not re-wrap them here — double-wrapping causes aiTakeTurn to fire twice per
+// turn, which races on the aiThinking mutex and freezes the computer's turn.
 
 // ══════════════════════════════════════════════════
 // MULTIPLAYER / ROOM SYSTEM

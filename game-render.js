@@ -399,18 +399,16 @@ function updateDeckCounts() {
   const topPlayer    = isP2Persp ? 1 : 2;
   const bp = G.players[bottomPlayer];
   const tp = G.players[topPlayer];
-  // P1: deck count to left of deck pile
-  const el1 = document.getElementById('deck-count-p1-label');
-  if (el1) el1.innerHTML = `${bp.deck.length}<small>deck</small>`;
-  // P1: discard count to left of discard pile
-  const el1d = document.getElementById('discard-count-p1-label');
-  if (el1d) el1d.innerHTML = `${bp.discard.length}<small>disc</small>`;
-  // P2: deck count below deck pile
-  const el2 = document.getElementById('deck-count-p2');
-  if (el2) el2.innerHTML = `${tp.deck.length}<small>deck</small>`;
-  // P2: discard count below discard pile
+  // Bottom (player) counts — IDs deck-count-p1 / discard-count-p1 in HTML
+  const el1  = document.getElementById('deck-count-p1');
+  if (el1)  el1.textContent  = bp.deck.length;
+  const el1d = document.getElementById('discard-count-p1');
+  if (el1d) el1d.textContent = bp.discard.length;
+  // Top (opponent) counts — IDs deck-count-p2 / discard-count-p2 in HTML
+  const el2  = document.getElementById('deck-count-p2');
+  if (el2)  el2.textContent  = tp.deck.length;
   const el2d = document.getElementById('discard-count-p2');
-  if (el2d) el2d.innerHTML = `${tp.discard.length}<small>disc</small>`;
+  if (el2d) el2d.textContent = tp.discard.length;
 }
 
 function updatePhase() {
