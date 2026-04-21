@@ -3520,8 +3520,7 @@ document.getElementById('card-picker-modal').addEventListener('click', e => {
 // ══════════════════════════════════════════════════
 // TOAST
 // ══════════════════════════════════════════════════
-let toastTimer;
-// (removed: showToast — now lives in extracted .js file)
+// (removed: toastTimer + showToast — now live in extracted .js file)
 
 // (removed: shuffle — now lives in extracted .js file)
 
@@ -3539,22 +3538,8 @@ let toastTimer;
 // ══════════════════════════════════════════════════
 // CARD DATA LOOKUP (loaded once from cards.json)
 // ══════════════════════════════════════════════════
-let CARD_DATA = {};
-(async () => {
-  try {
-    const resp = await fetch('cards.json');
-    const cards = await resp.json();
-    cards.forEach(c => { CARD_DATA[c.id] = c; });
-  } catch(e) { console.warn('cards.json not loaded:', e); }
-})();
-
-let ENERGY_ICONS = {};
-(async () => {
-  try {
-    const resp = await fetch('energy-icons.json');
-    ENERGY_ICONS = await resp.json();
-  } catch(e) { console.warn('energy-icons.json not loaded — using SVG fallbacks:', e); }
-})();
+// CARD_DATA and ENERGY_ICONS are declared AND loaded in game-render.js.
+// Do not duplicate the fetch here — it was causing two parallel loads per page.
 // (removed: enrichCard — now lives in extracted .js file)
 
 // (removed: showPromoteBanner — now lives in extracted .js file)
@@ -3563,10 +3548,8 @@ let ENERGY_ICONS = {};
 
 
 // ── Flash queue ───────────────────────────────────────────────────────────────
-// All flashes and deferred renders go through a single queue so they never overlap
-// and board state changes are visible at the same time as the flash that explains them.
-const _flashQueue = [];
-let _flashBusy = false;
+// All flash state (_flashQueue, _flashBusy) and related functions now live in
+// extracted game-render.js.
 // (removed: _runFlashQueue — now lives in extracted .js file)
 
 // (removed: _queueFlash — now lives in extracted .js file)
@@ -3595,9 +3578,8 @@ let _flashBusy = false;
 // ══════════════════════════════════════════════════
 // CARD PICKER MODAL
 // ══════════════════════════════════════════════════
-let _cardPickerResolve = null;
-let _cardPickerSelected = [];
-let _cardPickerMax = 1;
+// Card picker state (_cardPickerResolve, _cardPickerSelected, _cardPickerMax)
+// and functions live in extracted game-render.js.
 // (removed: openCardPicker — now lives in extracted .js file)
 
 // (removed: togglePickerCard — now lives in extracted .js file)
@@ -3614,9 +3596,8 @@ let _cardPickerMax = 1;
 // ══════════════════════════════════════════════════
 // POKéDEX
 // ══════════════════════════════════════════════════
-let _dexResolve = null;
-let _dexCards = [];   // working copy, gets reordered
-let _dexDragSrc = null;
+// Pokédex state (_dexResolve, _dexCards, _dexDragSrc) and functions live in
+// extracted game-render.js.
 // (removed: openPokedex — now lives in extracted .js file)
 
 // (removed: renderDexCards — now lives in extracted .js file)
@@ -3909,12 +3890,9 @@ function wireDropTarget(el, zone, benchIdx) {
 // ══════════════════════════════════════════════════
 // VS COMPUTER MODE
 // ══════════════════════════════════════════════════
-let vsComputer = false;   // true when playing against AI
-let aiDifficulty = 'normal'; // 'easy' | 'normal' | 'hard'
-let aiThinking = false;   // guard against re-entrant AI turns
-// (removed: setAiDiff — now lives in extracted .js file)
+// vsComputer, aiDifficulty, aiThinking, setAiDiff, startVsComputer,
+// checkVsCpuReady, startVsCpuGame, aiDoSetup all live in extracted game-ai.js.
 
-setAiDiff('normal'); // default highlight
 // (removed: startVsComputer — now lives in extracted .js file)
 
 // (removed: checkVsCpuReady — now lives in extracted .js file)
