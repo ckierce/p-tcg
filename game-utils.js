@@ -359,6 +359,25 @@ function computeBetweenTurnDamage(players) {
 }
 
 
+// ── transitionPhase ───────────────────────────────────────────────────────────
+// Sets G.phase to the given phase. Optionally merges additional top-level state
+// (e.g. pendingPromotion) into G. Calls updatePhase() so the DOM phase pill
+// reflects the new phase immediately. Safe to call on non-browser (Node/tests)
+// since G and updatePhase are tolerated as undefined.
+//
+// Why this exists: all 6 callers in game-actions.js and 1 in game-ai.js want
+// the same three-step operation (set phase, optionally patch G, update DOM).
+// Centralizing prevents the classic bug of one site forgetting updatePhase()
+// and the phase pill drifting out of sync with G.phase.
+function transitionPhase(phase, extras) {
+  if (typeof G === 'undefined' || !G) return;
+  G.phase = phase;
+  if (extras && typeof extras === 'object') {
+    for (const k of Object.keys(extras)) G[k] = extras[k];
+  }
+  if (typeof updatePhase === 'function') updatePhase();
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     RULES, GAME_STATE_DEFAULTS,
@@ -369,5 +388,6 @@ if (typeof module !== 'undefined') {
     coerceCardArrays, mergeGameStateDefaults,
     computeBetweenTurnDamage,
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
+    transitionPhase,
   };
 }
