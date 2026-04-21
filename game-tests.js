@@ -1310,10 +1310,16 @@ global.setMidline = () => {};
 global.RULES = RULES;
 global.energyValue = energyValue;
 global.canAffordAttack = canAffordAttack;
+global.computeDamageAfterWR = computeDamageAfterWR;
 global.isPowerActive = () => false;
 global.dittoAttacks = () => null;
 
-const { aiChooseEnergyTarget: _aiChooseEnergyTarget } = require('./game-ai.js');
+const {
+  aiChooseEnergyTarget: _aiChooseEnergyTarget,
+  opponentThreatNextTurn: _opponentThreatNextTurn,
+  willActiveDieNextTurn: _willActiveDieNextTurn,
+  maxDamageForAttack: _maxDamageForAttack,
+} = require('./game-ai.js');
 
 // Kangaskhan (Jungle): Fetch [C] / Comet Punch [CCCC] — all Colorless costs
 const KANGASKHAN = {
@@ -1443,6 +1449,356 @@ const CHARMANDER = {
   const target = _aiChooseEnergyTarget(p2, 'Water Energy');
   assert('Returns a valid target when both active and bench could use more energy',
     target && (target.zone === 'active' || target.zone === 'bench'));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// maxDamageForAttack — coin-flip worst-case damage parsing
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('maxDamageForAttack');
+
+{
+  // Comet Punch: Flip 4 coins. 20 damage times the number of heads. Max = 80.
+  const comet = {
+    name: 'Comet Punch',
+    damage: '20×',
+    text: 'Flip 4 coins. This attack does 20 damage times the number of heads.',
+  };
+  assertEqual('Comet Punch max = 80 (4 flips × 20)',
+    _maxDamageForAttack(comet, 0), 80);
+}
+
+{
+  // Twineedle: Flip 2 coins. 30 damage times the number of heads. Max = 60.
+  const twineedle = {
+    name: 'Twineedle',
+    damage: '30×',
+    text: 'Flip 2 coins. This attack does 30 damage times the number of heads.',
+  };
+  assertEqual('Twineedle max = 60 (2 flips × 30)',
+    _maxDamageForAttack(twineedle, 0), 60);
+}
+
+{
+  // Bonemerang: Flip 2 coins. 30 × heads. Max = 60.
+  const bonemerang = {
+    name: 'Bonemerang',
+    damage: '30×',
+    text: 'Flip 2 coins. This attack does 30 damage times the number of heads. If both are tails, this attack does nothing.',
+  };
+  assertEqual('Bonemerang max = 60',
+    _maxDamageForAttack(bonemerang, 0), 60);
+}
+
+{
+  // "Flip a coin. If heads, this attack does 10 more damage" — Scratch + bonus
+  const move = {
+    name: 'Hypothetical',
+    damage: '20',
+    text: 'Flip a coin. If heads, this attack does 10 more damage.',
+  };
+  assertEqual('"If heads, 10 more damage" → 20 + 10 = 30',
+    _maxDamageForAttack(move, 0), 30);
+}
+
+{
+  // "Flip a coin. If tails, this attack does nothing." — max = base
+  const move = {
+    name: 'Smokescreen',
+    damage: '40',
+    text: 'Flip a coin. If tails, this attack does nothing.',
+  };
+  assertEqual('"If tails, nothing" → max = base 40',
+    _maxDamageForAttack(move, 0), 40);
+}
+
+{
+  // Plain attack with no coin-flip text → base damage
+  const move = { name: 'Scratch', damage: '10', text: 'No effect.' };
+  assertEqual('Plain attack → base damage',
+    _maxDamageForAttack(move, 0), 10);
+}
+
+{
+  // Missing text field → base damage (graceful fallback)
+  const move = { name: 'Mystery', damage: '30' };
+  assertEqual('Missing text → falls back to base',
+    _maxDamageForAttack(move, 0), 30);
+}
+
+{
+  // 0-damage attack (status-only) → 0
+  const move = { name: 'Pound', damage: '', text: 'Does nothing special.' };
+  assertEqual('0-damage attack → 0',
+    _maxDamageForAttack(move, 0), 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// opponentThreatNextTurn — how much damage can the opponent do next turn?
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('opponentThreatNextTurn');
+
+// Helper: build a minimal player object
+function mkP(opts = {}) {
+  return {
+    active: opts.active || null,
+    bench: opts.bench || [null, null, null, null, null],
+    hand: opts.hand || [],
+    discard: opts.discard || [],
+  };
+}
+
+// Hitmonchan — Jab [F] 20, Special Punch [FFC] 40.
+const HITMONCHAN = {
+  name: 'Hitmonchan',
+  hp: '70',
+  types: ['Fighting'],
+  attacks: [
+    { name: 'Jab', cost: ['Fighting'], damage: '20', text: '' },
+    { name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' },
+  ],
+  attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+  weaknesses: [], resistances: [],
+};
+
+// Electabuzz — Thundershock [L] 10 (+paralysis flip) / Thunderpunch [LLC] 30 (+10 if heads)
+const ELECTABUZZ = {
+  name: 'Electabuzz',
+  hp: '70',
+  types: ['Lightning'],
+  attacks: [
+    { name: 'Thundershock', cost: ['Lightning'], damage: '10',
+      text: 'Flip a coin. If heads, the Defending Pokémon is now Paralyzed.' },
+    { name: 'Thunderpunch', cost: ['Lightning','Lightning','Colorless'], damage: '30',
+      text: 'Flip a coin. If heads, this attack does 10 more damage; if tails, this attack does 10 damage to itself.' },
+  ],
+  attachedEnergy: [{ name: 'Lightning Energy' }, { name: 'Lightning Energy' }],
+  weaknesses: [], resistances: [],
+};
+
+// A defender Pokémon with Fighting weakness (e.g., Electabuzz has no weakness;
+// use a fictional mon to test weakness doubling)
+const FIGHTING_WEAK = {
+  name: 'RockTarget', hp: '80',
+  types: [], attacks: [], attachedEnergy: [],
+  weaknesses: [{ type: 'Fighting', value: '×2' }],
+  resistances: [],
+};
+
+// No active at all
+{
+  const attacker = mkP({ active: null });
+  const defender = mkP({ active: HITMONCHAN });
+  assertEqual('No attacker active → threat 0',
+    _opponentThreatNextTurn(attacker, defender), 0);
+}
+
+{
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({ active: null });
+  assertEqual('No defender active → threat 0',
+    _opponentThreatNextTurn(attacker, defender), 0);
+}
+
+// Hitmonchan (Jab=20, Special Punch=40 with 2F attached + 1 more energy needed
+// but canAffordAttack needs F,F,C → with 2F attached, Special Punch not affordable
+// yet. Hand has no energy. Max affordable = Jab = 20.
+{
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('Hitmonchan with 2F, empty hand → threat 20 (Jab only)',
+    _opponentThreatNextTurn(attacker, defender), 20);
+}
+
+// Same setup but hand has a Colorless Energy → Special Punch becomes affordable → 40
+{
+  const attacker = mkP({
+    active: HITMONCHAN,
+    hand: [{ name: 'Fighting Energy', supertype: 'Energy' }],
+  });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('Hitmonchan + F in hand → threat 40 (Special Punch enabled)',
+    _opponentThreatNextTurn(attacker, defender), 40);
+}
+
+// Weakness doubling
+{
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({ active: FIGHTING_WEAK });
+  assertEqual('Hitmonchan Jab on Fighting-weak target → 20 × 2 = 40',
+    _opponentThreatNextTurn(attacker, defender), 40);
+}
+
+// PlusPower in attacker's hand adds +10
+{
+  const attacker = mkP({
+    active: HITMONCHAN,
+    hand: [{ name: 'PlusPower', supertype: 'Trainer' }],
+  });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('Hitmonchan + PlusPower → threat 30 (20 + 10)',
+    _opponentThreatNextTurn(attacker, defender), 30);
+}
+
+// Paralyzed attacker → 0
+{
+  const attacker = mkP({
+    active: { ...HITMONCHAN, status: 'paralyzed' },
+  });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('Paralyzed attacker → threat 0',
+    _opponentThreatNextTurn(attacker, defender), 0);
+}
+
+// Coin-flip max damage: Kangaskhan Comet Punch with enough energy → 80 max
+{
+  const kang = {
+    name: 'Kangaskhan', hp: '90', types: ['Colorless'],
+    attacks: [
+      { name: 'Fetch', cost: ['Colorless'], damage: '', text: 'Draw a card.' },
+      { name: 'Comet Punch', cost: ['Colorless','Colorless','Colorless','Colorless'],
+        damage: '20×',
+        text: 'Flip 4 coins. This attack does 20 damage times the number of heads.' },
+    ],
+    attachedEnergy: [{ name: 'Grass Energy' }, { name: 'Grass Energy' },
+                     { name: 'Grass Energy' }, { name: 'Grass Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({ active: kang });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '100',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('Kangaskhan with 4C → Comet Punch worst-case threat = 80',
+    _opponentThreatNextTurn(attacker, defender), 80);
+}
+
+// Disabled attack is filtered out
+{
+  const attacker = mkP({
+    active: {
+      ...HITMONCHAN,
+      disabledAttack: 'Jab', // Kadabra-style disable
+    },
+  });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  // Jab disabled, Special Punch not affordable (only 2F, needs FFC) → 0
+  assertEqual('Disabled attack skipped + Special Punch unaffordable → 0',
+    _opponentThreatNextTurn(attacker, defender), 0);
+}
+
+// attackReduction debuff reduces threat
+{
+  const attacker = mkP({
+    active: { ...HITMONCHAN, attackReduction: 10 },
+  });
+  const defender = mkP({
+    active: {
+      name: 'TargetDummy', hp: '60',
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assertEqual('attackReduction=10 on Hitmonchan → Jab threat 20 - 10 = 10',
+    _opponentThreatNextTurn(attacker, defender), 10);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// willActiveDieNextTurn — threat vs HP remaining
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('willActiveDieNextTurn');
+
+{
+  // Defender active: Squirtle with 20 damage, 40 HP left, facing Hitmonchan (20 dmg)
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({
+    active: {
+      name: 'Squirtle', hp: '40', damage: 20,
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assert('40HP-20dmg=20 left; Hitmonchan Jab does 20 → WILL die',
+    _willActiveDieNextTurn(defender, attacker) === true);
+}
+
+{
+  // Same situation but Hitmonchan only has 1F energy → can't attack (Jab needs F)
+  // Wait, Jab needs [F] and attacker has 2F. OK use different setup.
+  // Defender has 30 HP left, attacker does 20 → survives
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({
+    active: {
+      name: 'Squirtle', hp: '40', damage: 10,
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assert('40HP-10dmg=30 left; Hitmonchan Jab does 20 → SURVIVES',
+    _willActiveDieNextTurn(defender, attacker) === false);
+}
+
+{
+  // Paralyzed attacker → safe regardless of damage
+  const attacker = mkP({ active: { ...HITMONCHAN, status: 'paralyzed' } });
+  const defender = mkP({
+    active: {
+      name: 'LowHP', hp: '40', damage: 30,
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assert('Paralyzed attacker → defender safe even at 10 HP left',
+    _willActiveDieNextTurn(defender, attacker) === false);
+}
+
+{
+  // Already-KO'd → returns false (nothing to protect, separate flow)
+  const attacker = mkP({ active: HITMONCHAN });
+  const defender = mkP({
+    active: {
+      name: 'Dead', hp: '40', damage: 40,
+      types: [], attacks: [], attachedEnergy: [],
+      weaknesses: [], resistances: [],
+    },
+  });
+  assert('Already KO\'d (hpLeft ≤ 0) → returns false',
+    _willActiveDieNextTurn(defender, attacker) === false);
 }
 
 

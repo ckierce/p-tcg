@@ -435,7 +435,17 @@ async function aiConsiderRetreat(p2, force = false) {
   const activeCanAttack = aiCanAttack(active);
   const benchCanAttack = aiCanAttack(bench);
 
+  // Threat-aware: if active will die next turn and bench candidate will survive,
+  // retreating saves a prize. This is the most important retreat signal and
+  // overrides the old damage-percentage heuristic.
+  const p1 = G.players[1];
+  const activeDying = willActiveDieNextTurn(p2, p1);
+  const benchHpLeft = (parseInt(bench.hp) || 0) - (bench.damage || 0);
+  const benchThreat = opponentThreatNextTurn(p1, { ...p2, active: bench });
+  const benchWouldSurvive = benchHpLeft > benchThreat;
+
   const shouldRetreat = force
+    || (activeDying && benchWouldSurvive)
     || pctDmg >= 0.65
     || (!activeCanAttack && benchCanAttack)
     || (benchCandidateScore(bench) > benchCandidateScore(active) + 50 && pctDmg >= 0.4);
@@ -608,16 +618,27 @@ async function aiPlayTrainers() {
       }
     }
 
-    // 6. Defender
-    if (p2.active && (p2.active.damage || 0) >= 30 && aiDifficulty !== 'easy') {
-      for (let i = hand.length - 1; i >= 0; i--) {
-        if (hand[i].name !== 'Defender') continue;
-        const card = hand.splice(i, 1)[0]; p2.discard.push(card);
-        p2.active.defenderBonus = (p2.active.defenderBonus || 0) + 20;
-        addLog(`🤖 Computer played Defender on ${p2.active.name}.`, true);
-        renderAll(); trainerPlays++; played = true; break;
+    // 6. Defender — play if it moves us out of KO range next turn.
+    // Falls back to the old damage-threshold heuristic when we can't predict
+    // (e.g., opponent active missing / status hides damage).
+    if (p2.active && aiDifficulty !== 'easy') {
+      const threat = opponentThreatNextTurn(opp, p2);
+      const hpLeft = (parseInt(p2.active.hp) || 0) - (p2.active.damage || 0);
+      // Defender reduces incoming damage by 20. Only useful if:
+      //   - We'd die without it (threat >= hpLeft), AND
+      //   - With it we'd survive (threat - 20 < hpLeft)
+      const defenderSaves = threat >= hpLeft && (threat - 20) < hpLeft;
+      const fallbackHeuristic = (p2.active.damage || 0) >= 30 && threat === 0;
+      if (defenderSaves || fallbackHeuristic) {
+        for (let i = hand.length - 1; i >= 0; i--) {
+          if (hand[i].name !== 'Defender') continue;
+          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+          p2.active.defender = true;
+          addLog(`🤖 Computer played Defender on ${p2.active.name}.`, true);
+          renderAll(); trainerPlays++; played = true; break;
+        }
+        if (played) continue;
       }
-      if (played) continue;
     }
 
     // 7. Revive
@@ -655,22 +676,40 @@ async function aiPlayTrainers() {
       }
     }
 
-    // 9. Potion / Super Potion
-    if (p2.active && (p2.active.damage || 0) >= 30) {
+    // 9. Potion / Super Potion — heal to escape next-turn KO, or as top-up
+    // when damage is accumulating but no immediate threat.
+    if (p2.active && (p2.active.damage || 0) >= 20) {
+      const threat = opponentThreatNextTurn(opp, p2);
+      const hpLeft = (parseInt(p2.active.hp) || 0) - (p2.active.damage || 0);
+      const dying = threat >= hpLeft;
+
       for (let i = hand.length - 1; i >= 0; i--) {
         const name = hand[i].name;
-        if (name === 'Super Potion' && (p2.active.damage||0) >= 50 && (p2.active.attachedEnergy?.length||0) > 0) {
-          p2.discard.push(...p2.active.attachedEnergy.splice(0, 1));
-          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
-          p2.active.damage = Math.max(0, (p2.active.damage||0) - RULES.SUPER_POTION_HEAL);
-          addLog(`🤖 Computer played Super Potion — healed ${p2.active.name}.`, true);
-          renderAll(); trainerPlays++; played = true; break;
+        // Super Potion: heals 40 (at cost of 1 energy).
+        if (name === 'Super Potion' && (p2.active.attachedEnergy?.length || 0) > 0) {
+          // Primary use: escape a KO.
+          const willSaveUs = dying && (hpLeft + RULES.SUPER_POTION_HEAL) > threat;
+          // Fallback: damage is piling up and we have plenty of energy to spare.
+          const efficientTopUp = (p2.active.damage || 0) >= 50 &&
+            (p2.active.attachedEnergy.length >= 2);
+          if (willSaveUs || efficientTopUp) {
+            p2.discard.push(...p2.active.attachedEnergy.splice(0, 1));
+            const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+            p2.active.damage = Math.max(0, (p2.active.damage || 0) - RULES.SUPER_POTION_HEAL);
+            addLog(`🤖 Computer played Super Potion — healed ${p2.active.name}.`, true);
+            renderAll(); trainerPlays++; played = true; break;
+          }
         }
+        // Potion: heals 20, free. Play if it escapes KO, or if damage is high enough.
         if (name === 'Potion') {
-          const card = hand.splice(i, 1)[0]; p2.discard.push(card);
-          p2.active.damage = Math.max(0, (p2.active.damage||0) - RULES.POTION_HEAL);
-          addLog(`🤖 Computer played Potion — healed ${p2.active.name}.`, true);
-          renderAll(); trainerPlays++; played = true; break;
+          const willSaveUs = dying && (hpLeft + RULES.POTION_HEAL) > threat;
+          const worthItAnyway = (p2.active.damage || 0) >= 30;
+          if (willSaveUs || worthItAnyway) {
+            const card = hand.splice(i, 1)[0]; p2.discard.push(card);
+            p2.active.damage = Math.max(0, (p2.active.damage || 0) - RULES.POTION_HEAL);
+            addLog(`🤖 Computer played Potion — healed ${p2.active.name}.`, true);
+            renderAll(); trainerPlays++; played = true; break;
+          }
         }
       }
       if (played) continue;
@@ -732,6 +771,127 @@ async function aiPlayTrainers() {
 function aiCanAttack(card) {
   if (!card?.attacks?.length) return false;
   return card.attacks.some(atk => canAffordAttack(card.attachedEnergy, atk.cost, card));
+}
+
+// Max possible damage of a single attack, treating all coin flips as heads.
+// Reads the attack's text to detect "flip N coins" / "flip once" / "if heads
+// +N damage" patterns. Returns the number that goes on the opponent BEFORE
+// weakness/resistance/PlusPower. Returns 0 if the attack deals no damage.
+//
+// This is a conservative ("worst case for us") estimate used by the threat
+// model. When we can't infer a multiplier, we fall back to the base damage.
+function maxDamageForAttack(move, energyCount) {
+  const base = parseInt((move.damage || '0').replace(/[^0-9]/g, '')) || 0;
+  const text = (move.text || '').toLowerCase();
+  if (!text) return base;
+
+  // "Flip N coins. ... does X damage times the number of heads."
+  // e.g. Comet Punch: N=4, X=20 → max 80
+  const flipNMatch = text.match(/flip (\d+|a) coins?[\s\S]*?times the number of heads/i);
+  const timesHeadsMatch = text.match(/does (\d+) damage times the number of heads/i);
+  if (flipNMatch && timesHeadsMatch) {
+    const rawN = flipNMatch[1];
+    const numFlips = rawN === 'a' ? 1 : parseInt(rawN);
+    const perFlip = parseInt(timesHeadsMatch[1]);
+    return numFlips * perFlip;
+  }
+
+  // "Flip a number of coins equal to the number of Energy attached."
+  const equalEnergyMatch = text.match(/flip a number of coins equal to[^.]*energy/i);
+  if (equalEnergyMatch && timesHeadsMatch) {
+    const perFlip = parseInt(timesHeadsMatch[1]);
+    return Math.max(1, energyCount) * perFlip;
+  }
+
+  // "If heads, does N more/additional damage"
+  const headsMoreMatch = text.match(/if heads[\s\S]*?(\d+) more damage/i)
+    || text.match(/if heads[\s\S]*?(\d+) additional damage/i);
+  if (headsMoreMatch) return base + parseInt(headsMoreMatch[1]);
+
+  // "If heads, does N damage instead"
+  const headsInsteadMatch = text.match(/if heads[\s\S]*?does (\d+) damage instead/i);
+  if (headsInsteadMatch) return Math.max(base, parseInt(headsInsteadMatch[1]));
+
+  // "Flip a coin. If tails, no damage / does nothing" — max = base (heads lands it)
+  // Already returned as `base` below.
+
+  return base;
+}
+
+// Opponent threat model — worst-case damage that `attackerPlayer` (the OPPONENT)
+// can do to `defenderPlayer`'s active on their NEXT turn, assuming:
+//   - They may attach up to one energy from their hand
+//   - Coin-flip attacks resolve maximally in their favor (conservative for us)
+//   - PlusPower in their hand adds +10 (they'd play it for a KO)
+//   - Weakness/Resistance applied; Invisible Wall / Defender / etc. ignored
+//     (those are our mitigations — threat = "what lands if unmitigated")
+//
+// Pure helper — no side effects, no DOM. Exported for tests.
+function opponentThreatNextTurn(attackerPlayer, defenderPlayer) {
+  const atk = attackerPlayer?.active;
+  const def = defenderPlayer?.active;
+  if (!atk || !def || !atk.attacks?.length) return 0;
+
+  // Paralysis prevents attacking next turn — paralysis wears off at the end of
+  // the paralyzed player's turn, but the attack resolves BEFORE that cleanup.
+  if (atk.status === 'paralyzed') return 0;
+
+  // Enumerate energy-attachment possibilities: no attach, or attach each
+  // distinct energy type the attacker has in hand.
+  const hand = attackerPlayer.hand || [];
+  const energyNamesInHand = [...new Set(
+    hand.filter(c => c?.supertype === 'Energy').map(c => c.name)
+  )];
+  const attachmentOptions = [null, ...energyNamesInHand.map(n => ({ name: n }))];
+
+  const hasPlusPower = hand.some(c => c?.name === 'PlusPower');
+  const weaknesses = def.weaknesses || [];
+  const resistances = def.resistances || [];
+  const atkTypes = atk.types || [];
+  const disabledName = atk.disabledAttack || null;
+  const attackReduction = atk.attackReduction || 0;
+
+  let maxDmg = 0;
+
+  for (const extraEnergy of attachmentOptions) {
+    const attached = extraEnergy
+      ? [...(atk.attachedEnergy || []), extraEnergy]
+      : (atk.attachedEnergy || []);
+    const energyCount = energyValue(attached);
+
+    for (const move of atk.attacks) {
+      if (!canAffordAttack(attached, move.cost || [], atk)) continue;
+      if (disabledName && move.name === disabledName) continue;
+
+      // Use text-aware max damage so Comet Punch reads as 80, not 20.
+      let dmg = maxDamageForAttack(move, energyCount);
+      if (dmg === 0) continue;
+
+      // Apply weakness/resistance
+      dmg = computeDamageAfterWR(dmg, atkTypes, weaknesses, resistances);
+
+      // PlusPower available → assume they'd play it
+      if (hasPlusPower) dmg += 10;
+
+      // Attack-reduction debuff on the attacker (e.g., from our Scrunch)
+      dmg = Math.max(0, dmg - attackReduction);
+
+      if (dmg > maxDmg) maxDmg = dmg;
+    }
+  }
+
+  return maxDmg;
+}
+
+// True if the opponent's next turn is likely to KO our active.
+// Compares projected damage to HP remaining (HP − current damage).
+function willActiveDieNextTurn(defenderPlayer, attackerPlayer) {
+  const def = defenderPlayer?.active;
+  if (!def) return false;
+  const hpLeft = (parseInt(def.hp) || 0) - (def.damage || 0);
+  if (hpLeft <= 0) return false; // already KO'd; nothing to protect
+  const threat = opponentThreatNextTurn(attackerPlayer, defenderPlayer);
+  return threat >= hpLeft;
 }
 
 async function aiChooseAndAttack() {
@@ -890,5 +1050,8 @@ if (typeof module !== 'undefined') {
     aiChooseEnergyTarget,
     aiEnergyDeficit,
     aiCanAttack,
+    opponentThreatNextTurn,
+    willActiveDieNextTurn,
+    maxDamageForAttack,
   };
 }
