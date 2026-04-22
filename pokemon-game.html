@@ -1509,16 +1509,16 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 /* ── COIN FLIP OVERLAY ─────────────────────────────
- * Positioned in the upper portion of the screen as a self-contained panel
- * so it never collides with #move-flash (centered, z:1010). No full-screen
- * backdrop — the move flash already dims the board. Container is non-blocking
- * so it can coexist with other UI; only the inner panel has visual weight.
+ * Centered on screen. The coin and move/action flashes are sequential —
+ * flipCoin() clears any pending flash before showing the coin — so there's
+ * no overlap concern. If that ever changes, add a body class (e.g.
+ * `coin-with-flash`) that offsets this upward and the flash downward,
+ * keeping both centered as a pair with a margin between them.
  */
 #coin-overlay {
   display: none;
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 12vh);
-  left: 50%; transform: translateX(-50%);
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 1030;  /* above #move-flash (1010) so it reads as the "cause" on top */
   pointer-events: none;
   width: max-content; max-width: min(92vw, 360px);
@@ -1542,7 +1542,6 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   border-radius: 50%;
   transform-style: preserve-3d;
   position: relative;
-  font-size: 28px;
   animation: none;
 }
 #coin.flipping {
@@ -1557,18 +1556,20 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .coin-face {
   position: absolute; inset: 0;
   border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 28px;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  /* The source images are square JPEGs; border-radius masks them into a disc. */
 }
 #coin-heads {
-  background: radial-gradient(circle at 35% 35%, #f5d06a, #c8960a);
-  border: 3px solid #e8c040;
+  background-image: url('coin-heads.jpg');
+  background-color: #111;
 }
 #coin-tails {
-  background: radial-gradient(circle at 35% 35%, #b0b8c8, #707888);
-  border: 3px solid #9098a8;
+  background-image: url('coin-tails.jpg');
+  background-color: #1a4fbb;
   transform: rotateY(180deg);
 }
 #coin-result {
@@ -2281,8 +2282,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   #coin-label { font-size: 10px; }
   #coin-result { font-size: 15px; }
-  /* On small screens, pull coin slightly lower so it doesn't fight the status bar */
-  #coin-overlay { top: calc(env(safe-area-inset-top, 0px) + 8vh); max-width: min(88vw, 320px); }
+  /* Coin is centered by base CSS; just tighten max-width on narrow screens. */
+  #coin-overlay { max-width: min(88vw, 320px); }
 
   /* ── Win screen ── */
   #win-box { padding: 28px 20px; }
@@ -2786,8 +2787,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div id="coin-label"></div>
     <div id="coin-wrap">
       <div id="coin">
-        <div class="coin-face" id="coin-heads">🌟</div>
-        <div class="coin-face" id="coin-tails">⭐</div>
+        <div class="coin-face" id="coin-heads"></div>
+        <div class="coin-face" id="coin-tails"></div>
       </div>
     </div>
     <div id="coin-result"></div>
