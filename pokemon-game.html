@@ -1493,24 +1493,41 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   color: var(--text);
 }
 
-/* ── COIN FLIP OVERLAY ───────────────────────────── */
+/* ── COIN FLIP OVERLAY ─────────────────────────────
+ * Positioned in the upper portion of the screen as a self-contained panel
+ * so it never collides with #move-flash (centered, z:1010). No full-screen
+ * backdrop — the move flash already dims the board. Container is non-blocking
+ * so it can coexist with other UI; only the inner panel has visual weight.
+ */
 #coin-overlay {
   display: none;
-  position: fixed; inset: 0; z-index: 1020;
-  background: rgba(0,0,0,.75);
-  align-items: center; justify-content: center;
-  flex-direction: column; gap: 20px;
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 12vh);
+  left: 50%; transform: translateX(-50%);
+  z-index: 1030;  /* above #move-flash (1010) so it reads as the "cause" on top */
+  pointer-events: none;
+  width: max-content; max-width: min(92vw, 360px);
 }
-#coin-overlay.show { display: flex; }
+#coin-overlay.show { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#coin-overlay-panel {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.65);
+  width: 100%;
+  box-sizing: border-box;
+}
 #coin-wrap {
   perspective: 600px;
 }
 #coin {
-  width: 90px; height: 90px;
+  width: 64px; height: 64px;
   border-radius: 50%;
   transform-style: preserve-3d;
   position: relative;
-  font-size: 36px;
+  font-size: 28px;
   animation: none;
 }
 #coin.flipping {
@@ -1526,7 +1543,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   position: absolute; inset: 0;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-size: 38px;
+  font-size: 28px;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
@@ -1541,18 +1558,21 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #coin-result {
   font-family: var(--font);
-  font-size: 18px;
+  font-size: 14px;
   color: var(--accent);
   letter-spacing: 2px;
-  min-height: 20px;
+  min-height: 18px;
 }
 #coin-label {
   font-family: var(--font);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 1px;
   text-align: center;
-  max-width: 240px;
+  line-height: 1.4;
+  white-space: normal;
+  word-wrap: break-word;
+  max-width: 100%;
 }
 /* ── TURN CHANGE FLASH ───────────────────────────── */
 #turn-flash {
@@ -2246,8 +2266,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   #turn-flash-inner { font-size: 19px; padding: 16px 32px; }
 
-  #coin-label { font-size: 11px; }
-  #coin-result { font-size: 19px; }
+  #coin-label { font-size: 10px; }
+  #coin-result { font-size: 15px; }
+  /* On small screens, pull coin slightly lower so it doesn't fight the status bar */
+  #coin-overlay { top: calc(env(safe-area-inset-top, 0px) + 8vh); max-width: min(88vw, 320px); }
 
   /* ── Win screen ── */
   #win-box { padding: 28px 20px; }
@@ -2747,14 +2769,16 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
 <!-- Coin flip overlay -->
 <div id="coin-overlay">
-  <div id="coin-label"></div>
-  <div id="coin-wrap">
-    <div id="coin">
-      <div class="coin-face" id="coin-heads">🌟</div>
-      <div class="coin-face" id="coin-tails">⭐</div>
+  <div id="coin-overlay-panel">
+    <div id="coin-label"></div>
+    <div id="coin-wrap">
+      <div id="coin">
+        <div class="coin-face" id="coin-heads">🌟</div>
+        <div class="coin-face" id="coin-tails">⭐</div>
+      </div>
     </div>
+    <div id="coin-result"></div>
   </div>
-  <div id="coin-result"></div>
 </div>
 
 
