@@ -147,7 +147,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 
 /* ── TRAINER / GUEST BADGES in lobby ──────────────────────── */
 #trainer-badge, #guest-badge {
-  font-size: 9px;
+  font-size: clamp(9px, 1.3vmin, 14px);
   color: var(--muted);
   text-align: center;
   letter-spacing: .5px;
@@ -165,18 +165,18 @@ h1, h2, h3 { font-family: var(--font-title); }
   position: fixed; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  gap: 28px;
+  gap: clamp(20px, 3.5vmin, 40px);
   background: var(--bg);
   z-index: 600;
 }
 
 #setup-screen h1 {
-  font-size: 22px;
+  font-size: clamp(22px, 4.8vmin, 52px);
   font-family: var(--font-title);
   color: var(--accent);
   letter-spacing: 2px;
   text-align: center;
-  line-height: 1.8;
+  line-height: 1.4;
 }
 
 .setup-players {
@@ -188,8 +188,8 @@ h1, h2, h3 { font-family: var(--font-title); }
   background: var(--surface);
   border: 2px solid var(--border);
   border-radius: 8px;
-  padding: 24px 28px;
-  width: 200px;
+  padding: clamp(20px, 2.8vmin, 32px) clamp(24px, 3.2vmin, 40px);
+  width: clamp(180px, 22vmin, 260px);
   text-align: center;
   cursor: pointer;
   transition: border-color .15s;
@@ -197,10 +197,10 @@ h1, h2, h3 { font-family: var(--font-title); }
 .setup-player:hover { border-color: var(--border2); }
 .setup-player.loaded { border-color: var(--ok); }
 
-.setup-player-icon { font-size: 28px; margin-bottom: 10px; }
+.setup-player-icon { font-size: clamp(28px, 4vmin, 44px); margin-bottom: 10px; }
 
 .setup-player-label {
-  font-size: 12px;
+  font-size: clamp(11px, 1.5vmin, 15px);
   color: var(--muted);
   margin-bottom: 8px;
 }
@@ -208,7 +208,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 .setup-player.p2 .setup-player-label { color: var(--p2color); }
 
 .setup-player-status {
-  font-size: 11px;
+  font-size: clamp(10px, 1.4vmin, 14px);
   color: var(--muted);
   min-height: 20px;
 }
@@ -218,9 +218,9 @@ h1, h2, h3 { font-family: var(--font-title); }
   background: var(--accent);
   color: #000;
   border: none;
-  padding: 14px 40px;
+  padding: clamp(12px, 1.8vmin, 18px) clamp(36px, 5vmin, 56px);
   font-family: var(--font);
-  font-size: 15px;
+  font-size: clamp(14px, 2vmin, 20px);
   cursor: pointer;
   border-radius: 4px;
   letter-spacing: 1px;
@@ -232,12 +232,12 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 #setup-hint {
-  font-size: 11px;
+  font-size: clamp(11px, 1.5vmin, 15px);
   color: var(--muted);
 }
 
 .setup-back {
-  font-size: 11px;
+  font-size: clamp(11px, 1.5vmin, 16px);
   color: var(--muted);
   text-decoration: none;
 }
@@ -248,15 +248,15 @@ h1, h2, h3 { font-family: var(--font-title); }
   border: 1px solid var(--border2);
   color: var(--text);
   font-family: var(--font);
-  font-size: 12px;
-  padding: 14px 20px;
+  font-size: clamp(12px, 1.8vmin, 20px);
+  padding: clamp(14px, 1.8vmin, 22px) clamp(20px, 2.8vmin, 36px);
   cursor: pointer;
   border-radius: 6px;
   text-align: center;
   line-height: 1.8;
   transition: border-color .15s;
 }
-.lobby-btn span { font-size: 9px; color: var(--muted); display: block; }
+.lobby-btn span { font-size: clamp(9px, 1.3vmin, 14px); color: var(--muted); display: block; }
 .lobby-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── GAME LAYOUT ──────────────────────────────────────────── */
@@ -2403,14 +2403,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       Playing as <strong>Guest</strong>
       &nbsp;·&nbsp; <a onclick="showLoginScreen()" style="color:var(--accent)">sign in</a>
     </div>
-    <p style="font-size: 11px;color:var(--muted);text-align:center;margin-bottom:16px">How do you want to play?</p>
-    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <p style="font-size: clamp(11px, 1.6vmin, 16px);color:var(--muted);text-align:center;margin-bottom:clamp(16px, 2.2vmin, 24px)">How do you want to play?</p>
+    <div style="display:flex;gap:clamp(12px, 1.6vmin, 20px);justify-content:center;flex-wrap:wrap">
       <button class="lobby-btn" onclick="createRoom()">🔵 CREATE ROOM<br><span>You are Player 1</span></button>
       <button class="lobby-btn" onclick="showJoinPanel()">🔴 JOIN ROOM<br><span>You are Player 2</span></button>
       <button class="lobby-btn" onclick="showResumePanel()" style="border-color:var(--accent)">♻ RESUME GAME<br><span>Rejoin active game</span></button>
       <button class="lobby-btn" onclick="startVsComputer()" style="border-color:var(--ok)">🤖 VS COMPUTER<br><span>Play against AI</span></button>
     </div>
-    <div style="display:flex;justify-content:center;margin-top:18px">
+    <div style="display:flex;justify-content:center;margin-top:clamp(18px, 2.4vmin, 28px)">
       <a class="setup-back" href="deck-builder.html">← Back to Deck Builder</a>
     </div>
   </div>
@@ -2476,7 +2476,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM</button>
       <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM</button>
     </div>
-    <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:14px 40px;font-family:var(--font);font-size: 15px;cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
+    <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:clamp(12px, 1.8vmin, 18px) clamp(36px, 5vmin, 56px);font-family:var(--font);font-size: clamp(14px, 2vmin, 20px);cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
     <div id="cpu-difficulty-row" style="margin-top:12px;display:flex;gap:10px;justify-content:center;align-items:center">
       <span style="font-size: 9px;color:var(--muted)">AI DIFFICULTY:</span>
       <button class="lobby-btn" id="diff-easy" onclick="setAiDiff('easy')" style="padding:6px 14px;font-size: 9px;border-color:var(--ok);color:var(--ok)">EASY</button>
