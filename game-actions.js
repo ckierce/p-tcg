@@ -1828,30 +1828,50 @@ function endTurn() {
   G.turn = prev === 1 ? 2 : 1;
   G.turnNum++;
 
-  // Apply end-of-turn status effects to the PREVIOUS player's active Pokémon only.
-  // TCG rule: poison/burn ticks at the end of YOUR turn, not your opponent's.
-  // Ticking both players here was causing: (a) poison applying on the same turn it
-  // was inflicted, and (b) the next-player's tick incorrectly consuming their turn.
+  // Apply end-of-turn status effects to BOTH players' active Pokémon.
+  //
+  // TCG rule (Pokémon Checkup, between turns): each Special Condition is
+  // resolved on every active Pokémon that has it, in this order:
+  //   1. Poisoned (and Badly Poisoned / "poisoned-toxic")  — place damage
+  //   2. Burned                                             — place damage
+  //   3. Asleep / Paralyzed                                 — handled elsewhere
+  // This means a Pokémon poisoned on Player A's turn takes a tick at the end
+  // of A's turn AND at the end of B's turn. Nidoking's Toxic (20/tick) therefore
+  // deals attack damage (20) + 20 at end of attacker's turn + 20 at end of
+  // defender's turn = 60 before the attacker acts again.
+  //
+  // The previous implementation only ticked the player whose turn just ended,
+  // which silently dropped one of the two ticks every cycle. This also left
+  // Toxic looking like it only did the attack damage when the attacker's own
+  // active wasn't the poisoned one.
+  //
+  // Prize attribution: when a poison/burn KO occurs, the prize goes to the
+  // player who inflicted the condition — which is the OWNER's opponent.
+  // checkKO(attackingPlayer, defendingPlayer, card, isSelf=false) awards
+  // the prize to attackingPlayer, so we pass the owner's opponent as the
+  // "attackingPlayer" argument for each tick.
   {
-    const active = G.players[prev].active;
-    const oppNum = prev === 1 ? 2 : 1;
-    if (active) {
-      if (active.status === 'poisoned' || active.status === 'poisoned-toxic') {
-        const dmg = active.status === 'poisoned-toxic' ? 20 : 10;
-        active.damage = (active.damage || 0) + dmg;
-        addLog(`${active.name} took ${dmg} Poison damage! (${active.damage}/${active.hp} HP)`);
-        const koResult = checkKO(oppNum, prev, active, false);
-        if (koResult === 'win') { renderAll(); return; }
-        if (koResult === 'promote') { renderAll(); return; }
-      }
+    const ticks = (typeof computeBetweenTurnDamage === 'function')
+      ? computeBetweenTurnDamage(G.players)
+      : [];
+    // Order by status per TCG: Poisoned first, then Burned. Within each
+    // status, order doesn't matter (both actives can have the same tick).
+    const order = { 'poisoned': 0, 'poisoned-toxic': 0, 'burned': 1 };
+    ticks.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
 
-      if (active.status === 'burned') {
-        active.damage = (active.damage || 0) + 20;
-        addLog(`${active.name} took 20 Burn damage! (${active.damage}/${active.hp} HP)`);
-        const koResult = checkKO(oppNum, prev, active, false);
-        if (koResult === 'win') { renderAll(); return; }
-        if (koResult === 'promote') { renderAll(); return; }
-      }
+    for (const t of ticks) {
+      const active = G.players[t.player]?.active;
+      if (!active || active.status !== t.status) continue; // may have changed mid-loop
+      const owner = t.player;
+      const attacker = owner === 1 ? 2 : 1;
+      active.damage = (active.damage || 0) + t.dmg;
+      const label = t.status === 'burned' ? 'Burn'
+                  : t.status === 'poisoned-toxic' ? 'Toxic Poison'
+                  : 'Poison';
+      addLog(`${active.name} took ${t.dmg} ${label} damage! (${active.damage}/${active.hp} HP)`);
+      const koResult = checkKO(attacker, owner, active, false);
+      if (koResult === 'win')     { renderAll(); return; }
+      if (koResult === 'promote') { renderAll(); return; }
     }
   }
 

@@ -359,6 +359,37 @@ function computeBetweenTurnDamage(players) {
 }
 
 
+// ── Pokémon Breeder gender-line helpers ───────────────────────────────────────
+// Nidoqueen/Nidorina require a Nidoran ♀ on the field; Nidoking/Nidorino
+// require a Nidoran ♂. Encoded here as a pure map so tests can lock the
+// contract: Pokémon Breeder MUST NOT cross genders.
+//
+// Names match the canonical Pokémon TCG data format (pokemontcg.io), which
+// uses "Nidoran ♀" / "Nidoran ♂" with a space before the gender symbol.
+// If Craig's cards.json ever diverges from this, the evolve attempt will
+// fall through to the regular CARD_DATA lookup in trainer-cards.js.
+const GENDER_LINE_BASICS = {
+  'Nidoqueen': 'Nidoran ♀',
+  'Nidorina':  'Nidoran ♀',
+  'Nidoking':  'Nidoran ♂',
+  'Nidorino':  'Nidoran ♂',
+};
+
+// Returns the required Basic name for a gender-locked Stage 2, or null if
+// the Stage 2 isn't gender-locked (use normal evolvesFrom lookup in that case).
+function genderLineBasicFor(stage2Name) {
+  return GENDER_LINE_BASICS[stage2Name] || null;
+}
+
+// Is this Basic the correct evolutionary target for this Stage 2?
+// Exact name match — DO NOT strip gender symbols. Previously this was
+// normalized via .replace(/[♀♂]/g,''), which let Nidoran ♀ evolve into
+// Nidoking via Pokémon Breeder (since "Nidoran" == "Nidoran" after stripping).
+function breederRootMatches(basicName, requiredRootName) {
+  if (!basicName || !requiredRootName) return false;
+  return basicName === requiredRootName;
+}
+
 // ── transitionPhase ───────────────────────────────────────────────────────────
 // Sets G.phase to the given phase. Optionally merges additional top-level state
 // (e.g. pendingPromotion) into G. Calls updatePhase() so the DOM phase pill
@@ -389,5 +420,6 @@ if (typeof module !== 'undefined') {
     computeBetweenTurnDamage,
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
     transitionPhase,
+    GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   };
 }

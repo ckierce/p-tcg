@@ -7,6 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Pokémon TCG — Game Board</title>
+<!-- Inline SVG favicon — no external file, no 404. Classic red Poké Ball. -->
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
 <style>
@@ -40,6 +42,14 @@
   /* Legacy aliases */
   --card-w:      var(--active-w);
   --card-h:      var(--active-h);
+
+  /* Classic card back — SVG data URI, no external dependency.
+     Used by opp prize pips, deck slots, and face-down prize slots.
+     Layer order: top = Poké Ball SVG, bottom = navy gradient. */
+  --card-back-bg:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='32' fill='%23f5f5f5' stroke='%23222' stroke-width='3'/><path d='M 18 50 A 32 32 0 0 1 82 50 Z' fill='%23e63946' stroke='%23222' stroke-width='3'/><rect x='18' y='46' width='64' height='8' fill='%23222'/><circle cx='50' cy='50' r='9' fill='%23ffffff' stroke='%23222' stroke-width='3'/><circle cx='50' cy='50' r='3.5' fill='%23222'/></svg>")
+    center / 68% auto no-repeat,
+    radial-gradient(ellipse at 50% 30%, #4a7fc1 0%, #1e3a66 55%, #0f1f3e 100%);
 }
 
 html, body {
@@ -484,7 +494,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 .opp-prize-pip {
   width: var(--prize-w); height: var(--prize-h);
-  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
+  background: var(--card-back-bg);
   border: 1px solid var(--border);
   border-radius: 3px;
 }
@@ -507,7 +517,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   height: var(--card-h-sm);
   border: 1px solid var(--border);
   border-radius: 5px;
-  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
+  background: var(--card-back-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -882,7 +892,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   height: var(--card-h-sm);
   border: 1px solid var(--p1color);
   border-radius: 5px;
-  background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat;
+  background: var(--card-back-bg);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -944,7 +954,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   justify-content: center;
 }
 .prize-slot img { width: 100%; height: 100%; object-fit: cover; }
-.prize-slot.face-down { background: var(--surface2) url('https://images.pokemontcg.io/back.png') center/cover no-repeat; }
+.prize-slot.face-down { background: var(--card-back-bg); }
 .prize-slot.face-down::after {
   content: '';
 }

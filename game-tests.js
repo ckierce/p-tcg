@@ -26,6 +26,7 @@ const {
   coerceCardArrays, mergeGameStateDefaults,
   computeBetweenTurnDamage,
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
+  GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
 } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -703,6 +704,62 @@ assert('Confused retreat is NOT outright blocked',
   isLegalRetreatStatus('confused') !== 'no');
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BUG: Pokémon Breeder would evolve Nidoran ♀ into Nidoking and Nidoran ♂
+// into Nidoqueen because trainer-cards.js stripped the ♀/♂ symbols before
+// matching. The regular evolve flow was already safe (exact match); only
+// Breeder had the loophole. Additionally, GENDER_LINE_BASICS used
+// 'Nidoran♀' (no space) while the canonical TCG data uses 'Nidoran ♀'
+// (with space) — the stripping was masking this inconsistency.
+// FIX: Extracted GENDER_LINE_BASICS to game-utils.js with canonical spacing;
+// trainer-cards.js now uses exact name matching with no stripping.
+// ─────────────────────────────────────────────────────────────────────────────
+section('regression: Pokémon Breeder gender-line enforcement');
+
+// genderLineBasicFor: maps gender-locked Stage 2 to required Basic name.
+assert("Nidoking → requires Nidoran ♂",
+  genderLineBasicFor('Nidoking') === 'Nidoran ♂');
+assert("Nidorino → requires Nidoran ♂",
+  genderLineBasicFor('Nidorino') === 'Nidoran ♂');
+assert("Nidoqueen → requires Nidoran ♀",
+  genderLineBasicFor('Nidoqueen') === 'Nidoran ♀');
+assert("Nidorina → requires Nidoran ♀",
+  genderLineBasicFor('Nidorina') === 'Nidoran ♀');
+assert("non-gender-locked Stage 2 (e.g. Charizard) → null",
+  genderLineBasicFor('Charizard') === null);
+assert("unknown card name → null",
+  genderLineBasicFor('Mewtwo') === null);
+
+// Canonical name format: canonical TCG data uses a space before ♀/♂.
+// If this ever changes, both trainer-cards.js matching AND Craig's
+// cards.json would need to change in lockstep — this lock makes it explicit.
+assert("Nidoran ♂ canonical includes space",
+  GENDER_LINE_BASICS['Nidoking'] === 'Nidoran ♂');
+assert("Nidoran ♀ canonical includes space",
+  GENDER_LINE_BASICS['Nidoqueen'] === 'Nidoran ♀');
+
+// breederRootMatches: exact-name predicate — must NOT strip gender symbols.
+// THE bug we're locking out: Nidoran ♀ matching Nidoran ♂.
+assert("Nidoran ♀ → Nidoking (cross-gender) REJECTED",
+  breederRootMatches('Nidoran ♀', genderLineBasicFor('Nidoking')) === false);
+assert("Nidoran ♂ → Nidoqueen (cross-gender) REJECTED",
+  breederRootMatches('Nidoran ♂', genderLineBasicFor('Nidoqueen')) === false);
+assert("Nidoran ♂ → Nidoking (same gender) ACCEPTED",
+  breederRootMatches('Nidoran ♂', genderLineBasicFor('Nidoking')) === true);
+assert("Nidoran ♀ → Nidoqueen (same gender) ACCEPTED",
+  breederRootMatches('Nidoran ♀', genderLineBasicFor('Nidoqueen')) === true);
+
+// Defensive edges: the old normalizer used to accept these. They must now
+// be rejected because exact-string equality is strict.
+assert("bare 'Nidoran' (no symbol) → Nidoking REJECTED",
+  breederRootMatches('Nidoran', 'Nidoran ♂') === false);
+assert("'Nidoran♂' (no space) vs 'Nidoran ♂' (with space) REJECTED",
+  breederRootMatches('Nidoran♂', 'Nidoran ♂') === false);
+assert("null/undefined basic → false, not crash",
+  breederRootMatches(null, 'Nidoran ♂') === false);
+assert("null/undefined required → false, not crash",
+  breederRootMatches('Nidoran ♂', null) === false);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // INTEGRATION: full damage pipeline (PlusPower → W/R → Invisible Wall)
 // This is a mini-simulation of the damage path that has been the site of
 // multiple bugs. Locking the order of operations so nothing rearranges
@@ -1022,6 +1079,50 @@ console.log('\n── regression: between-turn poison/burn — both players tick
   assert('Helper plans the tick (newDamage=10)', ticks[0].newDamage === 10);
   assert('Helper does NOT mutate card.damage (still 0)', card.damage === 0);
   assert('Helper does NOT mutate card.status', card.status === 'poisoned');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCENARIO: Nidoking Toxic full turn cycle
+//
+// Craig's bug: "if Nidoking uses Toxic, that Pokémon should take 40 damage
+// before Nidoking attacks again." The TCG rule is actually stricter: Toxic
+// ticks at the end of BOTH players' turns, so the cycle is:
+//   Turn A (Nidoking):  20 damage from Toxic attack
+//   End of Turn A:      +20 Toxic poison tick       (both actives checkup)
+//   Turn B (opponent):  opponent plays
+//   End of Turn B:      +20 Toxic poison tick       (both actives checkup)
+//   Turn A (Nidoking):  Nidoking attacks again
+// Total before Nidoking's second attack: 20 + 20 + 20 = 60 damage.
+//
+// Previously endTurn only ticked the outgoing player's active, silently
+// dropping one of the two poison ticks per cycle. Nidoking's opponent saw
+// only 20 (attack) + 20 (end of their own turn) = 40 instead of 60.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── scenario: Nidoking Toxic — two ticks per turn cycle ─────────');
+
+{
+  // Simulate the full cycle by calling computeBetweenTurnDamage at each
+  // transition. The production code in endTurn now does exactly this.
+  const target = { name: 'Chansey', status: 'poisoned-toxic', damage: 20, hp: '120' };
+  const players = { 1: { active: target }, 2: { active: { name: 'Nidoking', status: null, damage: 0, hp: '90' } } };
+
+  // End of Nidoking's turn (P2 ends their turn)
+  let ticks = computeBetweenTurnDamage(players);
+  assert('End of attacker turn: exactly one tick (on poisoned target)', ticks.length === 1);
+  assert('End of attacker turn: tick is on P1 (the poisoned side)', ticks[0].player === 1);
+  assert('End of attacker turn: +20 Toxic dmg → total 40', ticks[0].newDamage === 40);
+  // Caller applies it
+  target.damage = ticks[0].newDamage;
+
+  // Opponent's turn passes; they don't remove the status. End of their turn:
+  ticks = computeBetweenTurnDamage(players);
+  assert('End of defender turn: another tick fires', ticks.length === 1);
+  assert('End of defender turn: +20 more → total 60', ticks[0].newDamage === 60);
+  target.damage = ticks[0].newDamage;
+
+  // Before Nidoking's second attack, Chansey has taken 60 total.
+  assert('Before Nidoking\'s 2nd attack: 60 total damage (attack 20 + 2×tick 20)',
+    target.damage === 60);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
