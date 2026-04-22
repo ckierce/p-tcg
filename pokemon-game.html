@@ -1527,24 +1527,26 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   top: 50%; left: 50%; transform: translate(-50%, -50%);
   z-index: 1030;  /* above #move-flash (1010) so it reads as the "cause" on top */
   pointer-events: none;
-  width: max-content; max-width: min(92vw, 360px);
+  width: max-content; max-width: min(92vw, 440px);
 }
 #coin-overlay.show { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 #coin-overlay-panel {
   background: var(--surface);
   border: 1px solid var(--border2);
   border-radius: 10px;
-  padding: 14px 18px;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: clamp(18px, 2.6vmin, 28px) clamp(22px, 3.2vmin, 36px);
+  display: flex; flex-direction: column; align-items: center;
+  gap: clamp(10px, 1.6vmin, 18px);
   box-shadow: 0 8px 32px rgba(0,0,0,0.65);
   width: 100%;
   box-sizing: border-box;
 }
 #coin-wrap {
-  perspective: 600px;
+  perspective: 1200px;
 }
 #coin {
-  width: 64px; height: 64px;
+  width: clamp(120px, 16vmin, 180px);
+  height: clamp(120px, 16vmin, 180px);
   border-radius: 50%;
   transform-style: preserve-3d;
   position: relative;
@@ -1580,14 +1582,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #coin-result {
   font-family: var(--font);
-  font-size: 14px;
+  font-size: clamp(15px, 2.2vmin, 20px);
   color: var(--accent);
   letter-spacing: 2px;
-  min-height: 18px;
+  min-height: 1.3em;
 }
 #coin-label {
   font-family: var(--font);
-  font-size: 10px;
+  font-size: clamp(11px, 1.5vmin, 15px);
   color: var(--muted);
   letter-spacing: 1px;
   text-align: center;
@@ -2286,10 +2288,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   #turn-flash-inner { font-size: 19px; padding: 16px 32px; }
 
-  #coin-label { font-size: 10px; }
-  #coin-result { font-size: 15px; }
-  /* Coin is centered by base CSS; just tighten max-width on narrow screens. */
-  #coin-overlay { max-width: min(88vw, 320px); }
+  /* Coin label/result use clamp() in base CSS which handles mobile sizing. */
+  /* Just tighten max-width on narrow screens. */
+  #coin-overlay { max-width: min(88vw, 340px); }
 
   /* ── Win screen ── */
   #win-box { padding: 28px 20px; }
