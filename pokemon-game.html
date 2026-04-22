@@ -1402,8 +1402,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   color: var(--p2color);
 }
 
-/* ── MOVE FLASH OVERLAY ──────────────────────────── */
-#move-flash {
+/* ── FLASH OVERLAYS (move & action) ─────────────────
+ * #move-flash  — attacks (YOUR ATTACK / ELECTABUZZ / THUNDERSHOCK / 30 damage → …)
+ * #action-flash — non-attack events (YOU PLAY / BILL / TRAINER)
+ * Both use the same centered overlay, inner panel style, player-color border,
+ * and responsive font scaling. Only differences: animation duration
+ * (moves 3.5s, actions 2.5s) and structure (move has 4 lines, action has 3).
+ * The flash queue in game-render.js guarantees they never appear simultaneously.
+ */
+#move-flash, #action-flash {
   display: none;
   position: fixed; inset: 0; z-index: 1010;
   align-items: center; justify-content: center;
@@ -1411,50 +1418,29 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(2px);
 }
-#move-flash.show { display: flex; }
+#action-flash { z-index: 1011; }
+#move-flash.show, #action-flash.show { display: flex; }
 
-/* Action flash: non-attack events (retreat, trainer, evolve, energy attach) */
-/* Positioned bottom-center, no dark overlay, doesn't block attack flash */
-#action-flash {
-  display: none;
-  position: fixed;
-  bottom: calc(40vh + 12px); left: 50%; transform: translateX(-50%);
-  z-index: 1011;
-  pointer-events: none;
-  width: max-content; max-width: 90vw;
-}
-#action-flash.show { display: block; }
-#action-flash-inner {
+#move-flash-inner, #action-flash-inner {
   font-family: var(--font);
   text-align: center;
-  padding: 10px 20px;
-  border-radius: 8px;
-  background: rgba(0,0,0,0.82);
-  border: 1px solid var(--border2);
-  animation: actionFlashAnim 2.5s ease-out forwards;
-}
-#action-flash-who { font-size: 8px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
-#action-flash-subject { font-size: 15px; font-weight: bold; color: var(--accent); margin: 2px 0; }
-#action-flash-detail { font-size: 9px; color: var(--text2); }
-@keyframes actionFlashAnim {
-  0%   { opacity: 0; transform: translateY(6px); }
-  15%  { opacity: 1; transform: translateY(0); }
-  75%  { opacity: 1; }
-  100% { opacity: 0; }
-}
-#move-flash-inner {
-  font-family: var(--font);
-  text-align: center;
-  padding: 28px 48px;
+  /* Responsive padding: ~18-32px vertical, ~28-56px horizontal */
+  padding: clamp(18px, 3.2vmin, 32px) clamp(28px, 5.5vmin, 56px);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  animation: moveFlashAnim 3.5s ease-out forwards;
-  max-width: 460px;
+  gap: clamp(6px, 1.2vmin, 12px);
+  /* Scales from phone width up to a comfortable reading width on desktop */
+  width: min(92vw, clamp(340px, 52vmin, 520px));
+  max-width: 92vw;
+  box-sizing: border-box;
   background: var(--surface);
   box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+  border: 2px solid var(--border2);
 }
+#move-flash-inner  { animation: moveFlashAnim   3.5s ease-out forwards; }
+#action-flash-inner { animation: actionFlashAnim 2.5s ease-out forwards; }
+
 @keyframes moveFlashAnim {
   0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
   8%   { opacity: 1; transform: scale(1.04) translateY(0); }
@@ -1462,35 +1448,64 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   80%  { opacity: 1; transform: scale(1); }
   100% { opacity: 0; transform: scale(0.97) translateY(6px); }
 }
-#move-flash.p1 #move-flash-inner {
-  border: 2px solid var(--p1color);
+@keyframes actionFlashAnim {
+  0%   { opacity: 0; transform: scale(0.80) translateY(-8px); }
+  10%  { opacity: 1; transform: scale(1.03) translateY(0); }
+  20%  { opacity: 1; transform: scale(1); }
+  78%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.97) translateY(4px); }
+}
+
+/* Player-color borders (shared by both flashes) */
+#move-flash.p1 #move-flash-inner,
+#action-flash.p1 #action-flash-inner {
+  border-color: var(--p1color);
   box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(91,156,246,0.2);
 }
-#move-flash.p2 #move-flash-inner {
-  border: 2px solid var(--p2color);
+#move-flash.p2 #move-flash-inner,
+#action-flash.p2 #action-flash-inner {
+  border-color: var(--p2color);
   box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(245,101,101,0.2);
 }
-#move-flash-who {
-  font-size: 11px;
+
+/* Typography — responsive sizes that hold their proportions
+ *
+ * Structural mapping between the two flashes:
+ *   move-flash-who      ↔ action-flash-who       (small label: "YOUR ATTACK" / "YOU PLAY")
+ *   move-flash-attacker ↔ (no equivalent)         (small, player-color: Pokémon doing the attack)
+ *   move-flash-move     ↔ action-flash-subject   (BIG yellow: attack name / card name)
+ *   move-flash-dmg      ↔ action-flash-detail    (medium: damage line / "TRAINER", "AS ACTIVE", etc.)
+ */
+#move-flash-who,
+#action-flash-who {
+  font-size: clamp(10px, 1.5vmin, 13px);
   letter-spacing: 2px;
   color: var(--muted);
+  text-transform: uppercase;
 }
 #move-flash-attacker {
-  font-size: 15px;
+  font-size: clamp(13px, 2.1vmin, 18px);
   letter-spacing: 1px;
 }
 #move-flash.p1 #move-flash-attacker { color: var(--p1color); }
 #move-flash.p2 #move-flash-attacker { color: var(--p2color); }
-#move-flash-move {
-  font-size: 30px;
+
+/* Large headline — attack name in move flash, card name in action flash */
+#move-flash-move,
+#action-flash-subject {
+  font-size: clamp(22px, 4.2vmin, 34px);
   letter-spacing: 2px;
   color: var(--accent);
-  line-height: 1.3;
+  line-height: 1.2;
+  text-transform: uppercase;
+  font-weight: bold;
 }
-#move-flash-dmg {
-  font-size: 18px;
+#move-flash-dmg,
+#action-flash-detail {
+  font-size: clamp(14px, 2.4vmin, 20px);
   letter-spacing: 1px;
   color: var(--text);
+  line-height: 1.3;
 }
 
 /* ── COIN FLIP OVERLAY ─────────────────────────────
@@ -2257,12 +2272,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   .d-name { font-size: 11px; }
   .d-count { font-size: 9px; }
 
-  /* ── Overlays: scale up for readability ── */
-  #move-flash-move { font-size: 22px; }
-  #move-flash-attacker { font-size: 12px; }
-  #move-flash-dmg { font-size: 15px; }
-  #move-flash-who { font-size: 9px; }
-  #move-flash-inner { padding: 20px 24px; }
+  /* ── Overlays: clamp() in base CSS handles font scaling across screen sizes.
+   *    On mobile we only need to tighten padding so the panel doesn't feel
+   *    oversized on small phones. Disable backdrop blur for perf. ── */
+  #move-flash-inner, #action-flash-inner { padding: 18px 22px; }
 
   #turn-flash-inner { font-size: 19px; padding: 16px 32px; }
 
@@ -2327,7 +2340,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* ── Disable backdrop-filter on mobile for perf ── */
   #action-menu { backdrop-filter: none; }
-  #move-flash { backdrop-filter: none; }
+  #move-flash, #action-flash { backdrop-filter: none; }
 }
 
 /* Landscape phone: give field body a bit more vertical room */

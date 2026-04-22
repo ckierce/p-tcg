@@ -390,6 +390,31 @@ function breederRootMatches(basicName, requiredRootName) {
   return basicName === requiredRootName;
 }
 
+// ── buildEvolutionStackUnder ──────────────────────────────────────────────────
+// When a Pokémon evolves, the card(s) underneath must be preserved so they
+// go to discard on KO. Physical TCG: you literally stack the new card on top
+// of the old one, and the whole stack discards together when the Pokémon
+// is knocked out. In code, we represent this as `prevStages` on the new
+// top card.
+//
+// Contract for both evolve() and Pokémon Breeder:
+//   - prevStages from the underlying card are carried forward (so a Stage 2
+//     built via regular evolution: Basic + Stage 1 both live under Stage 2).
+//   - The underlying card itself is added as a fresh frozen copy with its
+//     transient state (attachedEnergy, damage, prevStages) cleared — the
+//     live state belongs to the top card now.
+//   - Pokémon Breeder skips the Stage 1, so the underlying card here is just
+//     the Basic, and the returned stack has exactly 1 entry (Basic). The TCG
+//     rule Craig confirmed: on KO of a Breeder-evolved Blastoise, Squirtle +
+//     Blastoise discard (NO Wartortle).
+function buildEvolutionStackUnder(underlyingCard) {
+  if (!underlyingCard) return [];
+  return [
+    ...(underlyingCard.prevStages || []),
+    { ...underlyingCard, attachedEnergy: [], damage: 0, prevStages: undefined }
+  ];
+}
+
 // ── transitionPhase ───────────────────────────────────────────────────────────
 // Sets G.phase to the given phase. Optionally merges additional top-level state
 // (e.g. pendingPromotion) into G. Calls updatePhase() so the DOM phase pill
@@ -420,6 +445,7 @@ if (typeof module !== 'undefined') {
     computeBetweenTurnDamage,
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
     transitionPhase,
+    buildEvolutionStackUnder,
     GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   };
 }

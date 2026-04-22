@@ -758,6 +758,11 @@ const TRAINER_EFFECTS = {
     const doBreed = ({ zone, idx }) => {
       const tCard = zone === 'active' ? p.active : p.bench[idx];
       stage2.damage = tCard.damage || 0; stage2.attachedEnergy = tCard.attachedEnergy || []; stage2.status = null;
+      // Preserve the Basic (and any pre-existing prevStages) underneath stage2
+      // so it goes to discard on KO — physical TCG rule: Breeder stacks the
+      // Stage 2 directly on the Basic, and both discard together on KO (no
+      // intermediate Stage 1 exists, since Breeder skipped it).
+      stage2.prevStages = buildEvolutionStackUnder(tCard);
       if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
       G.evolvedThisTurn.push(stage2.uid);
       if (zone === 'active') p.active = stage2; else p.bench[idx] = stage2;

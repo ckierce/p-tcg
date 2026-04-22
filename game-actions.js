@@ -241,7 +241,7 @@ function evolve(player, handIdx, zone, benchIdx) {
     target.damage = 0;
     p.discard.push(target);
   } else {
-    evoCard.prevStages = [...(target.prevStages || []), { ...target, attachedEnergy: [], damage: 0, prevStages: undefined }];
+    evoCard.prevStages = buildEvolutionStackUnder(target);
   }
 
   if (zone === 'active') {

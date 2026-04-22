@@ -885,8 +885,11 @@ function showBlockedFlash(attackingPlayer, attackerName, moveName, reason) {
 }
 
 // General action flash (retreat, trainer, evolve, etc.)
+// Visually identical to showMoveFlash: same centered overlay, same panel style,
+// same player-color border. Different animation (2.5s vs 3.5s) because
+// actions carry less information and don't need to linger as long.
 function showActionFlash(player, verb, subject, detail) {
-  const DURATION = 2000;
+  const DURATION = 2500;
   _queueFlash(() => {
     const el = document.getElementById('action-flash');
     const isOwnAction = myRole !== null && player === myRole;
@@ -899,7 +902,8 @@ function showActionFlash(player, verb, subject, detail) {
     document.getElementById('action-flash-subject').textContent = (subject || '').toUpperCase();
     document.getElementById('action-flash-detail').textContent = detail || '';
 
-    el.className = 'show';
+    // Apply player-color class (matches showMoveFlash styling)
+    el.className = `show p${player}`;
     const inner = document.getElementById('action-flash-inner');
     inner.style.animation = 'none';
     void inner.offsetWidth;

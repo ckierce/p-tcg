@@ -27,6 +27,7 @@ const {
   computeBetweenTurnDamage,
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
+  buildEvolutionStackUnder,
 } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -758,6 +759,71 @@ assert("null/undefined basic → false, not crash",
   breederRootMatches(null, 'Nidoran ♂') === false);
 assert("null/undefined required → false, not crash",
   breederRootMatches('Nidoran ♂', null) === false);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUG: Pokémon Breeder would drop the underlying Basic Pokémon. When Breeder
+// evolves Squirtle → Blastoise, the Squirtle card must be preserved under
+// Blastoise so it goes to discard on KO (Craig confirmed the TCG rule:
+// Breeder stacks Stage 2 directly on Basic, and both discard together on KO).
+// FIX: doBreed now calls buildEvolutionStackUnder(tCard) and stores the
+// result on stage2.prevStages, matching what regular evolve() does.
+// Without the fix, one card per Breeder use vanishes on KO.
+// ─────────────────────────────────────────────────────────────────────────────
+section('regression: Pokémon Breeder preserves Basic card under Stage 2');
+
+{
+  // Scenario: Breeder evolves Squirtle → Blastoise. Stack under Blastoise
+  // should contain exactly Squirtle (NOT Wartortle — Breeder skipped it).
+  const squirtle = { name: 'Squirtle', uid: 's1', damage: 20, attachedEnergy: [{ name: 'Water' }], prevStages: undefined };
+  const stack = buildEvolutionStackUnder(squirtle);
+  assert('Breeder: stack has exactly 1 card (the Basic)', stack.length === 1);
+  assert('Breeder: stack entry is Squirtle', stack[0].name === 'Squirtle');
+  assert('Breeder: stack entry has attachedEnergy cleared (energy moves to top card)',
+    Array.isArray(stack[0].attachedEnergy) && stack[0].attachedEnergy.length === 0);
+  assert('Breeder: stack entry has damage cleared (damage moves to top card)',
+    stack[0].damage === 0);
+  assert('Breeder: stack entry has prevStages cleared (no nested references)',
+    stack[0].prevStages === undefined);
+  assert('Breeder: original Squirtle is not mutated (spread copy)',
+    squirtle.damage === 20 && squirtle.attachedEnergy.length === 1);
+}
+
+{
+  // Scenario: regular evolve carries forward existing prevStages.
+  // Wartortle has Squirtle under it; evolving to Blastoise stacks both under.
+  const squirtleCopy = { name: 'Squirtle', attachedEnergy: [], damage: 0, prevStages: undefined };
+  const wartortle = { name: 'Wartortle', prevStages: [squirtleCopy], damage: 10, attachedEnergy: [{ name: 'Water' }] };
+  const stack = buildEvolutionStackUnder(wartortle);
+  assert('Evolve: stack has 2 cards when evolving a Stage 1 with prevStages',
+    stack.length === 2);
+  assert('Evolve: stack[0] is the earlier Basic (Squirtle) preserved',
+    stack[0].name === 'Squirtle');
+  assert('Evolve: stack[1] is the Stage 1 just-evolved-from (Wartortle)',
+    stack[1].name === 'Wartortle');
+}
+
+{
+  // Null/undefined safety — must not throw, must return empty stack.
+  assert('buildEvolutionStackUnder(null) → []',
+    Array.isArray(buildEvolutionStackUnder(null)) && buildEvolutionStackUnder(null).length === 0);
+  assert('buildEvolutionStackUnder(undefined) → []',
+    Array.isArray(buildEvolutionStackUnder(undefined)) && buildEvolutionStackUnder(undefined).length === 0);
+}
+
+{
+  // Card-count invariant: evolving never loses or gains cards in the stack.
+  // Before: Basic + Stage 1 (2 cards conceptually in play as one pokémon).
+  // After evolving to Stage 2: Stage 2 on top + 2 prevStages = still 2 under-cards + 1 top = 3.
+  // The KO pipeline will push top card + all prevStages to discard = 3 cards discarded.
+  const basic    = { name: 'B', prevStages: undefined };
+  const stage1   = { name: 'S1', prevStages: buildEvolutionStackUnder(basic) };  // stage1 has [B] underneath
+  const stage2PS = buildEvolutionStackUnder(stage1);                              // stage2 would have [B, S1] underneath
+  assert('Evolve chain: Stage 2 ends up with exactly 2 prevStages (Basic + Stage 1)',
+    stage2PS.length === 2);
+  assert('Evolve chain: KO discards top + prevStages = 3 total cards (not 1, not 2)',
+    1 + stage2PS.length === 3);
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INTEGRATION: full damage pipeline (PlusPower → W/R → Invisible Wall)
