@@ -918,6 +918,28 @@ function showTrainerFlash(player, cardName) {
   showActionFlash(player, 'PLAYS', cardName, 'TRAINER');
 }
 
+// Game-instruction flash for non-player-attributed events (setup prompt, etc.)
+// Reuses #action-flash DOM but with a neutral (accent-colored) border instead
+// of a player color, since the message applies to both players equally.
+function showSetupFlash(label, subject, detail) {
+  const DURATION = 3000;
+  _queueFlash(() => {
+    const el = document.getElementById('action-flash');
+    document.getElementById('action-flash-who').textContent = label || '';
+    document.getElementById('action-flash-subject').textContent = (subject || '').toUpperCase();
+    document.getElementById('action-flash-detail').textContent = detail || '';
+
+    el.className = 'show neutral';
+    const inner = document.getElementById('action-flash-inner');
+    inner.style.animation = 'none';
+    void inner.offsetWidth;
+    inner.style.animation = '';
+
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+  }, DURATION);
+}
+
 // ══════════════════════════════════════════════════
 // WIN SCREEN
 // ══════════════════════════════════════════════════

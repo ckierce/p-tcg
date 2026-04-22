@@ -1467,6 +1467,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   border-color: var(--p2color);
   box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(245,101,101,0.2);
 }
+/* Neutral/game-instruction border (used for setup prompts, etc.) */
+#action-flash.neutral #action-flash-inner {
+  border-color: var(--accent);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.7), 0 0 30px rgba(232,200,74,0.25);
+}
+#action-flash.neutral #action-flash-who { color: var(--accent); }
 
 /* Typography — responsive sizes that hold their proportions
  *
@@ -3267,7 +3273,7 @@ async function startGame() {
   addLog('Each player drew 7 cards and set aside 6 prizes.');
   renderAll();
   setMidline('Both players: place your Active Pokémon (and optionally bench basics)');
-  showToast('Place your starting Pokémon!', false, 'ok');
+  showSetupFlash('SETUP', 'Place your Starting Pokémon', 'then click DONE SETUP');
 }
 
 function handleEndTurnBtn() {
