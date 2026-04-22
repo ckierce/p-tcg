@@ -43,13 +43,12 @@
   --card-w:      var(--active-w);
   --card-h:      var(--active-h);
 
-  /* Classic card back — SVG data URI, no external dependency.
+  /* Classic card back — local image file in repo root.
      Used by opp prize pips, deck slots, and face-down prize slots.
-     Layer order: top = Poké Ball SVG, bottom = navy gradient. */
+     Fallback to a navy color in case the image fails to load. */
   --card-back-bg:
-    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='32' fill='%23f5f5f5' stroke='%23222' stroke-width='3'/><path d='M 18 50 A 32 32 0 0 1 82 50 Z' fill='%23e63946' stroke='%23222' stroke-width='3'/><rect x='18' y='46' width='64' height='8' fill='%23222'/><circle cx='50' cy='50' r='9' fill='%23ffffff' stroke='%23222' stroke-width='3'/><circle cx='50' cy='50' r='3.5' fill='%23222'/></svg>")
-    center / 68% auto no-repeat,
-    radial-gradient(ellipse at 50% 30%, #4a7fc1 0%, #1e3a66 55%, #0f1f3e 100%);
+    url('back.jpg') center / cover no-repeat,
+    #1e3a66;
 }
 
 html, body {
