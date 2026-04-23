@@ -226,25 +226,43 @@ async function aiTakeTurn() {
       }
     }
 
-    // 2.5 KO plan search — look for a sequence of moves that scores a KO this
-    // turn (energy attach + PlusPower + Gust of Wind + attack). If one exists,
-    // execute it now and skip the rest of the turn pipeline. Falls through to
-    // the normal pipeline when no KO plan is found.
+    // 2.5 Turn plan — look ahead across attacker configurations (current
+    // active, evolve-active, retreat-into-bench, Switch-into-bench) and pick
+    // the best-scoring plan. Two levels of commitment:
     //
-    // Easy mode skips this — we want Easy to make mistakes. Normal and Hard
-    // both use it; Hard additionally considers non-KO plans with high scores
-    // below (the scoring handles that via the damage component).
+    //   FULL COMMIT — plan scores a KO (or wins the game). Execute the plan
+    //     in full (preStep + Gust + PlusPower + attach + attack) and skip
+    //     the rest of the turn pipeline entirely.
+    //
+    //   PARTIAL COMMIT — plan requires a preStep (evolve / retreat / Switch)
+    //     to reach the best-scoring attacker configuration, but doesn't KO.
+    //     Execute ONLY the preStep so we're set up for the right attacker,
+    //     then fall through to the normal pipeline for trainers, energy
+    //     attach, and attack selection. This preserves the utility moves
+    //     (Bill/Oak/Potion/status cures) while still correcting the attacker
+    //     selection that the old pipeline couldn't plan around.
+    //
+    //   NO COMMIT — plan uses current active (no preStep) and doesn't KO.
+    //     Fall through entirely; fallback pipeline makes the same decisions
+    //     it always has.
+    //
+    // Easy mode skips planning — Easy should make mistakes.
     if (aiDifficulty !== 'easy' && p2.active && p1.active) {
-      const plan = aiFindBestKOPlan(p2, p1);
-      // Only commit to the plan if it actually KOs. Non-KO plans fall through
-      // to the normal pipeline so energy/trainer/attack decisions can be
-      // tuned independently.
+      const plan = aiBuildTurnPlan(p2, p1);
       if (plan && plan.willKO) {
+        // Full commit
         if (plan.wouldWinByPrizes || plan.wouldWinByNoPokemon) {
           addLog(`🤖 Computer sees the winning move!`, true);
         }
-        await executeKOPlan(plan, AI_DELAY);
-        return; // performAttack → endTurn handles the rest
+        await executeTurnPlan(plan, AI_DELAY);
+        return;
+      }
+      if (plan && plan.preStep) {
+        // Partial commit: run the preStep only, then fall through. The
+        // plan's preStep is the one thing the fallback pipeline cannot
+        // reconstruct on its own (it evolves greedily and retreats based
+        // on damage heuristics rather than goal-directed setup).
+        await executePreStepOnly(plan.preStep, AI_DELAY);
       }
     }
 
@@ -426,6 +444,49 @@ function aiChooseEnergyTarget(p2, energyName) {
   return null;
 }
 
+// ── Shared bench-promotion scoring (#3) ───────────────────────────────────────
+// Score a bench Pokémon as a candidate for the active slot. Used by retreat,
+// Switch, Scoop Up, and post-KO promotion. Previously each call site used only
+// HP + "can attack" — which led to mistakes like retreating Charizard into
+// Bulbasaur against a Blastoise active.
+//
+// Scoring factors (higher is better):
+//   + remainingHp                  tanky Pokémon are better candidates
+//   + 100 if b can attack now      attack-ready is a meaningful bonus
+//   + 2 × best damage vs oppActive type-matchup + raw damage potential
+//
+// The 2× multiplier on damage is deliberate: it makes a 40-damage attacker
+// worth +80, which outweighs ~30 HP difference but not large HP gaps. This
+// matches the intuition "matchup matters but so does survivability."
+//
+// oppActive may be null (e.g. post-KO promotion when opponent's active is
+// temporarily empty). In that case only HP and can-attack are considered.
+function benchPromotionScore(b, oppActive) {
+  if (!b) return -Infinity;
+  const remainingHp = (parseInt(b.hp) || 0) - (b.damage || 0);
+  const canAttack = aiCanAttack(b);
+  let score = remainingHp + (canAttack ? 100 : 0);
+
+  if (oppActive) {
+    // Best damage b can deal to oppActive with its CURRENT attached energy,
+    // after W/R. Uses the same effective-damage formula as aiChooseAndAttack.
+    const atkTypes = b.types || [];
+    const weaknesses = oppActive.weaknesses || [];
+    const resistances = oppActive.resistances || [];
+    let bestDmg = 0;
+    for (const atk of (b.attacks || [])) {
+      if (!canAffordAttack(b.attachedEnergy, atk.cost || [], b)) continue;
+      let dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      if (dmg === 0) continue;
+      dmg = computeDamageAfterWR(dmg, atkTypes, weaknesses, resistances);
+      if (dmg > bestDmg) bestDmg = dmg;
+    }
+    score += bestDmg * 2;
+  }
+
+  return score;
+}
+
 // ── Retreat consideration ─────────────────────────────────────────────────────
 async function aiConsiderRetreat(p2, force = false) {
   if (!p2.active || !p2.bench.some(s => s)) return false;
@@ -437,18 +498,14 @@ async function aiConsiderRetreat(p2, force = false) {
   const retreatCost = active.convertedRetreatCost || 0;
   if (energyValue(active.attachedEnergy) < retreatCost) return false;
 
-  function benchCandidateScore(b) {
-    if (!b) return -Infinity;
-    const remainingHp = (parseInt(b.hp) || 0) - (b.damage || 0);
-    const canAttack = aiCanAttack(b);
-    return remainingHp + (canAttack ? 100 : 0);
-  }
+  const p1 = G.players[1];
+  const oppActive = p1?.active || null;
 
   let bestBench = -1, bestScore = -Infinity;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     const b = p2.bench[i];
     if (!b) continue;
-    const s = benchCandidateScore(b);
+    const s = benchPromotionScore(b, oppActive);
     if (s > bestScore) { bestScore = s; bestBench = i; }
   }
   if (bestBench === -1) return false;
@@ -460,7 +517,6 @@ async function aiConsiderRetreat(p2, force = false) {
   // Threat-aware: if active will die next turn and bench candidate will survive,
   // retreating saves a prize. This is the most important retreat signal and
   // overrides the old damage-percentage heuristic.
-  const p1 = G.players[1];
   const activeDying = willActiveDieNextTurn(p2, p1);
   const benchHpLeft = (parseInt(bench.hp) || 0) - (bench.damage || 0);
   const benchThreat = opponentThreatNextTurn(p1, { ...p2, active: bench });
@@ -470,7 +526,7 @@ async function aiConsiderRetreat(p2, force = false) {
     || (activeDying && benchWouldSurvive)
     || pctDmg >= 0.65
     || (!activeCanAttack && benchCanAttack)
-    || (benchCandidateScore(bench) > benchCandidateScore(active) + 50 && pctDmg >= 0.4);
+    || (benchPromotionScore(bench, oppActive) > benchPromotionScore(active, oppActive) + 50 && pctDmg >= 0.4);
 
   if (!shouldRetreat) return false;
 
@@ -533,9 +589,9 @@ async function aiPlayTrainers() {
         if (name === 'Switch') {
           const benchSlots = p2.bench.map((s, bi) => ({ s, bi })).filter(x => x.s !== null);
           if (benchSlots.length) {
-            let bestIdx = benchSlots[0].bi, bestScore = -1;
+            let bestIdx = benchSlots[0].bi, bestScore = -Infinity;
             for (const { s, bi } of benchSlots) {
-              const score = (parseInt(s.hp)||0) - (s.damage||0) + (aiCanAttack(s) ? 100 : 0);
+              const score = benchPromotionScore(s, opp.active);
               if (score > bestScore) { bestScore = score; bestIdx = bi; }
             }
             hand.splice(i, 1); p2.discard.push(card);
@@ -552,10 +608,10 @@ async function aiPlayTrainers() {
             const scooped = p2.active;
             scooped.damage = 0; scooped.attachedEnergy = []; scooped.status = null;
             p2.hand.push(scooped); p2.active = null;
-            let bestBench = 0, bestScore = -1;
+            let bestBench = 0, bestScore = -Infinity;
             for (let b = 0; b < RULES.BENCH_SIZE; b++) {
               if (!p2.bench[b]) continue;
-              const score = (parseInt(p2.bench[b].hp)||0) - (p2.bench[b].damage||0) + (aiCanAttack(p2.bench[b]) ? 100 : 0);
+              const score = benchPromotionScore(p2.bench[b], opp.active);
               if (score > bestScore) { bestScore = score; bestBench = b; }
             }
             p2.active = p2.bench[bestBench]; p2.bench[bestBench] = null;
@@ -841,68 +897,104 @@ function maxDamageForAttack(move, energyCount) {
 }
 
 // Opponent threat model — worst-case damage that `attackerPlayer` (the OPPONENT)
-// can do to `defenderPlayer`'s active on their NEXT turn, assuming:
-//   - They may attach up to one energy from their hand
-//   - Coin-flip attacks resolve maximally in their favor (conservative for us)
-//   - PlusPower in their hand adds +10 (they'd play it for a KO)
-//   - Weakness/Resistance applied; Invisible Wall / Defender / etc. ignored
-//     (those are our mitigations — threat = "what lands if unmitigated")
+// can do to `defenderPlayer`'s active on their NEXT turn.
+//
+// Assumptions ("conservative for us"):
+//   - Any of their Pokémon may end up as the attacker: their CURRENT active, or
+//     any bench Pokémon they can promote by retreating or playing Switch /
+//     Scoop Up. Bench threat is considered only when reachable this turn.
+//   - They may attach up to one energy from their hand (to whichever attacker
+//     ends up active).
+//   - Coin-flip attacks resolve maximally in their favor.
+//   - PlusPower in their hand adds +10 (they'd play it for a KO).
+//   - Weakness/Resistance applied relative to OUR active's types.
+//   - Mitigations on our side (Invisible Wall, Defender, Pounce) are NOT
+//     subtracted — threat = "what lands if unmitigated". Those mitigations
+//     are considered by callers when deciding whether to play/use them.
 //
 // Pure helper — no side effects, no DOM. Exported for tests.
 function opponentThreatNextTurn(attackerPlayer, defenderPlayer) {
-  const atk = attackerPlayer?.active;
   const def = defenderPlayer?.active;
-  if (!atk || !def || !atk.attacks?.length) return 0;
+  if (!def) return 0;
 
-  // Paralysis prevents attacking next turn — paralysis wears off at the end of
-  // the paralyzed player's turn, but the attack resolves BEFORE that cleanup.
-  if (atk.status === 'paralyzed') return 0;
-
-  // Enumerate energy-attachment possibilities: no attach, or attach each
-  // distinct energy type the attacker has in hand.
-  const hand = attackerPlayer.hand || [];
+  const hand = attackerPlayer?.hand || [];
   const energyNamesInHand = [...new Set(
     hand.filter(c => c?.supertype === 'Energy').map(c => c.name)
   )];
   const attachmentOptions = [null, ...energyNamesInHand.map(n => ({ name: n }))];
-
   const hasPlusPower = hand.some(c => c?.name === 'PlusPower');
-  const weaknesses = def.weaknesses || [];
+  const weaknesses  = def.weaknesses  || [];
   const resistances = def.resistances || [];
-  const atkTypes = atk.types || [];
-  const disabledName = atk.disabledAttack || null;
-  const attackReduction = atk.attackReduction || 0;
 
-  let maxDmg = 0;
+  // Inner helper — damage one specific attacker card deals to `def`, assuming
+  // best-case energy attach + PlusPower. Returns the max damage across all
+  // attacks the attacker could legally use.
+  function damageFromAttacker(atk) {
+    if (!atk?.attacks?.length) return 0;
+    // Paralysis prevents a Pokémon from attacking if it's the active — but
+    // this check only applies to the CURRENT active. When we evaluate a bench
+    // Pokémon as the "hypothetical attacker" it's not yet in the active slot,
+    // so we don't short-circuit on paralysis.
+    const atkTypes = atk.types || [];
+    const disabledName = atk.disabledAttack || null;
+    const attackReduction = atk.attackReduction || 0;
 
-  for (const extraEnergy of attachmentOptions) {
-    const attached = extraEnergy
-      ? [...(atk.attachedEnergy || []), extraEnergy]
-      : (atk.attachedEnergy || []);
-    const energyCount = energyValue(attached);
+    let maxDmg = 0;
+    for (const extraEnergy of attachmentOptions) {
+      const attached = extraEnergy
+        ? [...(atk.attachedEnergy || []), extraEnergy]
+        : (atk.attachedEnergy || []);
+      const energyCount = energyValue(attached);
 
-    for (const move of atk.attacks) {
-      if (!canAffordAttack(attached, move.cost || [], atk)) continue;
-      if (disabledName && move.name === disabledName) continue;
+      for (const move of atk.attacks) {
+        if (!canAffordAttack(attached, move.cost || [], atk)) continue;
+        if (disabledName && move.name === disabledName) continue;
 
-      // Use text-aware max damage so Comet Punch reads as 80, not 20.
-      let dmg = maxDamageForAttack(move, energyCount);
-      if (dmg === 0) continue;
+        let dmg = maxDamageForAttack(move, energyCount);
+        if (dmg === 0) continue;
 
-      // Apply weakness/resistance
-      dmg = computeDamageAfterWR(dmg, atkTypes, weaknesses, resistances);
+        dmg = computeDamageAfterWR(dmg, atkTypes, weaknesses, resistances);
+        if (hasPlusPower) dmg += 10;
+        dmg = Math.max(0, dmg - attackReduction);
 
-      // PlusPower available → assume they'd play it
-      if (hasPlusPower) dmg += 10;
+        if (dmg > maxDmg) maxDmg = dmg;
+      }
+    }
+    return maxDmg;
+  }
 
-      // Attack-reduction debuff on the attacker (e.g., from our Scrunch)
-      dmg = Math.max(0, dmg - attackReduction);
+  // 1. Threat from current active (unless paralyzed — paralyzed active simply
+  //    can't attack this turn; paralysis wears off AFTER their turn, not before).
+  const activeAtk = attackerPlayer?.active;
+  let threat = 0;
+  if (activeAtk && activeAtk.status !== 'paralyzed') {
+    threat = damageFromAttacker(activeAtk);
+  }
 
-      if (dmg > maxDmg) maxDmg = dmg;
+  // 2. Threat from any bench Pokémon the opponent could promote THIS turn.
+  //    Reachable means they can get a bench Pokémon into the active slot
+  //    through one of: Switch card, Scoop Up, or manual retreat.
+  const hasSwitch  = hand.some(c => c?.name === 'Switch');
+  const hasScoopUp = hand.some(c => c?.name === 'Scoop Up');
+  let canManualRetreat = false;
+  if (activeAtk && activeAtk.status !== 'paralyzed' && activeAtk.status !== 'asleep') {
+    const baseCost = activeAtk.convertedRetreatCost || 0;
+    // Retreat-cost reductions (e.g. Wigglytuff Power) are opponent-side
+    // effects we don't typically model; baseCost is a safe conservative value.
+    const attachedVal = energyValue(activeAtk.attachedEnergy || []);
+    canManualRetreat = attachedVal >= baseCost;
+  }
+  const canReachBench = hasSwitch || hasScoopUp || canManualRetreat;
+
+  if (canReachBench) {
+    for (const b of (attackerPlayer?.bench || [])) {
+      if (!b) continue;
+      const benchThreat = damageFromAttacker(b);
+      if (benchThreat > threat) threat = benchThreat;
     }
   }
 
-  return maxDmg;
+  return threat;
 }
 
 // True if the opponent's next turn is likely to KO our active.
@@ -927,51 +1019,49 @@ function prizesRemaining(playerObj) {
   return playerObj.prizes.filter(p => p).length;
 }
 
-// ── KO Plan search ──────────────────────────────────────────────────────────
-// Enumerate legal combinations of (Gust target, PlusPower count, energy attach,
-// attack) for the CURRENT active and return the highest-scoring plan.
+// ── Plan evaluation for a given "attacker configuration" ────────────────────
+// Given:
+//   attacker — the Pokémon that will be Active AFTER any preStep (evolve,
+//              retreat, switch). Its `attachedEnergy` must reflect the state
+//              AFTER the preStep.
+//   p2, p1   — current (unmutated) game state. Used for hand / bench / prizes.
+//   preStep  — metadata about what had to happen to get `attacker` into the
+//              active slot. Consumed-hand cards (e.g. Switch) reduce the set
+//              of hand cards available for attach / PlusPower / Gust.
+//              Shape: null | { kind, handIdx?, benchIdx?, energyDiscardCount }
+//                       kind: 'evolve' | 'retreat' | 'switch'
+//   hpLeftOverride — if the attacker card we're evaluating has different HP
+//              (e.g. post-evolve HP), pass it here. Otherwise derived from card.
 //
-// A "plan" is a declarative description of moves to execute in a single turn.
-// The planner is pure — it mutates nothing. `executeKOPlan` actually applies it.
+// Returns the best plan or null if no affordable attack exists.
 //
-// Scope (v1):
-//   • Only evaluates the current active's current attacks. Does NOT consider
-//     evolving mid-plan, retreating to a different attacker, or Switch/Scoop Up.
-//     This covers the overwhelming majority of KO opportunities in Base/Jungle/
-//     Fossil play; more complex plans can be added later.
-//   • Considers: up to 1 energy attach from hand (or up to N if Rain Dance),
-//     0..N PlusPowers from hand (capped at 2), and Gust of Wind retargeting
-//     to any opposing bench Pokémon.
-//   • Does NOT evaluate Super Energy Removal / Energy Removal as KO enablers.
-//
-// Score (higher is better):
-//   +1,000,000 if this plan wins the game (last prize)
-//   +100,000  if this plan scores a KO
-//   +50,000   if the plan leaves us alive next turn (threat-model survival)
-//   +damage   (tiebreaker among KO plans, or non-KO damage dealt)
-//   −prizeRiskPenalty if we die from counter-punch
-//
-// Returns null if no affordable attack exists with any combination.
-function aiFindBestKOPlan(p2, p1) {
-  if (!p2?.active || !p1?.active) return null;
-  const attacker = p2.active;
+// IMPORTANT: this function does NOT mutate p2 / p1 / hand in any way. The
+// preStep is consumed only by excluding its card from our "available hand"
+// view when enumerating attach / PlusPower / Gust options.
+function evaluateAttackerPlan(attacker, p2, p1, preStep) {
+  if (!attacker || !p1?.active) return null;
   if (attacker.status === 'paralyzed' || attacker.status === 'asleep') return null;
   if (!attacker.attacks?.length) return null;
 
-  const hand = p2.hand || [];
+  const fullHand = p2.hand || [];
+  // Hand as visible for the rest of the plan — excludes cards consumed by the
+  // preStep. We represent "consumed" as a Set of hand indices to ignore.
+  const consumed = new Set();
+  if (preStep?.kind === 'evolve'  && preStep.handIdx != null) consumed.add(preStep.handIdx);
+  if (preStep?.kind === 'switch'  && preStep.handIdx != null) consumed.add(preStep.handIdx);
+  // (retreat has no hand card)
+
+  const hand = fullHand.filter((_, i) => !consumed.has(i));
+
   const energyAlreadyPlayed = !!G.energyPlayedThisTurn;
   const rainDance = (typeof rainDanceActive === 'function') && rainDanceActive(2);
 
-  // Distinct energy names in hand — each is a candidate for attach.
+  // Distinct energy names in hand
   const energiesInHand = hand
     .map((c, i) => ({ c, i }))
     .filter(x => x.c?.supertype === 'Energy');
   const distinctEnergyNames = [...new Set(energiesInHand.map(x => x.c.name))];
 
-  // Attach options: always include "no attach". Then, if we haven't played an
-  // energy this turn, one option per distinct type in hand. Under Rain Dance,
-  // additionally allow attaching ALL water energies (one big combo option).
-  // We model each option as a list of {name, handIdx} to be consumed in order.
   const attachOptions = [[]];
   if (!energyAlreadyPlayed) {
     for (const name of distinctEnergyNames) {
@@ -986,15 +1076,12 @@ function aiFindBestKOPlan(p2, p1) {
     }
   }
 
-  // PlusPower: we'll consider playing 0..min(2, count in hand).
   const plusPowerHandIdxs = hand
     .map((c, i) => ({ c, i }))
     .filter(x => x.c?.name === 'PlusPower')
     .map(x => x.i);
   const maxPlusPowers = Math.min(2, plusPowerHandIdxs.length);
 
-  // Gust of Wind: pull a bench Pokémon into the opposing active. Options are
-  // the current active (no Gust) plus every non-null opponent bench slot.
   const hasGust = hand.some(c => c?.name === 'Gust of Wind');
   const targetOptions = [{ benchIdx: null, card: p1.active, gustHandIdx: null }];
   if (hasGust) {
@@ -1005,24 +1092,18 @@ function aiFindBestKOPlan(p2, p1) {
     }
   }
 
-  // Build a synthetic attacker state given our chosen attach + PlusPower count.
-  // Returns { attached, effectivePlus } — pure, no mutation of real state.
   function attackerWithPlan(attachList, plusPowerN) {
     const attached = [...(attacker.attachedEnergy || [])];
     for (const a of attachList) attached.push({ name: a.name });
     return { attached, plus: plusPowerN * 10 };
   }
 
-  // Compute damage to `target` if we use `atk` with the planned state.
   function computePlannedDamage(atk, planned, target) {
-    // Affordability uses the planned attached set.
     if (!canAffordAttack(planned.attached, atk.cost || [], attacker)) return 0;
     if (attacker.disabledAttack && attacker.disabledAttack === atk.name) return 0;
     if (atk.name === 'Conversion 1' && !(target.weaknesses || []).length) return 0;
 
     const energyCount = energyValue(planned.attached);
-    // Use max-damage model (reads coin-flip text). For fixed attacks this is
-    // the printed damage.
     let dmg = maxDamageForAttack(atk, energyCount);
     if (dmg === 0) return 0;
 
@@ -1030,32 +1111,18 @@ function aiFindBestKOPlan(p2, p1) {
     dmg = computeDamageAfterWR(dmg, atkTypes, target.weaknesses, target.resistances);
     dmg += planned.plus;
 
-    // Invisible Wall (Mr. Mime): blocks any attack dealing ≥ 30 damage.
-    // Threshold check matches game-actions.js:1037 (after W/R + PlusPower).
     if (typeof hasInvisibleWall === 'function' && hasInvisibleWall(target) && dmg >= 30) {
       return 0;
     }
 
-    // Defender on the target
     if (target.defender && dmg > 0) dmg = Math.max(0, dmg - 20);
 
     return dmg;
   }
 
-  // After a KO, the opponent must promote from bench. Their best-case next
-  // turn threat = max damage of any bench Pokémon if unlimited moves to
-  // attach/energy-up. For a one-turn lookahead we use the existing threat
-  // model against each bench candidate as the new active.
   function threatAfterKO(target) {
-    // If we KO the active, opponent promotes one of their bench Pokémon.
-    // If the KO target IS a benched Pokémon (via Gust), their active is
-    // unchanged — use normal active threat.
     const targetIsActive = target === p1.active;
-    if (!targetIsActive) {
-      // Gust KO on a bench Pokémon: their active is still their active.
-      return opponentThreatNextTurn(p1, p2);
-    }
-    // They'll promote the bench Pokémon most likely to KO us.
+    if (!targetIsActive) return opponentThreatNextTurn(p1, p2);
     let maxThreat = 0;
     for (const b of (p1.bench || [])) {
       if (!b) continue;
@@ -1074,40 +1141,26 @@ function aiFindBestKOPlan(p2, p1) {
 
   for (const target of targetOptions) {
     const targetHp = (parseInt(target.card.hp) || 0) - (target.card.damage || 0);
-    if (targetHp <= 0) continue; // already KO'd, skip
+    if (targetHp <= 0) continue;
 
     for (const attachList of attachOptions) {
       for (let pp = 0; pp <= maxPlusPowers; pp++) {
         const planned = attackerWithPlan(attachList, pp);
 
-        // Pick the best attack under this (attach, pp) combination.
         for (const atk of attacker.attacks) {
           const dmg = computePlannedDamage(atk, planned, target.card);
           if (dmg === 0) continue;
 
           const willKO = dmg >= targetHp;
-          // Our HP after the counter-punch. If we KO'd their active, their
-          // threat is from whoever they promote (or 0 if empty bench → we win).
           let counterDamage;
           if (willKO && target.card === p1.active) {
-            // We wiped their active. Do they have bench to promote?
             const benchAnyoneAlive = (p1.bench || []).some(b => b);
-            if (!benchAnyoneAlive) {
-              // They have no Pokémon → we win by "no Pokémon left" regardless
-              // of prize count. Treat as ultimate score.
-              counterDamage = 0;
-            } else {
-              counterDamage = threatAfterKO(target.card);
-            }
+            counterDamage = benchAnyoneAlive ? threatAfterKO(target.card) : 0;
           } else {
-            // Either non-KO plan, or Gust-KO on a bench (their active unchanged).
             counterDamage = opponentThreatNextTurn(p1, p2);
           }
           const willSurvive = counterDamage < hpLeft;
 
-          // Game-winning conditions:
-          //   • KO + it's their last prize (myPrizesLeft === 1 and we take it)
-          //   • KO + they have no bench to promote (empty-bench win)
           const wouldWinByPrizes = willKO && myPrizesLeft === 1;
           const wouldWinByNoPokemon =
             willKO && target.card === p1.active && !(p1.bench || []).some(b => b);
@@ -1117,24 +1170,43 @@ function aiFindBestKOPlan(p2, p1) {
           if (willKO) score += 100_000;
           if (willSurvive) score += 50_000;
 
-          // Damage as tiebreaker. Also rewards non-KO plans that still hit hard.
-          score += Math.min(dmg, 999);
+          // Damage as tiebreaker, but capped at target HP — overkill doesn't
+          // make a KO plan "better" than another KO plan. This matters so
+          // preStep penalties actually discourage unnecessary evolves.
+          const effectiveDmgForScore = Math.min(dmg, targetHp, 999);
+          score += effectiveDmgForScore;
 
-          // If they're on their last prize and we DIE, big penalty — we'd be
-          // handing them the game by failing to survive.
           if (!willSurvive && oppPrizesLeft === 1) score -= 200_000;
 
-          // Resource cost penalty (small): prefer plans that spend fewer PPs
-          // and fewer hand cards among equal-outcome plans.
+          // Resource cost — prefer cheaper plans among equal-outcome ones.
           score -= pp * 5;
           score -= (target.gustHandIdx !== null ? 10 : 0);
           score -= attachList.length * 1;
 
+          // preStep cost: evolving or switching uses a card; retreating discards
+          // energy. Small penalty so we prefer plans that avoid these when a
+          // simple plan achieves the same outcome.
+          if (preStep?.kind === 'evolve')  score -= 20;
+          if (preStep?.kind === 'switch')  score -= 15;
+          if (preStep?.kind === 'retreat') score -= (preStep.energyDiscardCount || 0) * 8;
+
           if (!best || score > best.score) {
+            // Derive an outcome label for callers. This drives the
+            // "commit to plan" decision in aiTakeTurn — non-KO plans that
+            // require a preStep are still committed (because the fallback
+            // pipeline would not make the same move), but pure-pass-through
+            // non-KO plans fall through to the fallback.
+            let outcome;
+            if (wouldWinByPrizes || wouldWinByNoPokemon) outcome = 'WIN_GAME';
+            else if (willKO)                             outcome = 'KO';
+            else                                         outcome = 'DAMAGE';
+
             best = {
               score,
-              target,              // { benchIdx, card, gustHandIdx }
-              attachList,          // [{ name, handIdx }, ...]
+              outcome,
+              preStep,           // null | { kind, handIdx?, benchIdx?, energyDiscardCount }
+              target,            // { benchIdx, card, gustHandIdx }
+              attachList,        // [{ name, handIdx }, ...]
               plusPowerCount: pp,
               attack: atk,
               expectedDamage: dmg,
@@ -1152,19 +1224,161 @@ function aiFindBestKOPlan(p2, p1) {
   return best;
 }
 
-// Execute a plan produced by aiFindBestKOPlan. Actually mutates game state and
-// invokes the same game primitives the AI uses elsewhere (attachEnergy, etc).
-// Returns true if the plan was executed (an attack fired).
-async function executeKOPlan(plan, delayMs) {
+// ── KO Plan search ──────────────────────────────────────────────────────────
+// Public API: find the best attack plan using the CURRENT active (no evolve,
+// no retreat). Preserved for backward compatibility with tests and callers
+// that don't need to consider preStep transformations.
+//
+// For the full goal-directed turn planner, use aiBuildTurnPlan below.
+function aiFindBestKOPlan(p2, p1) {
+  if (!p2?.active || !p1?.active) return null;
+  return evaluateAttackerPlan(p2.active, p2, p1, null);
+}
+
+// ── Goal-directed turn planner ──────────────────────────────────────────────
+// Build a plan for the current turn by enumerating attacker configurations:
+//
+//   1. Current active, no transformation (baseline — same as aiFindBestKOPlan)
+//   2. Current active evolved with a Stage 1/2 from hand (carries energy over)
+//   3. Retreat current active, promote bench-N (must afford retreat cost)
+//   4. Switch: play Switch trainer, promote bench-N (no retreat cost)
+//
+// For each configuration, run evaluateAttackerPlan and keep the best.
+//
+// Guardrails on enumeration:
+//   • Evolve: only if the active was not placed/evolved this turn
+//   • Evolve: checks prehistoricPowerActive (Aerodactyl blocks all evolution)
+//   • Retreat: requires active's attached energy >= retreat cost, and active
+//     not paralyzed/asleep
+//   • Switch: requires a Switch card in hand, and active not blocked (asleep/
+//     paralyzed don't block Switch — it explicitly says "Switch" ignores them)
+//
+// Scope limits:
+//   • Does NOT consider Scoop Up as a retreat alternative (loses all energy)
+//   • Does NOT evolve a benched Pokémon then retreat into it (too combinatorial
+//     and rare-to-correct)
+//   • Does NOT combine preSteps (e.g. retreat then evolve the new active)
+//
+// Returns null when no plan has a viable attack.
+function aiBuildTurnPlan(p2, p1) {
+  if (!p2 || !p1) return null;
+
+  const candidates = [];
+
+  // 1. Baseline — current active as attacker, no preStep.
+  if (p2.active) {
+    const plan = evaluateAttackerPlan(p2.active, p2, p1, null);
+    if (plan) candidates.push(plan);
+  }
+
+  // 2. Evolve current active.
+  const evolvedUids = G.evolvedThisTurn || [];
+  const evolveBlocked = (typeof prehistoricPowerActive === 'function') && prehistoricPowerActive();
+  if (p2.active && !evolveBlocked && !evolvedUids.includes(p2.active.uid)) {
+    const hand = p2.hand || [];
+    for (let i = 0; i < hand.length; i++) {
+      const evoCard = hand[i];
+      if (evoCard?.supertype !== 'Pokémon') continue;
+      if (!evoCard.subtypes?.includes('Stage 1') && !evoCard.subtypes?.includes('Stage 2')) continue;
+      if (evoCard.evolvesFrom !== p2.active.name) continue;
+
+      // Build the post-evolve attacker: inherit attached energy + damage.
+      const evolvedActive = {
+        ...evoCard,
+        attachedEnergy: p2.active.attachedEnergy || [],
+        damage: p2.active.damage || 0,
+        status: null,          // evolving cures status
+        plusPower: 0,
+        defender: false,
+        disabledAttack: null,  // Amnesia etc. wear off on evolve
+      };
+      const plan = evaluateAttackerPlan(evolvedActive, p2, p1, {
+        kind: 'evolve',
+        handIdx: i,
+        zone: 'active',
+      });
+      if (plan) candidates.push(plan);
+    }
+  }
+
+  // 3. Retreat — for each bench Pokémon, simulate retreating into it.
+  if (p2.active &&
+      p2.active.status !== 'paralyzed' &&
+      p2.active.status !== 'asleep') {
+    const baseRetreat = p2.active.convertedRetreatCost || 0;
+    const discount = (typeof retreatCostReduction === 'function') ? retreatCostReduction(2) : 0;
+    const retreatCost = Math.max(0, baseRetreat - discount);
+    const attachedValue = energyValue(p2.active.attachedEnergy || []);
+    if (attachedValue >= retreatCost) {
+      for (let b = 0; b < (p2.bench?.length || 0); b++) {
+        const benchCard = p2.bench[b];
+        if (!benchCard) continue;
+        // The bench card becomes the new active with its CURRENT attached
+        // energy. The retreat cost is discarded from the OLD active's energy,
+        // which doesn't affect our this-turn attack with the new active.
+        const plan = evaluateAttackerPlan(benchCard, p2, p1, {
+          kind: 'retreat',
+          benchIdx: b,
+          energyDiscardCount: retreatCost,
+        });
+        if (plan) candidates.push(plan);
+      }
+    }
+  }
+
+  // 4. Switch card — free retreat via trainer card.
+  {
+    const hand = p2.hand || [];
+    const switchIdx = hand.findIndex(c => c?.name === 'Switch');
+    if (switchIdx !== -1 && p2.active) {
+      for (let b = 0; b < (p2.bench?.length || 0); b++) {
+        const benchCard = p2.bench[b];
+        if (!benchCard) continue;
+        const plan = evaluateAttackerPlan(benchCard, p2, p1, {
+          kind: 'switch',
+          handIdx: switchIdx,
+          benchIdx: b,
+        });
+        if (plan) candidates.push(plan);
+      }
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  // Pick the top-scoring plan across all attacker configurations.
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0];
+}
+
+// ── Plan execution ───────────────────────────────────────────────────────────
+// Execute a plan produced by aiBuildTurnPlan or aiFindBestKOPlan. Runs any
+// preStep (evolve, retreat, switch) before the attack sequence. Mutates game
+// state via the same primitives the rest of the AI uses.
+//
+// Order of operations (all conditional on plan fields):
+//   1. preStep  (evolve the active, retreat, or play Switch)
+//   2. Gust of Wind on opposing bench target
+//   3. PlusPowers (one card at a time)
+//   4. Energy attach(es) — may be multiple under Rain Dance
+//   5. Attack
+//
+// Returns true when an attack fires. Caller is responsible for endTurn flow
+// (performAttack → endTurn handles that path).
+async function executeTurnPlan(plan, delayMs) {
   const p2 = G.players[2];
   const delay = ms => new Promise(r => setTimeout(r, ms));
 
-  // 1. Gust of Wind first, if the plan targets a bench Pokémon.
+  // 1. preStep
+  if (plan.preStep) {
+    const ok = await executePreStepOnly(plan.preStep, delayMs);
+    if (!ok) return false;
+  }
+
+  // 2. Gust of Wind first, if the plan targets a bench Pokémon.
   if (plan.target.gustHandIdx !== null && plan.target.benchIdx !== null) {
     const p1 = G.players[1];
     const hand = p2.hand;
-    // Re-locate the Gust card (handIdx may have shifted, but we haven't mutated
-    // hand yet between planning and now — belt and braces).
     const gustIdx = hand.findIndex(c => c?.name === 'Gust of Wind');
     if (gustIdx !== -1) {
       const card = hand.splice(gustIdx, 1)[0];
@@ -1179,7 +1393,7 @@ async function executeKOPlan(plan, delayMs) {
     }
   }
 
-  // 2. PlusPowers (one at a time).
+  // 3. PlusPowers (one at a time).
   for (let n = 0; n < plan.plusPowerCount; n++) {
     const hand = p2.hand;
     const ppIdx = hand.findIndex(c => c?.name === 'PlusPower');
@@ -1192,7 +1406,7 @@ async function executeKOPlan(plan, delayMs) {
     await delay(delayMs * 0.4);
   }
 
-  // 3. Energy attach(es). For Rain Dance the plan may list multiple.
+  // 4. Energy attach(es). For Rain Dance the plan may list multiple.
   for (const attach of plan.attachList) {
     const hand = p2.hand;
     const idx = hand.findIndex(c => c?.supertype === 'Energy' && c.name === attach.name);
@@ -1205,11 +1419,97 @@ async function executeKOPlan(plan, delayMs) {
     await delay(delayMs * 0.5);
   }
 
-  // 4. Attack.
+  // 5. Attack.
   addLog(`🤖 Computer uses ${plan.attack.name}!`, true);
   aiThinking = false;
   await performAttack(2, plan.attack);
   return true;
+}
+
+// Execute just the preStep portion of a plan (evolve, retreat, or Switch).
+// Separated from executeTurnPlan so aiTakeTurn can do a "partial commit" —
+// apply the planner's preStep to get the right attacker in place, then fall
+// through to the normal pipeline for everything else. Returns true on
+// success, false on unexpected failure (e.g. evolution card missing).
+async function executePreStepOnly(step, delayMs) {
+  const p2 = G.players[2];
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  if (step.kind === 'evolve') {
+    const plannedCardName = p2.hand[step.handIdx]?.name;
+    const evoIdx = p2.hand.findIndex(c =>
+      c?.name === plannedCardName && c?.evolvesFrom === p2.active?.name);
+    if (evoIdx !== -1) {
+      evolve(2, evoIdx, 'active', null);
+      await delay(delayMs * 0.7);
+      return true;
+    }
+    return false;
+  }
+
+  if (step.kind === 'retreat') {
+    const active = p2.active;
+    if (active && step.benchIdx != null && p2.bench[step.benchIdx]) {
+      const cost = step.energyDiscardCount || 0;
+      if (cost > 0 && active.attachedEnergy?.length) {
+        let remaining = cost;
+        while (remaining > 0 && active.attachedEnergy.length) {
+          const e = active.attachedEnergy.shift();
+          p2.discard.push(e);
+          remaining -= /double colorless/i.test(e.name || '') ? 2 : 1;
+        }
+        addLog(`🤖 Computer discarded energy to retreat ${active.name}.`);
+      }
+      // Clear per-turn flags on the retreating Pokémon (match executeRetreat)
+      active.leekSlapUsed = false;
+      active.immuneToAttack = false;
+      active.swordsDanceActive = false;
+      active.destinyBond = false;
+      active.pounceActive = false;
+      if (active.status) active.status = null;
+      // Swap
+      const out = p2.bench[step.benchIdx];
+      p2.bench[step.benchIdx] = active;
+      p2.active = out;
+      while (p2.bench.length < 5) p2.bench.push(null);
+      addLog(`🤖 Computer retreated ${active.name} → sent out ${out.name}.`, true);
+      renderAll();
+      await delay(delayMs * 0.7);
+      return true;
+    }
+    return false;
+  }
+
+  if (step.kind === 'switch') {
+    const switchIdx = p2.hand.findIndex(c => c?.name === 'Switch');
+    if (switchIdx !== -1 && step.benchIdx != null && p2.bench[step.benchIdx]) {
+      const card = p2.hand.splice(switchIdx, 1)[0];
+      p2.discard.push(card);
+      const out = p2.bench[step.benchIdx];
+      const old = p2.active;
+      old.leekSlapUsed = false;
+      old.immuneToAttack = false;
+      old.swordsDanceActive = false;
+      old.destinyBond = false;
+      old.pounceActive = false;
+      if (old.status) old.status = null;
+      p2.bench[step.benchIdx] = old;
+      p2.active = out;
+      while (p2.bench.length < 5) p2.bench.push(null);
+      addLog(`🤖 Computer played Switch — swapped ${old.name} for ${out.name}.`, true);
+      renderAll();
+      await delay(delayMs * 0.6);
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+// Backward-compat wrapper — older callers may reference executeKOPlan.
+async function executeKOPlan(plan, delayMs) {
+  return executeTurnPlan(plan, delayMs);
 }
 
 async function aiChooseAndAttack() {
@@ -1284,13 +1584,12 @@ async function aiChooseAndAttack() {
 function aiDoPromotion() {
   if (!vsComputer || G.phase !== 'PROMOTE' || G.pendingPromotion !== 2) return;
   const p2 = G.players[2];
+  const p1 = G.players[1];
+  const oppActive = p1?.active || null;
   let bestIdx = -1, bestScore = -Infinity;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     if (!p2.bench[i]) continue;
-    const hp = parseInt(p2.bench[i].hp) || 0;
-    const dmg = p2.bench[i].damage || 0;
-    const canAttack = aiCanAttack(p2.bench[i]);
-    const score = (hp - dmg) + (canAttack ? 200 : 0);
+    const score = benchPromotionScore(p2.bench[i], oppActive);
     if (score > bestScore) { bestScore = score; bestIdx = i; }
   }
   if (bestIdx === -1) {
@@ -1383,6 +1682,9 @@ if (typeof module !== 'undefined') {
     willActiveDieNextTurn,
     maxDamageForAttack,
     aiFindBestKOPlan,
+    aiBuildTurnPlan,
+    evaluateAttackerPlan,
     prizesRemaining,
+    benchPromotionScore,
   };
 }

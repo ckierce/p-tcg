@@ -1904,6 +1904,211 @@ const FIGHTING_WEAK = {
     _opponentThreatNextTurn(attacker, defender), 10);
 }
 
+// ── Bench-threat model (#5) ─────────────────────────────────────────────────
+// opponentThreatNextTurn must consider bench Pokémon reachable via retreat,
+// Switch, or Scoop Up. Otherwise the AI thinks a weak active means safety,
+// even when a fully-loaded threat sits on their bench one retreat away.
+
+// A weak active and a scary bench, with NO retreat path → bench ignored.
+{
+  const weakActive = {
+    name: 'Magikarp', hp: '30',
+    types: ['Water'],
+    attacks: [{ name: 'Tackle', cost: ['Water'], damage: '10', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }],
+    convertedRetreatCost: 5, // can't afford — only 1 energy attached
+    weaknesses: [], resistances: [],
+  };
+  const benchBeast = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({ active: weakActive, bench: [benchBeast, null, null, null, null], hand: [] });
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+  assertEqual('No-retreat: bench threat NOT counted, only weak active (Tackle=10)',
+    _opponentThreatNextTurn(attacker, defender), 10);
+}
+
+// Same setup but retreat IS affordable → bench threat counted.
+{
+  const activeWithRetreat = {
+    name: 'Magikarp', hp: '30',
+    types: ['Water'],
+    attacks: [{ name: 'Tackle', cost: ['Water'], damage: '10', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }],
+    convertedRetreatCost: 1, // CAN afford
+    weaknesses: [], resistances: [],
+  };
+  const benchBeast = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({ active: activeWithRetreat, bench: [benchBeast, null, null, null, null], hand: [] });
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+  assertEqual('Retreat-reachable: bench Hitmonchan Special Punch threat = 40',
+    _opponentThreatNextTurn(attacker, defender), 40);
+}
+
+// Switch card in hand → bench reachable regardless of retreat cost.
+{
+  const stuckActive = {
+    name: 'Snorlax', hp: '90',
+    types: ['Colorless'],
+    attacks: [{ name: 'Body Slam', cost: ['Colorless','Colorless','Colorless','Colorless'], damage: '30', text: '' }],
+    attachedEnergy: [], // no energy — can't attack AND can't retreat (cost 4)
+    convertedRetreatCost: 4,
+    weaknesses: [], resistances: [],
+  };
+  const benchBeast = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({
+    active: stuckActive,
+    bench: [benchBeast, null, null, null, null],
+    hand: [{ supertype: 'Trainer', name: 'Switch' }],
+  });
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+  assertEqual('Switch in hand: bench Hitmonchan Jab threat = 20 (active can\'t attack)',
+    _opponentThreatNextTurn(attacker, defender), 20);
+}
+
+// Scoop Up also enables bench reach.
+{
+  const stuckActive = {
+    name: 'Snorlax', hp: '90',
+    types: ['Colorless'],
+    attacks: [{ name: 'Body Slam', cost: ['Colorless','Colorless','Colorless','Colorless'], damage: '30', text: '' }],
+    attachedEnergy: [],
+    convertedRetreatCost: 4,
+    weaknesses: [], resistances: [],
+  };
+  const benchBeast = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({
+    active: stuckActive,
+    bench: [benchBeast, null, null, null, null],
+    hand: [{ supertype: 'Trainer', name: 'Scoop Up' }],
+  });
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+  assertEqual('Scoop Up in hand: bench Hitmonchan Jab threat = 20',
+    _opponentThreatNextTurn(attacker, defender), 20);
+}
+
+// Paralyzed active blocks manual retreat AND own attack, but Switch bypasses.
+{
+  const paralyzedActive = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    status: 'paralyzed',
+    attacks: [{ name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+    convertedRetreatCost: 1, // affordable if not paralyzed
+    weaknesses: [], resistances: [],
+  };
+  const benchMon = {
+    name: 'Jab-er', hp: '60',
+    types: ['Fighting'],
+    attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+
+  // Case A: no Switch → paralyzed active can't attack, can't retreat → threat 0
+  const attackerNoSwitch = mkP({
+    active: paralyzedActive,
+    bench: [benchMon, null, null, null, null],
+    hand: [],
+  });
+  assertEqual('Paralyzed, no Switch: threat = 0 (no bench reach)',
+    _opponentThreatNextTurn(attackerNoSwitch, defender), 0);
+
+  // Case B: Switch in hand → bench reachable via Switch → bench threat counted
+  const attackerWithSwitch = mkP({
+    active: paralyzedActive,
+    bench: [benchMon, null, null, null, null],
+    hand: [{ supertype: 'Trainer', name: 'Switch' }],
+  });
+  assertEqual('Paralyzed, has Switch: bench Jab threat = 20',
+    _opponentThreatNextTurn(attackerWithSwitch, defender), 20);
+}
+
+// Max over active + bench — bench threat exceeds active threat only if greater.
+{
+  // Active does 40 damage; bench does 20 damage. Max = 40 (active).
+  const strongActive = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+    convertedRetreatCost: 1,
+    weaknesses: [], resistances: [],
+  };
+  const weakerBench = {
+    name: 'WeakerBench', hp: '50',
+    types: ['Fighting'],
+    attacks: [{ name: 'Poke', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const attacker = mkP({ active: strongActive, bench: [weakerBench, null, null, null, null], hand: [] });
+  const defender = mkP({ active: { name: 'X', hp: '70', weaknesses: [], resistances: [] } });
+  assertEqual('Active > bench threat → max is active (40, not 20)',
+    _opponentThreatNextTurn(attacker, defender), 40);
+}
+
+// Weakness applies to the BENCH attacker too, not just the active.
+{
+  // Bench Hitmonchan has no attacker advantage on its own, but our active is
+  // Fighting-weak → bench Jab becomes 40 damage.
+  const weakActive = {
+    name: 'Magikarp', hp: '30',
+    types: ['Water'],
+    attacks: [{ name: 'Tackle', cost: ['Water'], damage: '10', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }],
+    convertedRetreatCost: 1,
+    weaknesses: [], resistances: [],
+  };
+  const benchMon = {
+    name: 'Hitmonchan', hp: '70',
+    types: ['Fighting'],
+    attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const defender = mkP({
+    active: {
+      name: 'WeakDefender', hp: '70',
+      weaknesses: [{ type: 'Fighting', value: '×2' }],
+      resistances: [],
+    },
+  });
+  const attacker = mkP({
+    active: weakActive,
+    bench: [benchMon, null, null, null, null],
+    hand: [],
+  });
+  // Active Magikarp: Tackle = 10 (no weakness exploit — our defender weak to Fighting, not Water).
+  // Bench Hitmonchan: Jab = 20 × 2 weakness = 40.
+  assertEqual('Weakness doubles bench-attacker damage → 40',
+    _opponentThreatNextTurn(attacker, defender), 40);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // willActiveDieNextTurn — threat vs HP remaining
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2345,6 +2550,8 @@ section('prizesRemaining');
 const {
   prizesRemaining: _prizesRemaining,
   aiFindBestKOPlan: _aiFindBestKOPlan,
+  aiBuildTurnPlan: _aiBuildTurnPlan,
+  benchPromotionScore: _benchPromotionScore,
 } = require('./game-ai.js');
 
 {
@@ -2821,6 +3028,635 @@ global.G = { energyPlayedThisTurn: false, evolvedThisTurn: [], players: {} };
     plan !== null && plan.willKO === true);
   assert('Suicide-KO on opp last prize: score is penalized (< 100k)',
     (plan?.score || 0) < 100_000);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// aiBuildTurnPlan — goal-directed turn planner
+//
+// Enumerates attacker configurations and returns the best plan across all of
+// them. This is the plan-first entry point used by aiTakeTurn. Builds on
+// evaluateAttackerPlan (which is also used internally for each configuration).
+//
+// Configurations evaluated:
+//   • baseline — current active, no preStep
+//   • evolve   — current active evolved with a Stage 1/2 from hand
+//   • retreat  — each bench Pokémon as attacker (active retreats, paying cost)
+//   • switch   — each bench Pokémon as attacker (Switch card from hand)
+//
+// Tests verify:
+//   • Baseline still works when no preStep enables improvement
+//   • Evolve preStep is selected when evolution unlocks a KO
+//   • Evolve is NOT preferred when baseline already KOs (preStep penalty)
+//   • Retreat preStep is selected when bench attacker enables KO
+//   • Retreat is skipped when unaffordable
+//   • Switch preStep is preferred over retreat when both work (Switch ≥ retreat
+//     in the score — same outcome but cheaper for non-zero retreat cost)
+//   • evolvedThisTurn (card placed this turn) blocks evolve plans
+//   • Paralysis / sleep on active blocks retreat plans but NOT Switch
+//   • No candidates → planner returns null
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('aiBuildTurnPlan');
+
+// Helper: make a Charmeleon-like Stage 1 card
+function makeStage1(evolvesFromName, overrides = {}) {
+  return {
+    name: 'TestStage1',
+    supertype: 'Pokémon',
+    subtypes: ['Stage 1'],
+    evolvesFrom: evolvesFromName,
+    hp: '80',
+    types: ['Fire'],
+    attacks: [
+      { name: 'Flamethrower', cost: ['Fire', 'Fire'], damage: '50', text: '' },
+    ],
+    ...overrides,
+  };
+}
+
+// ── CASE: baseline — no preStep configurations available ────────────────────
+{
+  // Current active can KO directly. No evolution card in hand, empty bench.
+  // Planner should return a plan with preStep === null (baseline).
+  // (Opponent has a benched Pokémon so the KO isn't a game-ending move —
+  // this tests the plain KO outcome label.)
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const oppBench = makeDefender({ name: 'BenchBlocker' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [oppBench,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Baseline: plan exists', plan !== null);
+  assertEqual('Baseline: no preStep', plan?.preStep, null);
+  assert('Baseline: still KOs', plan?.willKO === true);
+  assertEqual('Baseline: outcome is KO', plan?.outcome, 'KO');
+}
+
+// ── CASE: evolve unlocks a KO the baseline can't reach ──────────────────────
+{
+  // Charmander (baseline) deals 20 — defender has 40 HP, can't KO.
+  // Charmeleon (evolved) deals 50 → KO.
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    uid: 'char-1',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const evoCard = makeStage1('Charmander', {
+    name: 'Charmeleon',
+    attacks: [
+      { name: 'Flamethrower', cost: ['Fire', 'Fire'], damage: '50', text: '' },
+    ],
+  });
+  const defender = makeDefender({ hp: '40' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Evolve-KO: plan exists', plan !== null);
+  assert('Evolve-KO: plan.willKO is true', plan?.willKO === true);
+  assertEqual('Evolve-KO: preStep kind is evolve',
+    plan?.preStep?.kind, 'evolve');
+  assertEqual('Evolve-KO: preStep handIdx points to Charmeleon',
+    plan?.preStep?.handIdx, 0);
+}
+
+// ── CASE: evolve NOT preferred when baseline already KOs ────────────────────
+{
+  // Baseline deals 20 → KOs a 20 HP defender. Charmeleon ALSO KOs but costs a
+  // card. Planner should prefer baseline (cheaper plan, preStep penalty).
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const evoCard = makeStage1('Charmander', { name: 'Charmeleon' });
+  const defender = makeDefender({ hp: '20' }); // baseline KOs easily
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Don\'t-evolve-for-nothing: plan exists', plan !== null);
+  assert('Don\'t-evolve-for-nothing: plan KOs', plan?.willKO === true);
+  assertEqual('Don\'t-evolve-for-nothing: baseline preStep is null',
+    plan?.preStep, null);
+}
+
+// ── CASE: evolution card doesn't match active → ignored ─────────────────────
+{
+  // Active is Charmander; hand has a Stage 1 "Wartortle" that evolves from
+  // Squirtle. Planner should not consider evolving Charmander with Wartortle.
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const wartortle = makeStage1('Squirtle', { name: 'Wartortle' });
+  const defender = makeDefender({ hp: '40' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [wartortle], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  // Charmander can't KO, and Wartortle is not a valid evolution for it.
+  // Plan exists (baseline damage) but preStep must not be evolve.
+  assert('Mismatched evolution: preStep is NOT evolve',
+    plan === null || plan.preStep?.kind !== 'evolve');
+}
+
+// ── CASE: evolvedThisTurn blocks evolve ─────────────────────────────────────
+{
+  // Active was just placed/evolved this turn — planner must not try to evolve.
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    uid: 'just-placed',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const evoCard = makeStage1('Charmander', { name: 'Charmeleon' });
+  const defender = makeDefender({ hp: '40' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = ['just-placed']; // ← active can't evolve
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('evolvedThisTurn: planner does not pick evolve preStep',
+    plan === null || plan.preStep?.kind !== 'evolve');
+  global.G.evolvedThisTurn = []; // reset
+}
+
+// ── CASE: retreat unlocks a KO via stronger bench Pokémon ───────────────────
+{
+  // Active has low damage output (20), opponent has 60 HP → no KO.
+  // Bench has a strong attacker fully loaded that KOs (80). Retreat cost 1.
+  // Planner should choose retreat preStep.
+  const baseActive = makeAttacker({
+    name: 'Weakling',
+    convertedRetreatCost: 1,
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const benchBeast = makeAttacker({
+    name: 'Beast',
+    hp: '100',
+    types: ['Water'],
+    attacks: [{ name: 'Crush', cost: ['Water','Water'], damage: '80', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }, { name: 'Water Energy' }],
+  });
+  const defender = makeDefender({ hp: '60' });
+  const p2 = {
+    active: baseActive, bench: [benchBeast,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Retreat-KO: plan exists', plan !== null);
+  assert('Retreat-KO: plan.willKO is true', plan?.willKO === true);
+  assertEqual('Retreat-KO: preStep kind is retreat',
+    plan?.preStep?.kind, 'retreat');
+  assertEqual('Retreat-KO: preStep benchIdx is 0',
+    plan?.preStep?.benchIdx, 0);
+}
+
+// ── CASE: retreat cost unaffordable → retreat not considered ────────────────
+{
+  // Active has retreat cost 3 but only 1 energy attached. Can't retreat.
+  // Bench has a stronger attacker — planner should NOT pick retreat.
+  const baseActive = makeAttacker({
+    name: 'Weakling',
+    convertedRetreatCost: 3,
+    attachedEnergy: [{ name: 'Fire Energy' }], // not enough to retreat
+  });
+  const benchBeast = makeAttacker({
+    name: 'Beast',
+    hp: '100',
+    types: ['Water'],
+    attacks: [{ name: 'Crush', cost: ['Water'], damage: '80', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }],
+  });
+  const defender = makeDefender({ hp: '60' });
+  const p2 = {
+    active: baseActive, bench: [benchBeast,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  // Plan should NOT include retreat as preStep (can't afford). Baseline with
+  // just the weakling attack is the only option — it may or may not be
+  // returned depending on whether it deals nonzero damage.
+  assert('Unaffordable retreat: preStep is NOT retreat',
+    plan === null || plan.preStep?.kind !== 'retreat');
+}
+
+// ── CASE: Switch preferred over retreat when both can KO ────────────────────
+{
+  // Both retreat and Switch enable a bench KO. Retreat costs energy; Switch
+  // only a trainer card. Planner should choose the cheaper Switch path.
+  const baseActive = makeAttacker({
+    name: 'Weakling',
+    convertedRetreatCost: 2,
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const benchBeast = makeAttacker({
+    name: 'Beast',
+    hp: '100',
+    types: ['Water'],
+    attacks: [{ name: 'Crush', cost: ['Water','Water'], damage: '80', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }, { name: 'Water Energy' }],
+  });
+  const defender = makeDefender({ hp: '60' });
+  const switchCard = { supertype: 'Trainer', name: 'Switch' };
+  const p2 = {
+    active: baseActive, bench: [benchBeast,null,null,null,null],
+    hand: [switchCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Switch-vs-retreat: plan exists', plan !== null);
+  assert('Switch-vs-retreat: plan KOs', plan?.willKO === true);
+  // Both are valid plans. Switch = -15, retreat = -16 (2 energy × 8 = -16).
+  // So Switch is cheaper. (If costs were flipped the test would break.)
+  assertEqual('Switch-vs-retreat: preStep chooses switch',
+    plan?.preStep?.kind, 'switch');
+}
+
+// ── CASE: paralysis blocks retreat, Switch still works ──────────────────────
+{
+  // Paralyzed active can't retreat manually, but Switch (a trainer card)
+  // specifically says "Switch" ignores the status block on manual retreat.
+  // Planner should NOT emit a retreat preStep, but IS allowed to emit switch.
+  const baseActive = makeAttacker({
+    name: 'Weakling',
+    status: 'paralyzed',
+    convertedRetreatCost: 1,
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const benchBeast = makeAttacker({
+    name: 'Beast',
+    hp: '100',
+    types: ['Water'],
+    attacks: [{ name: 'Crush', cost: ['Water','Water'], damage: '80', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }, { name: 'Water Energy' }],
+  });
+  const defender = makeDefender({ hp: '60' });
+  const switchCard = { supertype: 'Trainer', name: 'Switch' };
+  const p2 = {
+    active: baseActive, bench: [benchBeast,null,null,null,null],
+    hand: [switchCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Paralyzed+Switch: plan exists', plan !== null);
+  assertEqual('Paralyzed+Switch: preStep is switch (not retreat)',
+    plan?.preStep?.kind, 'switch');
+}
+
+// ── CASE: no viable plan at all → null ──────────────────────────────────────
+{
+  // Active has no energy, no hand, no bench. Nothing to do.
+  const baseActive = makeAttacker({ attachedEnergy: [] });
+  const defender = makeDefender();
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('No viable plan: planner returns null',
+    plan === null);
+}
+
+// ── CASE: evolve AND PlusPower combine correctly ────────────────────────────
+{
+  // Charmander → Charmeleon deals 50. Defender has 55 HP. 50 < 55, but 50+10
+  // (PlusPower) = 60 ≥ 55 → KO. Planner should return evolve + PlusPower plan.
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    uid: 'char-2',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const evoCard = makeStage1('Charmander', { name: 'Charmeleon' });
+  const ppCard = { supertype: 'Trainer', name: 'PlusPower' };
+  const defender = makeDefender({ hp: '55' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard, ppCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Evolve+PP: plan exists', plan !== null);
+  assert('Evolve+PP: plan KOs', plan?.willKO === true);
+  assertEqual('Evolve+PP: preStep is evolve',
+    plan?.preStep?.kind, 'evolve');
+  assertEqual('Evolve+PP: PlusPower count is 1',
+    plan?.plusPowerCount, 1);
+}
+
+// ── CASE: evolved form inherits attached energy ─────────────────────────────
+{
+  // Charmander has 3 Fire energy attached. Charmeleon's attack costs FFC (3
+  // total). The evolved form should be affordable using the inherited energy
+  // — without the inheritance, the test would fail (no energy in hand).
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    uid: 'char-3',
+    attachedEnergy: [
+      { name: 'Fire Energy' }, { name: 'Fire Energy' }, { name: 'Fire Energy' },
+    ],
+  });
+  const evoCard = makeStage1('Charmander', {
+    name: 'Charmeleon',
+    attacks: [
+      { name: 'Flame Tail', cost: ['Fire','Fire','Colorless'], damage: '40', text: '' },
+    ],
+  });
+  const defender = makeDefender({ hp: '40' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Evolve inherits energy: Flame Tail affordable post-evolve',
+    plan?.willKO === true);
+  assertEqual('Evolve inherits energy: preStep is evolve',
+    plan?.preStep?.kind, 'evolve');
+  assertEqual('Evolve inherits energy: no extra attach needed',
+    plan?.attachList?.length || 0, 0);
+}
+
+// ── CASE: baseline + Gust still preferred when evolve doesn't add value ─────
+{
+  // Baseline (Charmander 20 dmg) can Gust-KO a 20-HP benched Pikachu.
+  // Evolved Charmeleon would do 50 but would target active (60 HP, no KO).
+  // Planner should prefer Gust + baseline over evolve.
+  const baseActive = makeAttacker({
+    name: 'Charmander',
+    uid: 'char-4',
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const evoCard = makeStage1('Charmander', { name: 'Charmeleon' });
+  const gustCard = { supertype: 'Trainer', name: 'Gust of Wind' };
+  const defender = makeDefender({ hp: '60' });
+  const weakBench = makeDefender({ name: 'Pikachu', hp: '20' });
+  const p2 = {
+    active: baseActive, bench: [null,null,null,null,null],
+    hand: [evoCard, gustCard], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: defender, bench: [weakBench,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Prefer Gust-KO over evolve-no-KO: plan exists',
+    plan !== null);
+  assert('Prefer Gust-KO over evolve-no-KO: plan KOs',
+    plan?.willKO === true);
+  assertEqual('Prefer Gust-KO over evolve-no-KO: no preStep',
+    plan?.preStep, null);
+  assertEqual('Prefer Gust-KO over evolve-no-KO: target is bench 0',
+    plan?.target?.benchIdx, 0);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// benchPromotionScore — shared bench-candidate scorer (#3)
+//
+// Used by retreat decisions, Switch/Scoop Up trainer play, and post-KO
+// promotion. Scoring: remainingHp + (canAttack ? 100 : 0) + bestDmgVsOpp × 2.
+//
+// Before #3, these call sites picked the highest-HP "can attack" bench Pokémon
+// with no regard for matchup — leading to the classic "retreat Charizard into
+// Bulbasaur against Blastoise" mistake.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('benchPromotionScore');
+
+// Helpers — small attacker factories. Note: `attachedEnergy` ON the attacker
+// is set to just enough to afford its attack, so `aiCanAttack` returns true.
+function mkFighter(overrides = {}) {
+  return {
+    name: 'Fighter',
+    hp: '70',
+    damage: 0,
+    types: ['Fighting'],
+    attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+    ...overrides,
+  };
+}
+function mkWaterAttacker(overrides = {}) {
+  return {
+    name: 'WaterDude',
+    hp: '70',
+    damage: 0,
+    types: ['Water'],
+    attacks: [{ name: 'Splash', cost: ['Water'], damage: '20', text: '' }],
+    attachedEnergy: [{ name: 'Water Energy' }],
+    weaknesses: [], resistances: [],
+    ...overrides,
+  };
+}
+
+// ── CASE: no opponent active → fall back to HP + can-attack only ────────────
+{
+  const b = mkFighter({ hp: '80', damage: 10 });
+  const score = _benchPromotionScore(b, null);
+  // HP left = 70, can-attack = true → score 70 + 100 = 170.
+  assertEqual('No opp active: score = remainingHp + canAttack bonus',
+    score, 170);
+}
+
+// ── CASE: no attacks → only HP term counts ──────────────────────────────────
+{
+  const b = { hp: '80', damage: 0, attacks: [], attachedEnergy: [], types: [],
+              weaknesses: [], resistances: [] };
+  const oppActive = mkWaterAttacker();
+  const score = _benchPromotionScore(b, oppActive);
+  assertEqual('No attacks: score = remainingHp only',
+    score, 80);
+}
+
+// ── CASE: weakness exploit adds significant bonus ───────────────────────────
+{
+  // Fighter vs Water-weak-to-Fighting target → 20 × 2 weakness = 40 damage
+  // bonus × 2 (scoring coefficient) = +80.
+  const fighter = mkFighter({ hp: '70' });
+  const waterWeakToFighting = mkWaterAttacker({
+    weaknesses: [{ type: 'Fighting', value: '×2' }],
+  });
+  const score = _benchPromotionScore(fighter, waterWeakToFighting);
+  // Base: 70 (HP) + 100 (can attack) = 170
+  // Damage bonus: 40 × 2 = 80
+  // Total: 250
+  assertEqual('Weakness exploit: base 170 + 40×2 damage bonus = 250',
+    score, 250);
+}
+
+// ── CASE: resistance reduces damage bonus ───────────────────────────────────
+{
+  const fighter = mkFighter({ hp: '70' });
+  const fightingResistant = mkWaterAttacker({
+    resistances: [{ type: 'Fighting' }],
+  });
+  const score = _benchPromotionScore(fighter, fightingResistant);
+  // Base: 70 + 100 = 170
+  // Damage: 20 - 30 resistance = 0 (floored), × 2 = 0
+  // Total: 170
+  assertEqual('Resistance reduces damage bonus to 0 (20 - 30 floored)',
+    score, 170);
+}
+
+// ── CASE: matchup-aware tiebreaker — two bench Pokémon, same HP ─────────────
+{
+  // Both candidates have 70 HP. Fighter exploits weakness, WaterDude doesn't.
+  // Fighter should outscore WaterDude.
+  const fighter = mkFighter({ hp: '70' });
+  const waterDude = mkWaterAttacker({ hp: '70' });
+  const weakToFighting = mkWaterAttacker({
+    weaknesses: [{ type: 'Fighting', value: '×2' }],
+  });
+  const fighterScore   = _benchPromotionScore(fighter, weakToFighting);
+  const waterDudeScore = _benchPromotionScore(waterDude, weakToFighting);
+  assert('Tiebreaker: weakness-exploiting attacker scores higher',
+    fighterScore > waterDudeScore);
+}
+
+// ── CASE: higher HP can still lose to better matchup (big weakness swing) ───
+{
+  // Tanky no-matchup (100 HP) vs glass-cannon-with-weakness (50 HP).
+  // Tanky: 100 + 100 (canAttack) + 20×2 = 240
+  // Glass: 50  + 100 (canAttack) + 40×2 (weakness) = 230
+  // Tanky wins — good. But make the weakness 3× to flip it:
+  // Glass: 50 + 100 + 60×2 = 270 > 240.
+  // This test demonstrates the scoring is balanced (extreme matchup wins).
+  const tanky = mkWaterAttacker({ hp: '100' });
+  const glass = mkFighter({ hp: '50' });
+  const veryWeakToFighting = mkWaterAttacker({
+    weaknesses: [{ type: 'Fighting', value: '×2' }], // standard 2x
+  });
+  const tankyScore = _benchPromotionScore(tanky, veryWeakToFighting);
+  const glassScore = _benchPromotionScore(glass, veryWeakToFighting);
+  // With 2x weakness: tanky 240, glass 230 → tanky wins (HP still matters).
+  assert('HP still dominates at small matchup differentials',
+    tankyScore > glassScore);
+}
+
+// ── CASE: can't afford any attack → damage bonus is 0 ───────────────────────
+{
+  // Bench Pokémon with no energy attached — can't use any attack. The damage
+  // bonus term should contribute 0, so only HP counts.
+  const starved = mkFighter({ attachedEnergy: [] });
+  const oppActive = mkWaterAttacker({
+    weaknesses: [{ type: 'Fighting', value: '×2' }],
+  });
+  const score = _benchPromotionScore(starved, oppActive);
+  // HP 70 + canAttack 0 + damage 0 = 70.
+  assertEqual('No affordable attack: score = remainingHp only',
+    score, 70);
+}
+
+// ── CASE: null bench → -Infinity (invalid candidate) ────────────────────────
+{
+  const score = _benchPromotionScore(null, mkWaterAttacker());
+  assertEqual('Null candidate: -Infinity',
+    score, -Infinity);
+}
+
+// ── CASE: multiple attacks, picks the best-damage one ───────────────────────
+{
+  // A Pokémon with two attacks; only one exploits weakness. Scoring should
+  // use the better one.
+  const multi = {
+    name: 'MultiAttacker',
+    hp: '60', damage: 0,
+    types: ['Fighting'],
+    attacks: [
+      // Low-damage first attack (alphabetically/positionally first)
+      { name: 'Weak Slap', cost: ['Fighting'], damage: '10', text: '' },
+      // Higher-damage second attack
+      { name: 'Heavy Fist', cost: ['Fighting','Fighting'], damage: '30', text: '' },
+    ],
+    attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const target = mkWaterAttacker({
+    weaknesses: [{ type: 'Fighting', value: '×2' }],
+  });
+  const score = _benchPromotionScore(multi, target);
+  // HP 60 + canAttack 100 + (30×2 weakness = 60) × 2 = 60 + 100 + 120 = 280
+  assertEqual('Multi-attack: picks the best damage attack (Heavy Fist)',
+    score, 280);
 }
 
 
