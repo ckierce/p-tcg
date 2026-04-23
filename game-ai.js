@@ -381,18 +381,28 @@ function aiEnergyDeficit(card, energyName) {
 }
 
 function aiChooseEnergyTarget(p2, energyName) {
+  // Deficit to the Pokémon's MOST EXPENSIVE attack — i.e., "how many more
+  // energies do I need before this Pokémon is fully powered?" Using max-cost
+  // (rather than min-cost) means "deficit 0" correctly identifies a Pokémon
+  // that cannot benefit from more energy, instead of one that can just barely
+  // use its cheapest attack.
+  //
+  // Prior bug (Issue: Lickitung over-attach): this used min-cost, so a
+  // Pokémon with a cheap attack (e.g., Tongue Wrap CC) and an expensive one
+  // (Supersonic CCC) registered deficit 0 as soon as the cheap attack was
+  // affordable — and the fallback branch then attached to the active anyway,
+  // piling endless energy onto a Pokémon that couldn't spend it.
   function energyNeeded(card) {
     if (!card?.attacks?.length) return 99;
     const attached = card.attachedEnergy || [];
     const haveTokens = energyValue(attached);
-    let minDeficit = 99;
+    let maxCost = 0;
     for (const atk of card.attacks) {
       const cost = atk.cost || [];
-      if (cost.length === 0) { minDeficit = 0; break; }
-      const deficit = Math.max(0, cost.length - haveTokens);
-      if (deficit < minDeficit) minDeficit = deficit;
+      if (cost.length > maxCost) maxCost = cost.length;
     }
-    return minDeficit;
+    if (maxCost === 0) return 0; // only free attacks — no energy ever needed
+    return Math.max(0, maxCost - haveTokens);
   }
 
   // Does attaching this energy ENABLE an attack that isn't currently affordable?
@@ -412,8 +422,11 @@ function aiChooseEnergyTarget(p2, energyName) {
     return false;
   }
 
+  // Positive score = this Pokémon benefits from an energy attach.
+  // Zero        = fully powered for all attacks; no benefit.
+  // The caller skips attachment entirely when no candidate scores > 0.
   function targetScore(card) {
-    if (!card) return -1;
+    if (!card) return 0;
     const deficit = energyNeeded(card);
     if (deficit === 0) return 0;
     const typeBonus = energyName ? aiEnergyDeficit(card, energyName) : 0;
@@ -424,7 +437,7 @@ function aiChooseEnergyTarget(p2, energyName) {
   const activeEnables = active ? enablesAttack(active) : false;
   const activeScore = targetScore(active);
 
-  let bestBenchIdx = -1, bestBenchScore = -1, bestBenchEnables = false;
+  let bestBenchIdx = -1, bestBenchScore = 0, bestBenchEnables = false;
   for (let i = 0; i < RULES.BENCH_SIZE; i++) {
     const b = p2.bench[i];
     if (!b) continue;
@@ -440,7 +453,9 @@ function aiChooseEnergyTarget(p2, energyName) {
 
   if (activeScore > 0 && activeScore >= bestBenchScore) return { zone: 'active', idx: null };
   if (bestBenchIdx !== -1 && bestBenchScore > 0) return { zone: 'bench', idx: bestBenchIdx };
-  if (active) return { zone: 'active', idx: null };
+  // NO TARGET — nothing on the field benefits from more energy. Keep the card
+  // in hand for a future turn (it's free to hold, and may matter when a new
+  // Pokémon enters play or an evolution card needs fueling).
   return null;
 }
 
@@ -1187,6 +1202,7 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep) {
           // energy. Small penalty so we prefer plans that avoid these when a
           // simple plan achieves the same outcome.
           if (preStep?.kind === 'evolve')  score -= 20;
+          if (preStep?.kind === 'breeder') score -= 25; // uses 2 cards (Breeder + Stage 2)
           if (preStep?.kind === 'switch')  score -= 15;
           if (preStep?.kind === 'retreat') score -= (preStep.energyDiscardCount || 0) * 8;
 
@@ -1221,6 +1237,59 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep) {
     }
   }
 
+  // ── No-attack rescue branch ─────────────────────────────────────────────
+  // If we didn't find ANY attack plan, and we have a preStep (evolve / breeder
+  // / retreat / switch), we may still want to commit to the preStep purely
+  // for defensive value — e.g. Breeder onto Nidoqueen to escape a KO even
+  // though Nidoqueen has no affordable attack this turn.
+  //
+  // Baseline plans with no preStep aren't emitted here — passing without a
+  // preStep is what the fallback pipeline does by default. Only preStep plans
+  // bring value the fallback can't reconstruct.
+  //
+  // Scoring is survival-based: +50,000 if we'd survive, nothing otherwise,
+  // minus the preStep cost. This naturally places no-attack rescue plans
+  // between "do nothing and die" (0 score) and "attack and die" (damage only).
+  if (!best && preStep) {
+    // Compute post-preStep survival against opponent's next turn.
+    // The attacker state already reflects the post-preStep Pokémon — the
+    // caller built it that way (evolve carries over energy/damage, retreat
+    // uses the bench card, etc.). Threat is what the opponent's CURRENT
+    // active (and reachable bench) can do to our active after this turn.
+    const counterDamage = opponentThreatNextTurn(p1, { ...p2, active: attacker });
+    const willSurvive = counterDamage < hpLeft;
+
+    let score = 0;
+    if (willSurvive) score += 50_000;
+
+    // preStep cost — same as the attack branches above.
+    if (preStep.kind === 'evolve')  score -= 20;
+    if (preStep.kind === 'breeder') score -= 25;
+    if (preStep.kind === 'switch')  score -= 15;
+    if (preStep.kind === 'retreat') score -= (preStep.energyDiscardCount || 0) * 8;
+
+    // Opp-last-prize suicide penalty: if we'd still die, don't make a play
+    // that hands them the game. But in the no-attack case we're spending
+    // cards for no upside, which is worse than just passing → only emit the
+    // plan when survival is actually achieved.
+    if (!willSurvive) return null;
+
+    best = {
+      score,
+      outcome: 'RESCUE',         // distinct from KO/DAMAGE — signals "no attack"
+      preStep,
+      target: { benchIdx: null, card: p1.active, gustHandIdx: null },
+      attachList: [],
+      plusPowerCount: 0,
+      attack: null,              // no-attack plan
+      expectedDamage: 0,
+      willKO: false,
+      willSurvive: true,
+      wouldWinByPrizes: false,
+      wouldWinByNoPokemon: false,
+    };
+  }
+
   return best;
 }
 
@@ -1233,6 +1302,35 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep) {
 function aiFindBestKOPlan(p2, p1) {
   if (!p2?.active || !p1?.active) return null;
   return evaluateAttackerPlan(p2.active, p2, p1, null);
+}
+
+// ── Pokémon Breeder lineage lookup ───────────────────────────────────────────
+// Determine the Basic Pokémon that a Stage 2 evolves from via Pokémon Breeder.
+// Breeder skips the Stage 1, so this is a two-step chain lookup:
+//   stage2.evolvesFrom  → Stage 1 name  → Stage 1.evolvesFrom → Basic name
+// Gender-line Stage 2s use a hardcoded mapping (Nidoqueen ← Nidoran ♀, etc.)
+// via genderLineBasicFor, because the gender-symbol naming breaks naive lookup.
+//
+// Returns the Basic Pokémon name that this Stage 2 can be played onto via
+// Breeder, or null if the chain can't be resolved (Stage 1 not in player's
+// cards — rare, since decks almost always carry the Stage 1).
+function breederRootBasicName(stage2Card, player) {
+  if (!stage2Card) return null;
+  if (typeof genderLineBasicFor === 'function') {
+    const gl = genderLineBasicFor(stage2Card.name);
+    if (gl) return gl;
+  }
+  const stage1Name = stage2Card.evolvesFrom;
+  if (!stage1Name) return null;
+  const allCards = [
+    ...(player?.hand || []),
+    ...(player?.discard || []),
+    ...(player?.deck || []),
+  ];
+  const stage1 = allCards.find(c =>
+    c?.name === stage1Name && c.subtypes?.includes('Stage 1')
+  );
+  return stage1?.evolvesFrom || null;
 }
 
 // ── Goal-directed turn planner ──────────────────────────────────────────────
@@ -1298,6 +1396,54 @@ function aiBuildTurnPlan(p2, p1) {
         zone: 'active',
       });
       if (plan) candidates.push(plan);
+    }
+  }
+
+  // 2b. Pokémon Breeder — play a Stage 2 directly onto a matching Basic active,
+  //     skipping Stage 1. Gated on having BOTH the Breeder trainer and the
+  //     Stage 2 in hand, and on the active being a non-just-placed Basic that
+  //     matches the Stage 2's root lineage.
+  //
+  //     This handles the case where the active is about to die but the player
+  //     has Breeder + Stage 2 in hand — e.g. Nidoran about to be KO'd, hand
+  //     has Nidoqueen (90 HP) + Breeder → Breeder rescues the Pokémon by
+  //     jumping straight to Stage 2 with more HP.
+  if (p2.active && !evolveBlocked && !evolvedUids.includes(p2.active.uid) &&
+      p2.active.subtypes?.includes('Basic')) {
+    const hand = p2.hand || [];
+    const breederIdxs = [];
+    for (let i = 0; i < hand.length; i++) {
+      if (hand[i]?.name === 'Pokémon Breeder') breederIdxs.push(i);
+    }
+    if (breederIdxs.length > 0) {
+      for (let i = 0; i < hand.length; i++) {
+        const s2 = hand[i];
+        if (s2?.supertype !== 'Pokémon') continue;
+        if (!s2.subtypes?.includes('Stage 2')) continue;
+        // Resolve the root Basic. Without a match, can't breeder this Stage 2.
+        const rootBasic = breederRootBasicName(s2, p2);
+        if (!rootBasic || rootBasic !== p2.active.name) continue;
+
+        // Post-Breeder attacker: same energy/damage carryover as normal evolve.
+        // Stage 1 is skipped entirely (no Stage 1 card leaves/enters play).
+        const evolvedActive = {
+          ...s2,
+          attachedEnergy: p2.active.attachedEnergy || [],
+          damage: p2.active.damage || 0,
+          status: null,
+          plusPower: 0,
+          defender: false,
+          disabledAttack: null,
+        };
+        // Use the FIRST Breeder in hand for the preStep.
+        const plan = evaluateAttackerPlan(evolvedActive, p2, p1, {
+          kind: 'breeder',
+          handIdx: i,                    // index of Stage 2 in hand
+          breederHandIdx: breederIdxs[0],// index of Breeder trainer in hand
+          zone: 'active',
+        });
+        if (plan) candidates.push(plan);
+      }
     }
   }
 
@@ -1419,10 +1565,17 @@ async function executeTurnPlan(plan, delayMs) {
     await delay(delayMs * 0.5);
   }
 
-  // 5. Attack.
-  addLog(`🤖 Computer uses ${plan.attack.name}!`, true);
-  aiThinking = false;
-  await performAttack(2, plan.attack);
+  // 5. Attack — or pass the turn if this is a rescue plan (no attack).
+  if (plan.attack) {
+    addLog(`🤖 Computer uses ${plan.attack.name}!`, true);
+    aiThinking = false;
+    await performAttack(2, plan.attack);
+  } else {
+    // No-attack rescue plan: preStep already fired. End turn without attacking.
+    addLog(`🤖 Computer sets up and ends turn.`, true);
+    aiThinking = false;
+    if (G.started && G.turn === 2) endTurn();
+  }
   return true;
 }
 
@@ -1445,6 +1598,58 @@ async function executePreStepOnly(step, delayMs) {
       return true;
     }
     return false;
+  }
+
+  if (step.kind === 'breeder') {
+    // Play Pokémon Breeder to evolve Basic active directly to Stage 2.
+    // Mirrors the trainer-cards.js Breeder handler but with no picker —
+    // the planner already chose both cards and verified legality.
+    const plannedS2Name = p2.hand[step.handIdx]?.name;
+    const s2Idx = p2.hand.findIndex(c =>
+      c?.name === plannedS2Name && c.subtypes?.includes('Stage 2')
+    );
+    const breederIdx = p2.hand.findIndex(c => c?.name === 'Pokémon Breeder');
+    if (s2Idx === -1 || breederIdx === -1 || !p2.active) return false;
+
+    // Remove both cards from hand; discard Breeder. Stage 2 is placed on
+    // top of the Basic active, inheriting damage + energy (same carryover
+    // rules as normal evolve).
+    // NOTE: indices may shift as we splice; resolve them in descending order.
+    const hiIdx = Math.max(s2Idx, breederIdx);
+    const loIdx = Math.min(s2Idx, breederIdx);
+    const s2WasHigher = s2Idx > breederIdx;
+    const hiCard = p2.hand.splice(hiIdx, 1)[0];
+    const loCard = p2.hand.splice(loIdx, 1)[0];
+    const s2Card = s2WasHigher ? hiCard : loCard;
+    const breederCard = s2WasHigher ? loCard : hiCard;
+
+    p2.discard.push(breederCard);
+
+    // Apply carryover onto the Stage 2 card.
+    s2Card.damage = p2.active.damage || 0;
+    s2Card.attachedEnergy = p2.active.attachedEnergy || [];
+    s2Card.status = null;
+    s2Card.plusPower = 0;
+    s2Card.defender = false;
+    s2Card.disabledAttack = null;
+
+    // Stack evolution chain so KO discards everything together (matches the
+    // trainer-cards.js Breeder behavior via buildEvolutionStackUnder).
+    if (typeof buildEvolutionStackUnder === 'function') {
+      s2Card.prevStages = buildEvolutionStackUnder(p2.active);
+    }
+
+    // Track that this Pokémon was evolved this turn — can't evolve again.
+    if (!G.evolvedThisTurn) G.evolvedThisTurn = [];
+    G.evolvedThisTurn.push(s2Card.uid);
+
+    const oldName = p2.active.name;
+    p2.active = s2Card;
+
+    addLog(`🤖 Computer used Pokémon Breeder — ${oldName} → ${s2Card.name}!`, true);
+    renderAll();
+    await delay(delayMs * 0.8);
+    return true;
   }
 
   if (step.kind === 'retreat') {
@@ -1686,5 +1891,6 @@ if (typeof module !== 'undefined') {
     evaluateAttackerPlan,
     prizesRemaining,
     benchPromotionScore,
+    breederRootBasicName,
   };
 }

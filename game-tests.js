@@ -1480,6 +1480,8 @@ global.canAffordAttack = canAffordAttack;
 global.computeDamageAfterWR = computeDamageAfterWR;
 global.isPowerActive = () => false;
 global.dittoAttacks = () => null;
+global.genderLineBasicFor = genderLineBasicFor;
+global.buildEvolutionStackUnder = buildEvolutionStackUnder;
 
 const {
   aiChooseEnergyTarget: _aiChooseEnergyTarget,
@@ -1616,6 +1618,135 @@ const CHARMANDER = {
   const target = _aiChooseEnergyTarget(p2, 'Water Energy');
   assert('Returns a valid target when both active and bench could use more energy',
     target && (target.zone === 'active' || target.zone === 'bench'));
+}
+
+// ── REGRESSION: Lickitung over-attach bug ────────────────────────────────────
+// Solo Lickitung (max cost 3), already has 4 energy attached, empty bench.
+// The AI was attaching ANOTHER energy every turn because the old "min cost"
+// deficit check said "Tongue Wrap is affordable, deficit 0, so attach to the
+// active anyway via fallback." Correct behavior: return null (skip attach).
+{
+  const LICKITUNG = {
+    name: 'Lickitung',
+    attacks: [
+      { name: 'Tongue Wrap', cost: ['Colorless','Colorless'],              damage: '10' },
+      { name: 'Supersonic',  cost: ['Colorless','Colorless','Colorless'],  damage: '' },
+    ],
+  };
+  const p2 = {
+    active: {
+      ...LICKITUNG,
+      attachedEnergy: [
+        { name: 'Grass Energy' }, { name: 'Grass Energy' },
+        { name: 'Grass Energy' }, { name: 'Grass Energy' },
+      ],
+    },
+    bench: [null, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Grass Energy');
+  assert('Lickitung fully powered (max cost 3, has 4) + empty bench → no attach',
+    target === null);
+}
+
+// Lickitung exactly at max-cost (3 energy for Supersonic) + empty bench.
+// Attaching a 4th does nothing — Supersonic is the most expensive attack.
+// Expected: skip attach.
+{
+  const LICKITUNG = {
+    name: 'Lickitung',
+    attacks: [
+      { name: 'Tongue Wrap', cost: ['Colorless','Colorless'],              damage: '10' },
+      { name: 'Supersonic',  cost: ['Colorless','Colorless','Colorless'],  damage: '' },
+    ],
+  };
+  const p2 = {
+    active: {
+      ...LICKITUNG,
+      attachedEnergy: [
+        { name: 'Grass Energy' }, { name: 'Grass Energy' }, { name: 'Grass Energy' },
+      ],
+    },
+    bench: [null, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Grass Energy');
+  assert('Lickitung at max cost (3/3) + empty bench → no attach (save the card)',
+    target === null);
+}
+
+// Lickitung with 2 energy (Tongue Wrap affordable, Supersonic not) → still
+// benefits from one more attach (max cost is 3). Energy should attach.
+{
+  const LICKITUNG = {
+    name: 'Lickitung',
+    attacks: [
+      { name: 'Tongue Wrap', cost: ['Colorless','Colorless'],              damage: '10' },
+      { name: 'Supersonic',  cost: ['Colorless','Colorless','Colorless'],  damage: '' },
+    ],
+  };
+  const p2 = {
+    active: {
+      ...LICKITUNG,
+      attachedEnergy: [{ name: 'Grass Energy' }, { name: 'Grass Energy' }],
+    },
+    bench: [null, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Grass Energy');
+  assert('Lickitung at 2/3: one more energy still useful (Supersonic not yet affordable)',
+    target !== null && target.zone === 'active');
+}
+
+// Fully powered active + bench Pokémon that CAN still benefit → attach to bench.
+// This exercises the correct "no active benefit, bench still has a deficit"
+// path, ensuring the fix didn't accidentally always-return-null.
+{
+  const LICKITUNG = {
+    name: 'Lickitung',
+    attacks: [
+      { name: 'Supersonic', cost: ['Colorless','Colorless','Colorless'], damage: '' },
+    ],
+  };
+  const p2 = {
+    active: {
+      ...LICKITUNG,
+      attachedEnergy: [
+        { name: 'Grass Energy' }, { name: 'Grass Energy' }, { name: 'Grass Energy' },
+      ],
+    },
+    bench: [{ ...CHARMANDER, attachedEnergy: [] }, null, null, null, null],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Grass Energy');
+  assert('Fully-powered active + unpowered bench → attach to bench',
+    target !== null && target.zone === 'bench' && target.idx === 0);
+}
+
+// All Pokémon are fully powered → return null.
+{
+  const LICKITUNG = {
+    name: 'Lickitung',
+    attacks: [
+      { name: 'Supersonic', cost: ['Colorless','Colorless','Colorless'], damage: '' },
+    ],
+  };
+  const p2 = {
+    active: {
+      ...LICKITUNG,
+      attachedEnergy: [
+        { name: 'Grass Energy' }, { name: 'Grass Energy' }, { name: 'Grass Energy' },
+      ],
+    },
+    bench: [
+      {
+        ...LICKITUNG,
+        attachedEnergy: [
+          { name: 'Grass Energy' }, { name: 'Grass Energy' }, { name: 'Grass Energy' },
+        ],
+      },
+      null, null, null, null,
+    ],
+  };
+  const target = _aiChooseEnergyTarget(p2, 'Grass Energy');
+  assert('All Pokémon fully powered → return null (save the energy card)',
+    target === null);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3485,6 +3616,216 @@ function makeStage1(evolvesFromName, overrides = {}) {
     plan?.preStep, null);
   assertEqual('Prefer Gust-KO over evolve-no-KO: target is bench 0',
     plan?.target?.benchIdx, 0);
+}
+
+
+// ── Pokémon Breeder plans ───────────────────────────────────────────────────
+// Breeder skips Stage 1, letting you evolve Basic → Stage 2 directly. This is
+// critical for survival plays: if Nidoran ♀ is about to be KO'd but you have
+// Nidoqueen + Breeder in hand, playing Breeder saves the Pokémon (and the
+// prize) by jumping to a higher-HP form.
+
+const {
+  breederRootBasicName: _breederRootBasicName,
+} = require('./game-ai.js');
+
+// Import Nidoqueen lineage helper already in tests.
+
+// Basic Nidoran-♀ factory
+function mkNidoranF(overrides = {}) {
+  return {
+    name: 'Nidoran ♀',
+    uid: 'nf-1',
+    supertype: 'Pokémon',
+    subtypes: ['Basic'],
+    hp: '60',
+    damage: 0,
+    types: ['Grass'],
+    attacks: [
+      { name: 'Fury Swipes', cost: ['Grass'], damage: '10×', text: 'Flip 3 coins. This attack does 10 damage times the number of heads.' },
+    ],
+    attachedEnergy: [{ name: 'Grass Energy' }],
+    weaknesses: [], resistances: [],
+    ...overrides,
+  };
+}
+
+// Stage-2 Nidoqueen factory (breeder-target)
+function mkNidoqueen(overrides = {}) {
+  return {
+    name: 'Nidoqueen',
+    supertype: 'Pokémon',
+    subtypes: ['Stage 2'],
+    evolvesFrom: 'Nidorina', // realistic lineage
+    hp: '90',
+    damage: 0,
+    types: ['Grass'],
+    attacks: [
+      { name: 'Boyfriends', cost: ['Colorless','Colorless','Colorless'], damage: '20×',
+        text: 'This attack does 20 damage times the number of Nidoking you have in play.' },
+      { name: 'Mega Punch',  cost: ['Grass','Colorless','Colorless','Colorless'], damage: '50', text: '' },
+    ],
+    ...overrides,
+  };
+}
+
+// ── CASE: breederRootBasicName resolves Nidoqueen via gender-line helper ────
+{
+  const q = mkNidoqueen();
+  const player = { hand: [], discard: [], deck: [] };
+  assertEqual('breederRootBasicName: Nidoqueen → Nidoran ♀ via gender-line',
+    _breederRootBasicName(q, player), 'Nidoran ♀');
+}
+
+// ── CASE: breederRootBasicName returns null when Stage 1 not findable ───────
+{
+  const unusualStage2 = {
+    name: 'UnknownMon', subtypes: ['Stage 2'],
+    evolvesFrom: 'NoSuchStage1',
+  };
+  const player = { hand: [], discard: [], deck: [] };
+  assertEqual('breederRootBasicName: unresolvable lineage returns null',
+    _breederRootBasicName(unusualStage2, player), null);
+}
+
+// ── CASE: Breeder rescue — Nidoran about to die, Nidoqueen+Breeder saves ─────
+// Reproduces the reported scenario. Nidoran ♀ (60 HP) is already at 20 damage
+// → 40 HP left. Opponent Pinsir Guillotine deals 50, which would KO Nidoran.
+// Nidoqueen (90 HP) with 20 damage carried over = 70 HP left, survives 50.
+//
+// This is exactly the "rescue" case: no attack is possible post-Breeder (only
+// 1 energy attached, Nidoqueen's cheapest attack needs 3), but evolving saves
+// the Pokémon and the prize. The planner emits a RESCUE-outcome plan.
+{
+  const active = mkNidoranF({ damage: 20 }); // 60 HP - 20 = 40 HP left (Pinsir KOs)
+  const nidoqueen = mkNidoqueen();
+  const breeder   = { supertype: 'Trainer', name: 'Pokémon Breeder' };
+
+  const oppActive = {
+    name: 'Pinsir', hp: '60',
+    types: ['Grass'],
+    attacks: [{ name: 'Guillotine', cost: ['Grass','Colorless','Colorless'], damage: '50', text: '' }],
+    attachedEnergy: [{ name: 'Grass Energy' }, { name: 'Grass Energy' }, { name: 'Grass Energy' }],
+    weaknesses: [], resistances: [],
+  };
+  const p2 = {
+    active,
+    bench: [null,null,null,null,null],
+    hand: [nidoqueen, breeder],
+    discard: [],
+    deck: [],
+    prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: oppActive,
+    bench: [null,null,null,null,null],
+    hand: [],
+    discard: [],
+    prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  global.G.energyPlayedThisTurn = false;
+
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Breeder rescue: plan exists', plan !== null);
+  assertEqual('Breeder rescue: preStep kind is breeder',
+    plan?.preStep?.kind, 'breeder');
+  assertEqual('Breeder rescue: outcome is RESCUE (no affordable attack post-evolve)',
+    plan?.outcome, 'RESCUE');
+  assert('Breeder rescue: Stage 2 handIdx points to Nidoqueen',
+    plan?.preStep?.handIdx !== undefined &&
+    p2.hand[plan.preStep.handIdx]?.name === 'Nidoqueen');
+  assert('Breeder rescue: Breeder handIdx points to Pokémon Breeder',
+    plan?.preStep?.breederHandIdx !== undefined &&
+    p2.hand[plan.preStep.breederHandIdx]?.name === 'Pokémon Breeder');
+  assertEqual('Breeder rescue: attack is null (no attack this turn)',
+    plan?.attack, null);
+  assert('Breeder rescue: plan.willSurvive is true',
+    plan?.willSurvive === true);
+}
+
+// ── CASE: No Breeder card in hand → no Breeder plan ─────────────────────────
+{
+  const active = mkNidoranF();
+  const nidoqueen = mkNidoqueen();
+  // NO Breeder in hand
+  const p2 = {
+    active,
+    bench: [null,null,null,null,null],
+    hand: [nidoqueen],
+    discard: [],
+    deck: [],
+    prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: { name: 'Dummy', hp: '100', types: [], attacks: [],
+              attachedEnergy: [], weaknesses: [], resistances: [] },
+    bench: [null,null,null,null,null],
+    hand: [],
+    discard: [],
+    prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+
+  const plan = _aiBuildTurnPlan(p2, p1);
+  // Nidoqueen in hand evolves from "Nidorina", which doesn't match our
+  // Nidoran ♀ active via normal evolve, so no evolve preStep either.
+  assert('No Breeder card: no breeder preStep',
+    plan === null || plan.preStep?.kind !== 'breeder');
+}
+
+// ── CASE: Breeder + Stage 2 but active is wrong gender → no Breeder plan ────
+// Nidoqueen requires Nidoran ♀. Active is Nidoran ♂ → lineage rejects it.
+{
+  const active = mkNidoranF({ name: 'Nidoran ♂', uid: 'nm-1' });
+  const nidoqueen = mkNidoqueen();
+  const breeder = { supertype: 'Trainer', name: 'Pokémon Breeder' };
+  const p2 = {
+    active,
+    bench: [null,null,null,null,null],
+    hand: [nidoqueen, breeder],
+    discard: [], deck: [],
+    prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: { name: 'Dummy', hp: '100', types: [], attacks: [],
+              attachedEnergy: [], weaknesses: [], resistances: [] },
+    bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = [];
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('Wrong gender: no breeder preStep (Nidoran ♂ ≠ required Nidoran ♀)',
+    plan === null || plan.preStep?.kind !== 'breeder');
+}
+
+// ── CASE: evolvedThisTurn blocks Breeder (active placed this turn) ──────────
+{
+  const active = mkNidoranF({ uid: 'just-played' });
+  const nidoqueen = mkNidoqueen();
+  const breeder = { supertype: 'Trainer', name: 'Pokémon Breeder' };
+  const p2 = {
+    active,
+    bench: [null,null,null,null,null],
+    hand: [nidoqueen, breeder],
+    discard: [], deck: [],
+    prizes: sixPrizes(),
+  };
+  const p1 = {
+    active: { name: 'Dummy', hp: '100', types: [], attacks: [],
+              attachedEnergy: [], weaknesses: [], resistances: [] },
+    bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.evolvedThisTurn = ['just-played']; // ← blocks evolve and breeder
+  const plan = _aiBuildTurnPlan(p2, p1);
+  assert('evolvedThisTurn: no breeder preStep',
+    plan === null || plan.preStep?.kind !== 'breeder');
+  global.G.evolvedThisTurn = []; // reset
 }
 
 
