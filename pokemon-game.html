@@ -2686,7 +2686,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:50vh;padding:4px"></div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
       <button class="modal-close-btn" id="card-picker-confirm" onclick="confirmCardPick()" style="background:var(--accent);color:#000;border-color:var(--accent)">CONFIRM</button>
-      <button class="modal-close-btn" onclick="cancelCardPick()">CANCEL</button>
+      <button class="modal-close-btn" id="card-picker-cancel" onclick="cancelCardPick()">CANCEL</button>
     </div>
   </div>
 </div>
@@ -3500,7 +3500,7 @@ document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();
 });
 document.getElementById('card-picker-modal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) cancelCardPick();
+  if (e.target === e.currentTarget && !_cardPickerNoCancel) cancelCardPick();
 });
 
 // ══════════════════════════════════════════════════

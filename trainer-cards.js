@@ -423,7 +423,7 @@ const TRAINER_EFFECTS = {
     if (!discardPicked || discardPicked.length < 2) { showToast('Must discard exactly 2 cards.', true); return; }
     p.hand.splice(handIdx, 1); p.discard.push(card);
     discardPicked.map(i => others[i]).forEach(dc => { const hi = p.hand.findIndex(c => c === dc); if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1)); });
-    const deckPicked = await openCardPicker({ title: 'Computer Search', subtitle: 'Choose any card from your deck', cards: p.deck, maxSelect: 1 });
+    const deckPicked = await openCardPicker({ title: 'Computer Search', subtitle: 'Choose any card from your deck', cards: p.deck, maxSelect: 1, noCancel: true });
     if (!deckPicked) { addLog(`P${player} used Computer Search — discarded 2 but found nothing.`, true); renderAll(); return; }
     const found = p.deck[deckPicked[0]];
     const di = p.deck.findIndex(c => c === found);
@@ -444,7 +444,7 @@ const TRAINER_EFFECTS = {
     if (!discardPicked || discardPicked.length < 2) { showToast('Item Finder cancelled.'); return; }
     p.hand.splice(handIdx, 1); p.discard.push(card);
     discardPicked.map(i => others[i]).forEach(dc => { const hi = p.hand.findIndex(c => c === dc); if (hi !== -1) p.discard.push(...p.hand.splice(hi, 1)); });
-    const trainerPicked = await openCardPicker({ title: 'Item Finder', subtitle: 'Choose a Trainer from your discard', cards: trainers, maxSelect: 1 });
+    const trainerPicked = await openCardPicker({ title: 'Item Finder', subtitle: 'Choose a Trainer from your discard', cards: trainers, maxSelect: 1, noCancel: true });
     if (!trainerPicked) { addLog(`P${player} used Item Finder — discarded 2 but found nothing.`, true); renderAll(); return; }
     const found = trainers[trainerPicked[0]];
     const di = p.discard.findIndex(c => c === found);

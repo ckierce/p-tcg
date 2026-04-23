@@ -1137,14 +1137,19 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
 //
 // Returns true if it handled turn-end (caller should return), else undefined.
 async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive, attackerSelfKOd) {
+  // If the MOVE_EFFECTS dispatch table owns this attack's postAttack, skip
+  // text-parsed draw effects — the dispatch entry is authoritative and would
+  // otherwise double-fire (e.g. Kangaskhan's Fetch, Meowth's Pay Day).
+  const _hasPostAttackDispatch = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+
   // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
-  if (/draw a card/i.test(atk.text || '')) {
+  if (!_hasPostAttackDispatch && /draw a card/i.test(atk.text || '')) {
     drawCard(player, true);
     addLog(`${atk.name}: ${myActive?.name || 'attacker'} drew a card.`, true);
   }
 
   // ── Draw N cards: "Draw N cards." ──
-  const drawNMatch = (atk.text || '').match(/draw (\d+) cards?/i);
+  const drawNMatch = !_hasPostAttackDispatch && (atk.text || '').match(/draw (\d+) cards?/i);
   if (drawNMatch) {
     const n = parseInt(drawNMatch[1]);
     for (let i = 0; i < n; i++) drawCard(player, true);

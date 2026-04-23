@@ -603,7 +603,7 @@ document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();
 });
 document.getElementById('card-picker-modal').addEventListener('click', e => {
-  if (e.target === e.currentTarget) cancelCardPick();
+  if (e.target === e.currentTarget && !_cardPickerNoCancel) cancelCardPick();
 });
 
 // ══════════════════════════════════════════════════
@@ -1063,8 +1063,9 @@ let _cardPickerResolve = null;
 let _cardPickerSelected = [];
 let _cardPickerMax = 1;
 let _cardPickerCards = []; // cards array for energy value calculation
+let _cardPickerNoCancel = false; // when true, hide CANCEL and ignore backdrop click
 
-async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone = false } = {}) {
+async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone = false, noCancel = false } = {}) {
   // In VS Computer mode, if it's the AI's turn, auto-pick the first valid card
   if (vsComputer && G.turn === 2) {
     if (!cards || !cards.length) return Promise.resolve(null);
@@ -1079,6 +1080,10 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
     _cardPickerSelected = [];
     _cardPickerMax = maxSelect;
     _cardPickerCards = cards;
+    // When noCancel is set, hide the CANCEL button and disable backdrop-click
+    // cancellation. Used when the player has already paid a cost and must
+    // complete the effect (e.g. Computer Search deck-search phase).
+    _cardPickerNoCancel = !!noCancel;
 
     document.getElementById('card-picker-title').textContent = title;
     document.getElementById('card-picker-subtitle').textContent = subtitle || '';
@@ -1121,6 +1126,10 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
     // Show/hide DONE button based on caller's preference
     const doneBtn = document.getElementById('card-picker-done');
     if (doneBtn) doneBtn.style.display = options.showDone ? '' : 'none';
+    // Show/hide CANCEL button — hidden when the player has already paid a cost
+    // and must complete the effect (e.g. Computer Search deck-search phase).
+    const cancelBtn = document.getElementById('card-picker-cancel');
+    if (cancelBtn) cancelBtn.style.display = _cardPickerNoCancel ? 'none' : '';
     document.getElementById('card-picker-modal').classList.add('show');
   });
 }
@@ -1165,10 +1174,14 @@ function confirmCardPick() {
   hideCardDetail();
   const result = [..._cardPickerSelected];
   _cardPickerSelected = [];
+  _cardPickerNoCancel = false;
   if (_cardPickerResolve) { _cardPickerResolve(result); _cardPickerResolve = null; }
 }
 
 function cancelCardPick() {
+  // Guard: when the picker is in noCancel mode (cost already paid), ignore
+  // any cancel attempt regardless of how it was triggered.
+  if (_cardPickerNoCancel) return;
   document.getElementById('card-picker-modal').classList.remove('show');
   hideCardDetail();
   if (_cardPickerResolve) { _cardPickerResolve(null); _cardPickerResolve = null; }
@@ -1181,6 +1194,7 @@ function cancelCardPick() {
 function doneCardPick() {
   document.getElementById('card-picker-modal').classList.remove('show');
   hideCardDetail();
+  _cardPickerNoCancel = false;
   if (_cardPickerResolve) { _cardPickerResolve('done'); _cardPickerResolve = null; }
 }
 
