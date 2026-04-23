@@ -2068,6 +2068,181 @@ section('coinFlipLog ts watermark — new flips correctly identified');
   assert('Empty coinFlipLog → no flips', newFlips.length === 0);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: end-of-turn flag clearing respects which side owns each flag
+//
+// Bug: Poliwhirl's Amnesia (and Kadabra's Disable, etc.) set `disabledAttack`
+// on the opponent's active. The effect is supposed to last through the
+// opponent's upcoming turn. `_finishEndTurn` used to clear `disabledAttack`,
+// `cantRetreat`, and `attackReduction` on `G.players[G.turn].active` — the
+// player whose turn is ABOUT to start — which nulled the flag before the
+// victim ever got to act. The AI would then happily use the disabled attack.
+//
+// Correct semantics:
+//   - Flags placed on the OPPONENT during an attacker's turn
+//     (cantRetreat / attackReduction / disabledAttack) belong to the victim.
+//     They expire when the victim's turn ENDS, at which point the victim is
+//     `prev` (the player whose turn just ended). Clear on G.players[prev].
+//   - Flags placed on the USER by their own attack (defender family) protect
+//     DURING the opponent's turn. They expire when that opponent's turn ends,
+//     at which point the beneficiary is `G.turn` (the turn just flipped away
+//     from the opponent). Clear on G.players[G.turn].
+//
+// This test replicates the exact clearing block logic in _finishEndTurn and
+// asserts both sides of each lifecycle.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('REGRESSION: end-of-turn flag clearing — Amnesia / Leer / Growl / Defender lifecycle');
+
+// Mimic the _finishEndTurn flag-clear block exactly.
+function simulateFinishEndTurnFlagClear(Gref, prev) {
+  const nextActive = Gref.players[Gref.turn].active;
+  if (nextActive) {
+    nextActive.defender = false;
+    nextActive.defenderFull = false;
+    nextActive.defenderFullEffects = false;
+    nextActive.defenderThreshold = 0;
+    nextActive.defenderReduction = 0;
+  }
+  const lastActive = Gref.players[prev].active;
+  if (lastActive) {
+    lastActive.cantRetreat = false;
+    lastActive.attackReduction = 0;
+    lastActive.disabledAttack = null;
+    lastActive.defenderReduction = 0;
+    lastActive.smokescreened = false;
+  }
+}
+
+{
+  // Scenario: P1 Poliwhirl uses Amnesia on P2 Hitmonchan, disabling Special Punch.
+  // P1 ends their turn. P2's turn begins. Special Punch MUST still be disabled.
+  // Then P2 ends their turn — the flag clears.
+  const G = {
+    turn: 1,
+    players: {
+      1: { active: { name: 'Poliwhirl', attacks: [] } },
+      2: { active: { name: 'Hitmonchan', attacks: [{ name: 'Jab' }, { name: 'Special Punch' }], disabledAttack: 'Special Punch' } },
+    },
+  };
+
+  // P1 ends turn → prev=1, turn flips to 2.
+  let prev = G.turn;
+  G.turn = 2;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual(
+    'After P1 ends turn: P2 Hitmonchan still has Special Punch disabled',
+    G.players[2].active.disabledAttack, 'Special Punch'
+  );
+  assertEqual(
+    'After P1 ends turn: P1 Poliwhirl has no lingering disabledAttack (no-op clear is fine)',
+    G.players[1].active.disabledAttack ?? null, null
+  );
+
+  // P2 takes their turn (would skip Special Punch in attack picker / AI filter).
+  // P2 ends turn → prev=2, turn flips back to 1.
+  prev = G.turn;
+  G.turn = 1;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual(
+    'After P2 ends turn: P2 Hitmonchan disabledAttack is now cleared',
+    G.players[2].active.disabledAttack, null
+  );
+}
+
+{
+  // Leer (cantRetreat placed on opponent) — same lifecycle as Amnesia.
+  const G = {
+    turn: 1,
+    players: {
+      1: { active: { name: 'Ekans' } },
+      2: { active: { name: 'Charmander', cantRetreat: true } },
+    },
+  };
+
+  let prev = G.turn; G.turn = 2;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Leer: after P1 ends turn, P2 active still cant retreat',
+    G.players[2].active.cantRetreat, true);
+
+  prev = G.turn; G.turn = 1;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Leer: after P2 ends turn, cantRetreat cleared',
+    G.players[2].active.cantRetreat, false);
+}
+
+{
+  // Growl / Tail Whip (attackReduction placed on opponent).
+  const G = {
+    turn: 1,
+    players: {
+      1: { active: { name: 'Nidoran M' } },
+      2: { active: { name: 'Hitmonchan', attackReduction: 10 } },
+    },
+  };
+
+  let prev = G.turn; G.turn = 2;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Growl: after P1 ends turn, P2 active attackReduction still 10',
+    G.players[2].active.attackReduction, 10);
+
+  prev = G.turn; G.turn = 1;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Growl: after P2 ends turn, attackReduction reset to 0',
+    G.players[2].active.attackReduction, 0);
+}
+
+{
+  // Defender (self-buff). P1 plays Defender on P1 Pokémon. Must survive through
+  // P2's upcoming turn and expire when P2's turn ends.
+  const G = {
+    turn: 1,
+    players: {
+      1: { active: { name: 'Squirtle', defender: true, defenderFull: false } },
+      2: { active: { name: 'Charmander' } },
+    },
+  };
+
+  // P1 ends turn → prev=1, turn→2. Defender must still be on P1's active.
+  let prev = G.turn; G.turn = 2;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Defender: after P1 ends turn, P1 still has defender flag',
+    G.players[1].active.defender, true);
+
+  // P2 ends turn → prev=2, turn→1. Defender now expires (G.turn side is P1, the owner).
+  prev = G.turn; G.turn = 1;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Defender: after P2 ends turn, P1 defender flag cleared',
+    G.players[1].active.defender, false);
+}
+
+{
+  // Cross-check: multiple flag types simultaneously. P1 casts Leer and Growl on
+  // P2 in a single turn (same target gets both cantRetreat and attackReduction).
+  // Both should persist through P2's upcoming turn and clear together when P2 ends.
+  const G = {
+    turn: 1,
+    players: {
+      1: { active: { name: 'Ekans' } },
+      2: { active: { name: 'Mewtwo', cantRetreat: true, attackReduction: 10 } },
+    },
+  };
+  // P1 ends turn
+  let prev = G.turn; G.turn = 2;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Mixed: cantRetreat persists into P2 turn',
+    G.players[2].active.cantRetreat, true);
+  assertEqual('Mixed: attackReduction persists into P2 turn',
+    G.players[2].active.attackReduction, 10);
+  // P2 ends turn
+  prev = G.turn; G.turn = 1;
+  simulateFinishEndTurnFlagClear(G, prev);
+  assertEqual('Mixed: cantRetreat cleared after P2 turn',
+    G.players[2].active.cantRetreat, false);
+  assertEqual('Mixed: attackReduction cleared after P2 turn',
+    G.players[2].active.attackReduction, 0);
+}
+
 
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);

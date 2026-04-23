@@ -1246,26 +1246,10 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     addLog(`${atk.name}: ${oppActive.name}'s attacks do ${reduction} less damage next turn!`, true);
   }
 
-  // ── Disable: "Choose 1 of the Defending Pokémon's attacks. That Pokémon can't use that attack next turn" ──
-  const disableMatch = (atk.text || '').match(/defending pok[eé]mon.s attacks[^.]*can.t use that attack/i)
-    || (atk.text || '').match(/choose 1 of the defending.+can.t use/i);
-  if (disableMatch && oppActive?.attacks?.length) {
-    if (oppActive.attacks.length === 1) {
-      oppActive.disabledAttack = oppActive.attacks[0].name;
-      addLog(`${atk.name}: ${oppActive.name}'s ${oppActive.disabledAttack} is disabled next turn!`, true);
-    } else {
-      const choice = await openCardPicker({
-        title: `${atk.name} — Disable`,
-        subtitle: `Choose an attack to disable on ${oppActive.name}`,
-        cards: oppActive.attacks.map(a => ({ name: a.name, images: oppActive.images })),
-        maxSelect: 1
-      });
-      if (choice && choice.length) {
-        oppActive.disabledAttack = oppActive.attacks[choice[0]].name;
-        addLog(`${atk.name}: ${oppActive.name}'s ${oppActive.disabledAttack} is disabled next turn!`, true);
-      }
-    }
-  }
+  // ── Disable: canonical implementation lives in MOVE_EFFECTS['Amnesia'] (move-effects.js).
+  // Duplicate text-parsing block removed — it caused a double card-picker prompt AND,
+  // combined with the premature flag-clear below (fixed), was the reason disables
+  // weren't actually taking effect on opponent's next turn.
 
   // ── "Remove N damage counters from [Pokémon]" (partial heal) ──
   const removeNMatch = (atk.text || '').match(/remove (\d+) damage counters? from/i);
@@ -1836,11 +1820,25 @@ function _finishEndTurn(prev) {
   G.stepInThisTurn = false;
   G.evolvedThisTurn = [];
 
+  // ── Flag expiry at end of turn ──
+  // `prev` = player whose turn just ENDED. `G.turn` = player whose turn is STARTING.
+  //
+  // Flags placed on the OPPONENT during the attacker's turn (cantRetreat from Leer,
+  // attackReduction from Growl/Tail Whip, disabledAttack from Amnesia/Disable) are
+  // meant to last through that opponent's upcoming turn. So they expire when THAT
+  // player's turn ends — i.e. when the flag-holder IS `prev`. Clearing them here on
+  // `G.players[prev].active` is correct.
+  //
+  // Flags placed on the USER during their own turn (defender*) protect DURING the
+  // opponent's turn and expire when that turn ends. At that moment, the flag-holder
+  // is `G.turn` (since the turn just flipped away from the opponent). Clearing them
+  // here on `G.players[G.turn].active` is correct.
+  //
+  // The previous code cleared cantRetreat / attackReduction / disabledAttack on the
+  // wrong side (nextActive), nulling them before the victim's turn even started —
+  // which is why Amnesia's disable never took effect against the AI.
   const nextActive = G.players[G.turn].active;
   if (nextActive) {
-    nextActive.cantRetreat = false;
-    nextActive.attackReduction = 0;
-    nextActive.disabledAttack = null;
     if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
     nextActive.defender = false;
     nextActive.defenderFull = false;
@@ -1850,6 +1848,9 @@ function _finishEndTurn(prev) {
   }
   const lastActive = G.players[prev].active;
   if (lastActive) {
+    lastActive.cantRetreat = false;
+    lastActive.attackReduction = 0;
+    lastActive.disabledAttack = null;
     lastActive.defenderReduction = 0;
     lastActive.smokescreened = false;
   }
