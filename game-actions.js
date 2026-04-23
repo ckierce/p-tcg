@@ -727,7 +727,7 @@ function flipCoin(label, opts = {}) {
 
     const heads = Math.random() < 0.5;
     if (!G.coinFlipLog) G.coinFlipLog = [];
-    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips });
+    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips, ts: Date.now() });
     const endDeg = heads ? 1440 : 1620;
 
     // Shorter pre-delay if overlay is already showing (consecutive flips)
@@ -1793,7 +1793,106 @@ function resolvePromotion(player, benchIdx) {
   // (endTurn's push only fires when myRole === G.turn, but the promoting player
   // may not be the current turn player in multiplayer)
   if (typeof pushGameState === 'function') pushGameState();
-  endTurn();
+
+  // If this promotion was triggered by a between-turns poison/burn KO (i.e.
+  // endTurn's status-tick loop was interrupted), resume the post-tick work
+  // rather than re-entering endTurn() — which would flip the turn a second time
+  // and steal the new player's turn.
+  if (G._endTurnInterrupted) {
+    const savedPrev = G._endTurnInterrupted.prev;
+    G._endTurnInterrupted = null;
+    _finishEndTurn(savedPrev);
+  } else {
+    endTurn();
+  }
+}
+
+// Post-status-tick half of endTurn — called directly when a between-turns
+// KO promotion is resolved, to avoid double-flipping the turn.
+function _finishEndTurn(prev) {
+  // Paralysis wears off on the player whose turn just ended
+  const prevActive = G.players[prev].active;
+  if (prevActive?.status === 'paralyzed') {
+    prevActive.status = null;
+    addLog(`${prevActive.name} is no longer Paralyzed.`);
+  }
+
+  // Clear PlusPower and Swords Dance boost
+  if (G.players[prev].active?.plusPower) {
+    G.players[prev].active.plusPower = 0;
+  }
+  if (G.players[prev].active?.swordsDanceActive) {
+    G.players[prev].active.swordsDanceActive = false;
+    addLog(`Swords Dance boost expired — Slash returns to 30 damage.`);
+  }
+  // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
+  if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
+  transitionPhase('DRAW');
+  G.pendingLass = null;
+  G.energyPlayedThisTurn = false;
+  G.cursedThisTurn = false;
+  G.healedThisTurn = false;
+  G.shiftedThisTurn = false;
+  G.stepInThisTurn = false;
+  G.evolvedThisTurn = [];
+
+  const nextActive = G.players[G.turn].active;
+  if (nextActive) {
+    nextActive.cantRetreat = false;
+    nextActive.attackReduction = 0;
+    nextActive.disabledAttack = null;
+    if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
+    nextActive.defender = false;
+    nextActive.defenderFull = false;
+    nextActive.defenderFullEffects = false;
+    nextActive.defenderThreshold = 0;
+    nextActive.defenderReduction = 0;
+  }
+  const lastActive = G.players[prev].active;
+  if (lastActive) {
+    lastActive.defenderReduction = 0;
+    lastActive.smokescreened = false;
+  }
+  G.plusPowerActive = 0;
+  G.pendingAction = null;
+  clearHighlights();
+  addLog(`Player ${prev} ended their turn.`, true);
+
+  const extras = G.pendingExtraDraws?.[G.turn] || 0;
+  if (extras > 0) {
+    G.pendingExtraDraws[G.turn] = 0;
+    for (let i = 0; i < extras; i++) drawCard(G.turn, true);
+    addLog(`P${G.turn} draws ${extras} extra card(s) from opponent mulligan(s).`);
+  }
+
+  const sleepTarget = G.players[G.turn].active;
+  if (sleepTarget?.status === 'asleep') {
+    G.pendingSleepFlip = sleepTarget.name;
+  }
+
+  drawCard(G.turn, true);
+  renderAll();
+  showTurnFlash(G.turn);
+  if (typeof pushGameState === 'function') pushGameState();
+
+  if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
+    const sleepName = G.pendingSleepFlip;
+    G.pendingSleepFlip = null;
+    setTimeout(async () => {
+      const target = G.players[G.turn].active;
+      if (target && target.name === sleepName && target.status === 'asleep') {
+        const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
+        if (wakeUp) {
+          target.status = null;
+          addLog(`${sleepName} woke up!`);
+        } else {
+          addLog(`${sleepName} is still asleep.`);
+        }
+        renderAll();
+        if (typeof pushGameState === 'function') pushGameState();
+      }
+    }, 600);
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -1869,111 +1968,16 @@ function endTurn() {
                   : t.status === 'poisoned-toxic' ? 'Toxic Poison'
                   : 'Poison';
       addLog(`${active.name} took ${t.dmg} ${label} damage! (${active.damage}/${active.hp} HP)`);
+      // Mark that endTurn was interrupted by a between-turns KO so that
+      // resolvePromotion can call _finishEndTurn(prev) instead of endTurn(),
+      // preventing a double turn-flip that steals the newly promoted player's turn.
+      G._endTurnInterrupted = { prev };
       const koResult = checkKO(attacker, owner, active, false);
-      if (koResult === 'win')     { renderAll(); return; }
-      if (koResult === 'promote') { renderAll(); return; }
+      if (koResult === 'win')     { G._endTurnInterrupted = null; renderAll(); return; }
+      if (koResult === 'promote') { renderAll(); return; } // resolvePromotion clears the flag
+      G._endTurnInterrupted = null;
     }
   }
 
-  // Paralysis wears off on the player whose turn just ended
-  const prevActive = G.players[prev].active;
-  if (prevActive?.status === 'paralyzed') {
-    prevActive.status = null;
-    addLog(`${prevActive.name} is no longer Paralyzed.`);
-  }
-
-  // Also clear PlusPower and Swords Dance boost from active (applied or expires at end of turn)
-  if (G.players[prev].active?.plusPower) {
-    G.players[prev].active.plusPower = 0;
-  }
-  if (G.players[prev].active?.swordsDanceActive) {
-    G.players[prev].active.swordsDanceActive = false;
-    addLog(`Swords Dance boost expired — Slash returns to 30 damage.`);
-  }
-  // move-effects.js cleanup (immuneToAttack, pounce, trainerBlocked)
-  if (typeof endTurnEffectsCleanup === 'function') endTurnEffectsCleanup(prev, G.turn);
-  transitionPhase('DRAW');
-  G.pendingLass = null;
-  G.energyPlayedThisTurn = false;
-  G.cursedThisTurn = false;
-  G.healedThisTurn = false;
-  G.shiftedThisTurn = false;
-  G.stepInThisTurn = false;
-  G.evolvedThisTurn = [];
-
-  // Clear per-turn attack debuff flags.
-  // Effects applied to the OPPONENT's active last for one of their turns:
-  //   cantRetreat, attackReduction, disabledAttack — these are on G.players[G.turn].active
-  //   (the new current player, who was the defender last turn).
-  // smokescreened: cleared by performAttack itself after the flip.
-  // defender: on the defending player's active, clears at end of opponent's next turn (= now).
-  const nextActive = G.players[G.turn].active;
-  if (nextActive) {
-    nextActive.cantRetreat = false;
-    nextActive.attackReduction = 0;
-    nextActive.disabledAttack = null;
-    // smokescreened: NOT cleared here — performAttack clears it after the coin flip,
-    // or on the following endTurn via lastActive if the player passed/retreated.
-    // Defender expires at end of the opponent's next turn — that's now (the new current player
-    // was the defending player last turn; their defender expires as their turn begins).
-    if (nextActive.defender) addLog(`Defender on ${nextActive.name} has expired.`);
-    nextActive.defender = false;
-    nextActive.defenderFull = false;
-    nextActive.defenderFullEffects = false;
-    nextActive.defenderThreshold = 0;
-    nextActive.defenderReduction = 0;
-  }
-  const lastActive = G.players[prev].active;
-  if (lastActive) {
-    // Clear flags that were set ON the previous player (attacker) during their turn
-    // defenderReduction is for moves like Scrunch/Harden that set it on self
-    lastActive.defenderReduction = 0;
-    // Smokescreen expires at end of the smokescreened player's turn.
-    // performAttack clears it mid-turn if they attacked; this handles retreat/pass.
-    lastActive.smokescreened = false;
-  }
-  // nextAttackDouble persists across the turn boundary (Swords Dance lasts until used),
-  // so we do NOT clear it here — it clears itself when the attack fires.
-  G.plusPowerActive = 0;
-  G.pendingAction = null;
-  clearHighlights();
-  addLog(`Player ${prev} ended their turn.`, true);
-
-  // Extra draws for the new player due to opponent mulligans
-  const extras = G.pendingExtraDraws?.[G.turn] || 0;
-  if (extras > 0) {
-    G.pendingExtraDraws[G.turn] = 0;
-    for (let i = 0; i < extras; i++) drawCard(G.turn, true);
-    addLog(`P${G.turn} draws ${extras} extra card(s) from opponent mulligan(s).`);
-  }
-
-  const sleepTarget = G.players[G.turn].active;
-  if (sleepTarget?.status === 'asleep') {
-    G.pendingSleepFlip = sleepTarget.name;
-  }
-
-  drawCard(G.turn, true);
-  renderAll();
-  showTurnFlash(G.turn);
-  // Push state after every turn end so between-turn effects (poison, burn)
-  // reach both clients immediately — not just on KO/promote paths.
-  if (typeof pushGameState === 'function') pushGameState();
-
-  if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
-    const sleepName = G.pendingSleepFlip;
-    G.pendingSleepFlip = null;
-    setTimeout(async () => {
-      const target = G.players[G.turn].active;
-      if (target && target.name === sleepName && target.status === 'asleep') {
-        const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
-        if (wakeUp) {
-          target.status = null;
-          addLog(`${sleepName} woke up!`, true);
-        } else {
-          addLog(`${sleepName} is still Asleep.`);
-        }
-        renderAll();
-      }
-    }, 400);
-  }
+  _finishEndTurn(prev);
 }

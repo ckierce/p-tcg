@@ -952,6 +952,11 @@ function showWinScreen(winnerNum, reason) {
     displayName = p.name || `PLAYER ${winnerNum}`;
   }
 
+  // Record the winner on G so receiveGameState can read it directly rather
+  // than guessing from prize counts (which breaks for deck-out endings).
+  G.winner = winnerNum;
+  G.winReason = reason || '';
+
   // Record win/loss — only in networked games, only if we know our role
   if (!vsComputer && myRole !== null) {
     recordResult(winnerNum === myRole);

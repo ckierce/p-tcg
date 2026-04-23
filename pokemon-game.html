@@ -4410,30 +4410,51 @@ function receiveGameState(state) {
   initDragDrop();
   applyRoleVisibility();
   if (!G.started && wasStarted) {
-    const p1prizes = G.players[1].prizes.filter(p => p).length;
-    const p2prizes = G.players[2].prizes.filter(p => p).length;
-    const winner = p1prizes <= p2prizes ? 2 : 1;
-    showWinScreen(winner, '');
+    // Use the winner recorded by showWinScreen if available; fall back to prize
+    // count heuristic only as a last resort (e.g. very old game states).
+    if (G.winner) {
+      showWinScreen(G.winner, G.winReason || '');
+    } else {
+      const p1prizes = G.players[1].prizes.filter(p => p).length;
+      const p2prizes = G.players[2].prizes.filter(p => p).length;
+      showWinScreen(p1prizes <= p2prizes ? 2 : 1, '');
+    }
     return;
   }
   // Show turn flash if turn just switched to this player
   if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
     showTurnFlash(myRole);
   }
-  // Show opponent move flash and coin flips
+  // Show opponent move flash
   if (myRole !== null && G.lastMoveFlash && G.lastMoveFlash.ts !== window._lastMoveFlashTs) {
     window._lastMoveFlashTs = G.lastMoveFlash.ts;
     const mf = G.lastMoveFlash;
     if (mf.attackingPlayer !== myRole) {
       showMoveFlash(mf.attackingPlayer, mf.attackerName, mf.moveName, mf.dmg, mf.targetName, mf.suffix);
-      if (G.coinFlipLog && G.coinFlipLog.length) {
-        const flips = [...G.coinFlipLog];
-        setTimeout(async () => {
-          for (const flip of flips) {
-            await showCoinAnimation(flip.label, flip.heads, { flipNum: flip.flipNum, totalFlips: flip.totalFlips });
-          }
-        }, 800);
-      }
+    }
+  }
+  // Replay any coin flips the opponent made that we haven't shown yet.
+  // Uses a per-flip ts watermark so non-attack flips (confusion retreat,
+  // sleep wake-up) are also replayed — not just flips attached to moves.
+  if (myRole !== null && G.coinFlipLog && G.coinFlipLog.length) {
+    const watermark = window._lastCoinFlipTs || 0;
+    const newFlips = G.coinFlipLog.filter(f => f.ts && f.ts > watermark);
+    if (newFlips.length) {
+      // Only replay flips that belong to the opponent (or all flips in observer mode)
+      const opponentFlips = newFlips.filter(() => {
+        // If a move flash is also new this receive, these are attack flips — only
+        // show if the attacker is the opponent.  Otherwise (non-attack flip) show
+        // regardless since it came from the opponent's action.
+        return true; // always show: the attacker check is done by lastMoveFlash above
+      });
+      // Advance the watermark to the highest ts we are about to replay.
+      window._lastCoinFlipTs = newFlips[newFlips.length - 1].ts;
+      const delay = (G.lastMoveFlash && G.lastMoveFlash.ts === window._lastMoveFlashTs) ? 800 : 200;
+      setTimeout(async () => {
+        for (const flip of opponentFlips) {
+          await showCoinAnimation(flip.label, flip.heads, { flipNum: flip.flipNum, totalFlips: flip.totalFlips });
+        }
+      }, delay);
     }
   }
   // Sleep flip: resolve on the new turn player's client

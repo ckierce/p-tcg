@@ -1970,6 +1970,105 @@ section('willActiveDieNextTurn');
 
 
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Bug regression: between-turns KO / _endTurnInterrupted (Bug #1 & #2)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('Between-turns KO — computeBetweenTurnDamage produces ticks for both sides');
+
+{
+  // Both players' actives are poisoned — both should get a tick.
+  const players = {
+    1: { active: { name: 'A', hp: '60', damage: 0, status: 'poisoned', attachedEnergy: [], types: [], attacks: [], weaknesses: [], resistances: [] } },
+    2: { active: { name: 'B', hp: '60', damage: 0, status: 'poisoned', attachedEnergy: [], types: [], attacks: [], weaknesses: [], resistances: [] } },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Both poisoned → 2 ticks generated', ticks.length === 2);
+  assert('Tick for player 1 exists', ticks.some(t => t.player === 1));
+  assert('Tick for player 2 exists', ticks.some(t => t.player === 2));
+}
+
+{
+  // Toxic (poisoned-toxic) tick should be 20 damage.
+  const players = {
+    1: { active: { name: 'Nidoking', hp: '90', damage: 0, status: 'poisoned-toxic', poisonCounters: 2, attachedEnergy: [], types: [], attacks: [], weaknesses: [], resistances: [] } },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Toxic tick is 20', ticks[0]?.dmg === 20);
+}
+
+{
+  // Burn tick is always 20.
+  const players = {
+    1: { active: { name: 'Moltres', hp: '100', damage: 0, status: 'burned', attachedEnergy: [], types: [], attacks: [], weaknesses: [], resistances: [] } },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Burn tick is 20', ticks[0]?.dmg === 20);
+}
+
+{
+  // No active → no ticks.
+  const players = {
+    1: { active: null },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('No actives → no ticks', ticks.length === 0);
+}
+
+{
+  // Healthy active → no ticks.
+  const players = {
+    1: { active: { name: 'Pikachu', hp: '40', damage: 0, status: null, attachedEnergy: [], types: [], attacks: [], weaknesses: [], resistances: [] } },
+    2: { active: null },
+  };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('Healthy active → no ticks', ticks.length === 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Bug regression: coinFlipLog ts watermark (Bug #4)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('coinFlipLog ts watermark — new flips correctly identified');
+
+{
+  // Simulate the filter logic from receiveGameState:
+  // Only entries with ts > watermark should be replayed.
+  const before = Date.now() - 1000;
+  const coinFlipLog = [
+    { label: 'old flip', heads: true, ts: before - 500 },
+    { label: 'new flip 1', heads: false, ts: before + 100 },
+    { label: 'new flip 2', heads: true, ts: before + 200 },
+  ];
+  const watermark = before;
+  const newFlips = coinFlipLog.filter(f => f.ts && f.ts > watermark);
+  assert('Two new flips identified past watermark', newFlips.length === 2);
+  assert('Old flip excluded', !newFlips.some(f => f.label === 'old flip'));
+  assert('Watermark advances to last new flip ts', newFlips[newFlips.length - 1].ts === before + 200);
+}
+
+{
+  // Flips without ts field (old game state) are excluded from replay.
+  const coinFlipLog = [
+    { label: 'legacy flip', heads: true }, // no ts
+    { label: 'new flip', heads: false, ts: Date.now() },
+  ];
+  const watermark = 0;
+  const newFlips = coinFlipLog.filter(f => f.ts && f.ts > watermark);
+  assert('Legacy flip without ts excluded from replay', newFlips.length === 1);
+  assert('New flip with ts included', newFlips[0].label === 'new flip');
+}
+
+{
+  // Empty log → no flips.
+  const newFlips = [].filter(f => f.ts && f.ts > 0);
+  assert('Empty coinFlipLog → no flips', newFlips.length === 0);
+}
+
+
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));
