@@ -226,6 +226,28 @@ async function aiTakeTurn() {
       }
     }
 
+    // 2.5 KO plan search — look for a sequence of moves that scores a KO this
+    // turn (energy attach + PlusPower + Gust of Wind + attack). If one exists,
+    // execute it now and skip the rest of the turn pipeline. Falls through to
+    // the normal pipeline when no KO plan is found.
+    //
+    // Easy mode skips this — we want Easy to make mistakes. Normal and Hard
+    // both use it; Hard additionally considers non-KO plans with high scores
+    // below (the scoring handles that via the damage component).
+    if (aiDifficulty !== 'easy' && p2.active && p1.active) {
+      const plan = aiFindBestKOPlan(p2, p1);
+      // Only commit to the plan if it actually KOs. Non-KO plans fall through
+      // to the normal pipeline so energy/trainer/attack decisions can be
+      // tuned independently.
+      if (plan && plan.willKO) {
+        if (plan.wouldWinByPrizes || plan.wouldWinByNoPokemon) {
+          addLog(`🤖 Computer sees the winning move!`, true);
+        }
+        await executeKOPlan(plan, AI_DELAY);
+        return; // performAttack → endTurn handles the rest
+      }
+    }
+
     // 3. Evolve on normal/hard
     if (aiDifficulty !== 'easy' && !prehistoricPowerActive()) {
       const hand = p2.hand;
@@ -894,6 +916,302 @@ function willActiveDieNextTurn(defenderPlayer, attackerPlayer) {
   return threat >= hpLeft;
 }
 
+// ── Prize awareness ──────────────────────────────────────────────────────────
+// Number of prizes the given player still has to take (the prize cards that
+// will be given to their OPPONENT when the opponent KOs one of their Pokémon).
+// i.e. prizesRemaining(2) = prizes P1 still has to draw to win.
+// In this codebase each player's `prizes` array is the pile THEY draw from,
+// so prizes remaining for player N = count of non-null entries in p[N].prizes.
+function prizesRemaining(playerObj) {
+  if (!playerObj?.prizes) return 6;
+  return playerObj.prizes.filter(p => p).length;
+}
+
+// ── KO Plan search ──────────────────────────────────────────────────────────
+// Enumerate legal combinations of (Gust target, PlusPower count, energy attach,
+// attack) for the CURRENT active and return the highest-scoring plan.
+//
+// A "plan" is a declarative description of moves to execute in a single turn.
+// The planner is pure — it mutates nothing. `executeKOPlan` actually applies it.
+//
+// Scope (v1):
+//   • Only evaluates the current active's current attacks. Does NOT consider
+//     evolving mid-plan, retreating to a different attacker, or Switch/Scoop Up.
+//     This covers the overwhelming majority of KO opportunities in Base/Jungle/
+//     Fossil play; more complex plans can be added later.
+//   • Considers: up to 1 energy attach from hand (or up to N if Rain Dance),
+//     0..N PlusPowers from hand (capped at 2), and Gust of Wind retargeting
+//     to any opposing bench Pokémon.
+//   • Does NOT evaluate Super Energy Removal / Energy Removal as KO enablers.
+//
+// Score (higher is better):
+//   +1,000,000 if this plan wins the game (last prize)
+//   +100,000  if this plan scores a KO
+//   +50,000   if the plan leaves us alive next turn (threat-model survival)
+//   +damage   (tiebreaker among KO plans, or non-KO damage dealt)
+//   −prizeRiskPenalty if we die from counter-punch
+//
+// Returns null if no affordable attack exists with any combination.
+function aiFindBestKOPlan(p2, p1) {
+  if (!p2?.active || !p1?.active) return null;
+  const attacker = p2.active;
+  if (attacker.status === 'paralyzed' || attacker.status === 'asleep') return null;
+  if (!attacker.attacks?.length) return null;
+
+  const hand = p2.hand || [];
+  const energyAlreadyPlayed = !!G.energyPlayedThisTurn;
+  const rainDance = (typeof rainDanceActive === 'function') && rainDanceActive(2);
+
+  // Distinct energy names in hand — each is a candidate for attach.
+  const energiesInHand = hand
+    .map((c, i) => ({ c, i }))
+    .filter(x => x.c?.supertype === 'Energy');
+  const distinctEnergyNames = [...new Set(energiesInHand.map(x => x.c.name))];
+
+  // Attach options: always include "no attach". Then, if we haven't played an
+  // energy this turn, one option per distinct type in hand. Under Rain Dance,
+  // additionally allow attaching ALL water energies (one big combo option).
+  // We model each option as a list of {name, handIdx} to be consumed in order.
+  const attachOptions = [[]];
+  if (!energyAlreadyPlayed) {
+    for (const name of distinctEnergyNames) {
+      const first = energiesInHand.find(x => x.c.name === name);
+      if (first) attachOptions.push([{ name, handIdx: first.i }]);
+    }
+  }
+  if (rainDance) {
+    const waters = energiesInHand.filter(x => /water/i.test(x.c.name));
+    if (waters.length >= 1) {
+      attachOptions.push(waters.map(w => ({ name: w.c.name, handIdx: w.i })));
+    }
+  }
+
+  // PlusPower: we'll consider playing 0..min(2, count in hand).
+  const plusPowerHandIdxs = hand
+    .map((c, i) => ({ c, i }))
+    .filter(x => x.c?.name === 'PlusPower')
+    .map(x => x.i);
+  const maxPlusPowers = Math.min(2, plusPowerHandIdxs.length);
+
+  // Gust of Wind: pull a bench Pokémon into the opposing active. Options are
+  // the current active (no Gust) plus every non-null opponent bench slot.
+  const hasGust = hand.some(c => c?.name === 'Gust of Wind');
+  const targetOptions = [{ benchIdx: null, card: p1.active, gustHandIdx: null }];
+  if (hasGust) {
+    const gustIdx = hand.findIndex(c => c?.name === 'Gust of Wind');
+    for (let b = 0; b < (p1.bench?.length || 0); b++) {
+      const bc = p1.bench[b];
+      if (bc) targetOptions.push({ benchIdx: b, card: bc, gustHandIdx: gustIdx });
+    }
+  }
+
+  // Build a synthetic attacker state given our chosen attach + PlusPower count.
+  // Returns { attached, effectivePlus } — pure, no mutation of real state.
+  function attackerWithPlan(attachList, plusPowerN) {
+    const attached = [...(attacker.attachedEnergy || [])];
+    for (const a of attachList) attached.push({ name: a.name });
+    return { attached, plus: plusPowerN * 10 };
+  }
+
+  // Compute damage to `target` if we use `atk` with the planned state.
+  function computePlannedDamage(atk, planned, target) {
+    // Affordability uses the planned attached set.
+    if (!canAffordAttack(planned.attached, atk.cost || [], attacker)) return 0;
+    if (attacker.disabledAttack && attacker.disabledAttack === atk.name) return 0;
+    if (atk.name === 'Conversion 1' && !(target.weaknesses || []).length) return 0;
+
+    const energyCount = energyValue(planned.attached);
+    // Use max-damage model (reads coin-flip text). For fixed attacks this is
+    // the printed damage.
+    let dmg = maxDamageForAttack(atk, energyCount);
+    if (dmg === 0) return 0;
+
+    const atkTypes = attacker.types || [];
+    dmg = computeDamageAfterWR(dmg, atkTypes, target.weaknesses, target.resistances);
+    dmg += planned.plus;
+
+    // Invisible Wall (Mr. Mime): blocks any attack dealing ≥ 30 damage.
+    // Threshold check matches game-actions.js:1037 (after W/R + PlusPower).
+    if (typeof hasInvisibleWall === 'function' && hasInvisibleWall(target) && dmg >= 30) {
+      return 0;
+    }
+
+    // Defender on the target
+    if (target.defender && dmg > 0) dmg = Math.max(0, dmg - 20);
+
+    return dmg;
+  }
+
+  // After a KO, the opponent must promote from bench. Their best-case next
+  // turn threat = max damage of any bench Pokémon if unlimited moves to
+  // attach/energy-up. For a one-turn lookahead we use the existing threat
+  // model against each bench candidate as the new active.
+  function threatAfterKO(target) {
+    // If we KO the active, opponent promotes one of their bench Pokémon.
+    // If the KO target IS a benched Pokémon (via Gust), their active is
+    // unchanged — use normal active threat.
+    const targetIsActive = target === p1.active;
+    if (!targetIsActive) {
+      // Gust KO on a bench Pokémon: their active is still their active.
+      return opponentThreatNextTurn(p1, p2);
+    }
+    // They'll promote the bench Pokémon most likely to KO us.
+    let maxThreat = 0;
+    for (const b of (p1.bench || [])) {
+      if (!b) continue;
+      const hypothetical = { ...p1, active: b };
+      const t = opponentThreatNextTurn(hypothetical, p2);
+      if (t > maxThreat) maxThreat = t;
+    }
+    return maxThreat;
+  }
+
+  const myPrizesLeft = prizesRemaining(p2);
+  const oppPrizesLeft = prizesRemaining(p1);
+  const hpLeft = (parseInt(attacker.hp) || 0) - (attacker.damage || 0);
+
+  let best = null;
+
+  for (const target of targetOptions) {
+    const targetHp = (parseInt(target.card.hp) || 0) - (target.card.damage || 0);
+    if (targetHp <= 0) continue; // already KO'd, skip
+
+    for (const attachList of attachOptions) {
+      for (let pp = 0; pp <= maxPlusPowers; pp++) {
+        const planned = attackerWithPlan(attachList, pp);
+
+        // Pick the best attack under this (attach, pp) combination.
+        for (const atk of attacker.attacks) {
+          const dmg = computePlannedDamage(atk, planned, target.card);
+          if (dmg === 0) continue;
+
+          const willKO = dmg >= targetHp;
+          // Our HP after the counter-punch. If we KO'd their active, their
+          // threat is from whoever they promote (or 0 if empty bench → we win).
+          let counterDamage;
+          if (willKO && target.card === p1.active) {
+            // We wiped their active. Do they have bench to promote?
+            const benchAnyoneAlive = (p1.bench || []).some(b => b);
+            if (!benchAnyoneAlive) {
+              // They have no Pokémon → we win by "no Pokémon left" regardless
+              // of prize count. Treat as ultimate score.
+              counterDamage = 0;
+            } else {
+              counterDamage = threatAfterKO(target.card);
+            }
+          } else {
+            // Either non-KO plan, or Gust-KO on a bench (their active unchanged).
+            counterDamage = opponentThreatNextTurn(p1, p2);
+          }
+          const willSurvive = counterDamage < hpLeft;
+
+          // Game-winning conditions:
+          //   • KO + it's their last prize (myPrizesLeft === 1 and we take it)
+          //   • KO + they have no bench to promote (empty-bench win)
+          const wouldWinByPrizes = willKO && myPrizesLeft === 1;
+          const wouldWinByNoPokemon =
+            willKO && target.card === p1.active && !(p1.bench || []).some(b => b);
+
+          let score = 0;
+          if (wouldWinByPrizes || wouldWinByNoPokemon) score += 1_000_000;
+          if (willKO) score += 100_000;
+          if (willSurvive) score += 50_000;
+
+          // Damage as tiebreaker. Also rewards non-KO plans that still hit hard.
+          score += Math.min(dmg, 999);
+
+          // If they're on their last prize and we DIE, big penalty — we'd be
+          // handing them the game by failing to survive.
+          if (!willSurvive && oppPrizesLeft === 1) score -= 200_000;
+
+          // Resource cost penalty (small): prefer plans that spend fewer PPs
+          // and fewer hand cards among equal-outcome plans.
+          score -= pp * 5;
+          score -= (target.gustHandIdx !== null ? 10 : 0);
+          score -= attachList.length * 1;
+
+          if (!best || score > best.score) {
+            best = {
+              score,
+              target,              // { benchIdx, card, gustHandIdx }
+              attachList,          // [{ name, handIdx }, ...]
+              plusPowerCount: pp,
+              attack: atk,
+              expectedDamage: dmg,
+              willKO,
+              willSurvive,
+              wouldWinByPrizes,
+              wouldWinByNoPokemon,
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+// Execute a plan produced by aiFindBestKOPlan. Actually mutates game state and
+// invokes the same game primitives the AI uses elsewhere (attachEnergy, etc).
+// Returns true if the plan was executed (an attack fired).
+async function executeKOPlan(plan, delayMs) {
+  const p2 = G.players[2];
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  // 1. Gust of Wind first, if the plan targets a bench Pokémon.
+  if (plan.target.gustHandIdx !== null && plan.target.benchIdx !== null) {
+    const p1 = G.players[1];
+    const hand = p2.hand;
+    // Re-locate the Gust card (handIdx may have shifted, but we haven't mutated
+    // hand yet between planning and now — belt and braces).
+    const gustIdx = hand.findIndex(c => c?.name === 'Gust of Wind');
+    if (gustIdx !== -1) {
+      const card = hand.splice(gustIdx, 1)[0];
+      p2.discard.push(card);
+      const pulled = p1.bench[plan.target.benchIdx];
+      p1.bench[plan.target.benchIdx] = p1.active;
+      p1.active = pulled;
+      while (p1.bench.length < 5) p1.bench.push(null);
+      addLog(`🤖 Computer played Gust of Wind — pulled ${pulled.name} into the Active spot!`, true);
+      renderAll();
+      await delay(delayMs * 0.6);
+    }
+  }
+
+  // 2. PlusPowers (one at a time).
+  for (let n = 0; n < plan.plusPowerCount; n++) {
+    const hand = p2.hand;
+    const ppIdx = hand.findIndex(c => c?.name === 'PlusPower');
+    if (ppIdx === -1) break;
+    const card = hand.splice(ppIdx, 1)[0];
+    p2.discard.push(card);
+    p2.active.plusPower = (p2.active.plusPower || 0) + 10;
+    addLog(`🤖 Computer played PlusPower on ${p2.active.name}.`, true);
+    renderAll();
+    await delay(delayMs * 0.4);
+  }
+
+  // 3. Energy attach(es). For Rain Dance the plan may list multiple.
+  for (const attach of plan.attachList) {
+    const hand = p2.hand;
+    const idx = hand.findIndex(c => c?.supertype === 'Energy' && c.name === attach.name);
+    if (idx === -1) continue;
+    const energyName = hand[idx]?.name || '';
+    const isRainDance = /water/i.test(energyName) && (typeof rainDanceActive === 'function') && rainDanceActive(2);
+    attachEnergy(2, idx, 'active', null, isRainDance);
+    addLog(`🤖 Computer attached energy to ${p2.active?.name}.`);
+    renderAll();
+    await delay(delayMs * 0.5);
+  }
+
+  // 4. Attack.
+  addLog(`🤖 Computer uses ${plan.attack.name}!`, true);
+  aiThinking = false;
+  await performAttack(2, plan.attack);
+  return true;
+}
+
 async function aiChooseAndAttack() {
   const p2 = G.players[2];
   const p1 = G.players[1];
@@ -931,10 +1249,21 @@ async function aiChooseAndAttack() {
 
   const oppHpLeft = (parseInt(oppActive.hp) || 0) - (oppActive.damage || 0);
 
+  // Prize awareness — a KO that wins the game trumps everything else.
+  // If the opponent is on their last prize (oppPrizesLeft === 1) and we're
+  // about to die, be extra aggressive: even a non-KO that has upside beats a
+  // safe play if the safe play lets them KO us next turn.
+  const myPrizesLeft    = prizesRemaining(p2);
+  const oppPrizesLeft   = prizesRemaining(p1);
+  const winsGameIfKO    = myPrizesLeft === 1;
+
   function attackScore(atk) {
     const eff = effectiveDamage(atk);
-    const koBonus = eff >= oppHpLeft ? 1000 : 0;
-    return eff + koBonus;
+    const isKO = eff >= oppHpLeft;
+    let score = eff;
+    if (isKO) score += 1000;
+    if (isKO && winsGameIfKO) score += 100000;
+    return score;
   }
 
   const chosen = aiDifficulty === 'easy'
@@ -1053,5 +1382,7 @@ if (typeof module !== 'undefined') {
     opponentThreatNextTurn,
     willActiveDieNextTurn,
     maxDamageForAttack,
+    aiFindBestKOPlan,
+    prizesRemaining,
   };
 }

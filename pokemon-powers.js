@@ -641,7 +641,7 @@ async function doHeal(player) {
 // ─────────────────────────────────────────────────────────────────────────────
 // FIELD ACTION EXTRAS
 // Returns additional actions to show in the action menu for a Pokémon slot.
-// Called from showFieldActionMenu in the main HTML.
+// Called from showFieldActionMenu in game-actions.js.
 // ─────────────────────────────────────────────────────────────────────────────
 function getFieldActionExtras(player, zone, benchIdx, card) {
   if (G.phase !== 'MAIN' || G.turn !== player) return [];

@@ -3408,93 +3408,12 @@ function selectHandCard(player, handIdx, evt) {
 // (removed: canAffordAttack — now lives in extracted .js file)
 
 
-function showFieldActionMenu(player, zone, benchIdx, evt) {
-  const p = G.players[player];
-  const opp = G.players[player === 1 ? 2 : 1];
-  const card = zone === 'active' ? p.active : p.bench[benchIdx];
-  if (!card) return;
-  const actions = [];
-
-  // Move bench pokemon to active if active is empty
-  if (zone !== 'active' && !p.active) {
-    actions.push({ label: 'Move to Active', fn: () => {
-      p.active = card; p.bench[benchIdx] = null;
-      addLog(`P${player} moved ${card.name} to Active.`);
-      renderAll(); closeActionMenu();
-    }});
-  }
-
-  // Attacks — only from active slot, only on your turn, only your own pokemon
-  if (zone === 'active' && G.turn === player && G.phase === 'MAIN' && (myRole === null || player === myRole)) {
-    // Ditto: use opponent's attacks via Transform power
-    const transformAttacks = dittoAttacks(player);
-    const attacks = transformAttacks || card.attacks || [];
-    if (transformAttacks) addLog && undefined; // no-op, just using the branch
-    if (attacks.length === 0) {
-      actions.push({ label: 'No attacks', disabled: true });
-    } else {
-      attacks.forEach(atk => {
-        const costStr = atk.cost?.join(', ') || '—';
-        const dmg = atk.damage || '0';
-        const canAfford = canAffordAttack(card.attachedEnergy, atk.cost, card);
-        const isDisabled = card.disabledAttack && card.disabledAttack === atk.name;
-        const isLeekSlapUsed = card.leekSlapUsed && /can't use this attack again as long as/i.test(atk.text || '');
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed;
-        const subLabel = isLeekSlapUsed ? `${costStr} · USED (once only)` :
-                         isDisabled ? `${costStr} · DISABLED` :
-                         canAfford ? `${costStr} · ${dmg} dmg` :
-                         `${costStr} · ${dmg} dmg — NOT ENOUGH ENERGY`;
-        actions.push({
-          label: `⚔ ${atk.name}`,
-          sub: subLabel,
-          fn: blocked ? null : async () => { closeActionMenu(); await performAttack(player, atk); },
-          disabled: blocked,
-        });
-      });
-    }
-    const activeStatus = card.status;
-    const retreatBlocked = activeStatus === 'paralyzed' || activeStatus === 'asleep';
-    const retreatConfused = activeStatus === 'confused';
-    const retreatLabel = retreatBlocked
-      ? `Retreat — blocked (${activeStatus})`
-      : retreatConfused
-        ? 'Retreat (flip coin — confused)'
-        : 'Retreat';
-    actions.push({
-      label: retreatLabel,
-      disabled: retreatBlocked,
-      fn: retreatBlocked ? null : () => { attemptRetreat(player); closeActionMenu(); }
-    });
-
-  }
-
-  // ── Pokémon Power actions — own Pokémon, own turn, active OR bench ──────────
-  // Must be outside the active-only block so bench powers (Step In, Buzzap, etc.) work.
-  if (G.turn === player && G.phase === 'MAIN' && (myRole === null || player === myRole)) {
-    if (typeof getFieldActionExtras === 'function') {
-      actions.push(...getFieldActionExtras(player, zone, benchIdx, card));
-    }
-  }
-
-  // Clefairy Doll / Mysterious Fossil: can be voluntarily discarded from bench on your turn
-  if (zone !== 'active' && (card.isDoll || card.isFossil) && G.turn === player && G.phase === 'MAIN') {
-    actions.push({
-      label: `Discard ${card.name}`,
-      danger: true,
-      fn: () => {
-        p.bench[benchIdx] = null;
-        p.discard.push(card);
-        addLog(`P${player} discarded ${card.name} from the bench.`, true);
-        closeActionMenu();
-        renderAll();
-      }
-    });
-  }
-
-  const _src = card.images?.large || card.images?.small || '';
-  if (_src) actions.push({ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(_src); } });
-  showActionMenu(card.name, actions, evt);
-}
+// (removed: showFieldActionMenu — now lives in extracted .js file)
+// The inline copy here had drifted behind the canonical one in game-actions.js
+// (missing Conversion 1 / paralyzed / asleep gating). Because pokemon-game.html's
+// inline <script> loads AFTER game-actions.js, the inline duplicate was silently
+// shadowing the canonical version at runtime. See push_to_github.sh architecture
+// note: function defined in a .js file MUST NOT also be defined inline in HTML.
 // (removed: attemptRetreat — now lives in extracted .js file)
 
 // (removed: energyValue — now lives in extracted .js file)

@@ -397,21 +397,32 @@ const MOVE_EFFECTS = {
   // Agility (Raichu/Fearow/Rapidash/Seadra): flip → immune to all attack effects
   'Agility': _agilityFlip(),
 
-  // Amnesia (Poliwhirl): choose 1 of opp's attacks — disable it next turn
+  // Amnesia (Poliwhirl): choose 1 of opp's attacks — disable it next turn.
+  // Ditto note: Ditto (Fossil) has no intrinsic attacks — it borrows the
+  // attacker's attacks via Transform (its Pokémon Power). Reading
+  // `oppActive.attacks` directly would be empty and the disable would silently
+  // no-op. Use `dittoAttacks(opp)` which returns the copied attack list when
+  // Transform is active; fall back to the intrinsic list otherwise.
   'Amnesia': {
-    postAttack: async ({ oppActive, atk }) => {
-      if (!oppActive?.attacks?.length) return;
+    postAttack: async ({ opp, oppActive, atk }) => {
+      if (!oppActive) return;
+      const effectiveAttacks =
+        (typeof dittoAttacks === 'function' && dittoAttacks(opp)) || oppActive.attacks || [];
+      if (!effectiveAttacks.length) {
+        addLog(`${atk.name}: no attacks to disable on ${oppActive.name}.`);
+        return;
+      }
       let atkName;
-      if (oppActive.attacks.length === 1) {
-        atkName = oppActive.attacks[0].name;
+      if (effectiveAttacks.length === 1) {
+        atkName = effectiveAttacks[0].name;
       } else {
         const picked = await openCardPicker({
           title: `${atk.name} — Disable Attack`,
           subtitle: `Choose an attack to disable on ${oppActive.name}`,
-          cards: oppActive.attacks.map(a => ({ name: a.name, images: oppActive.images })),
+          cards: effectiveAttacks.map(a => ({ name: a.name, images: oppActive.images })),
           maxSelect: 1
         });
-        if (picked && picked.length) atkName = oppActive.attacks[picked[0]].name;
+        if (picked && picked.length) atkName = effectiveAttacks[picked[0]].name;
       }
       if (atkName) { oppActive.disabledAttack = atkName; addLog(`${atk.name}: ${oppActive.name}'s ${atkName} disabled next turn!`, true); }
     }

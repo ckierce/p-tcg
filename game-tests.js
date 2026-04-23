@@ -2243,6 +2243,586 @@ function simulateFinishEndTurnFlagClear(Gref, prev) {
     G.players[2].active.attackReduction, 0);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Amnesia targeting Ditto — must use Ditto's copied attacks
+//
+// Bug: MOVE_EFFECTS['Amnesia'].postAttack read `oppActive.attacks` directly.
+// Ditto (Fossil) has NO intrinsic attacks — its Transform Pokémon Power copies
+// attacks from the opposing Pokémon at runtime. So when P1 Poliwhirl used
+// Amnesia on P2 Ditto, `oppActive.attacks.length === 0` tripped the early-return
+// guard; no picker opened, no flag set, the turn just flipped.
+//
+// Fix: use the effective attack list via dittoAttacks(opp) when Transform is
+// active; fall back to oppActive.attacks otherwise. The chosen attack name is
+// what the AI/UI check against card.disabledAttack, so the identifier stays
+// consistent on Ditto's next turn — it will skip the disabled copied attack
+// because dittoAttacks() returns the same copied list then too.
+//
+// These tests encode the rule (which list should be offered to the picker);
+// the actual handler lives in move-effects.js which isn't required by Node.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('REGRESSION: Amnesia vs Ditto — offers copied attacks, not empty list');
+
+// Mirrors the logic inside MOVE_EFFECTS['Amnesia'].postAttack for attack-list
+// resolution. If the handler's rule ever diverges from this, update both.
+function resolveAmnesiaTargetAttacks(oppActive, dittoAttacksFn, oppPlayer) {
+  const fromTransform = (typeof dittoAttacksFn === 'function' && dittoAttacksFn(oppPlayer)) || null;
+  return fromTransform || oppActive?.attacks || [];
+}
+
+{
+  // Scenario: P1 Poliwhirl attacks P2 Ditto (Transform active, copying Poliwhirl).
+  // Ditto's intrinsic attacks array is empty. Amnesia must offer Poliwhirl's
+  // own attacks (Water Gun, Amnesia) as the disable choices.
+  const polAttacks = [
+    { name: 'Water Gun', damage: '20', cost: ['Water'] },
+    { name: 'Amnesia', damage: '', cost: ['Water','Water'] },
+  ];
+  const ditto = { name: 'Ditto', attacks: [], images: {} };
+  // Stand-in for pokemon-powers.js dittoAttacks(player): returns the copied list.
+  const dittoAttacksStub = (player) => (player === 2 ? polAttacks : null);
+  const resolved = resolveAmnesiaTargetAttacks(ditto, dittoAttacksStub, 2);
+  assertEqual('Ditto (Transform) with empty intrinsic attacks → resolver returns copied attack list',
+    resolved.length, 2);
+  assertEqual('Ditto (Transform) → first resolved attack is Water Gun',
+    resolved[0].name, 'Water Gun');
+  assertEqual('Ditto (Transform) → second resolved attack is Amnesia',
+    resolved[1].name, 'Amnesia');
+}
+
+{
+  // Sanity check the non-Ditto path: normal Pokemon with intrinsic attacks
+  // still uses its own attack list even if the dittoAttacks helper exists.
+  const hitmon = {
+    name: 'Hitmonchan',
+    attacks: [{ name: 'Jab' }, { name: 'Special Punch' }],
+    images: {},
+  };
+  const dittoAttacksStub = () => null; // no Transform → returns null
+  const resolved = resolveAmnesiaTargetAttacks(hitmon, dittoAttacksStub, 2);
+  assertEqual('Normal opponent: uses intrinsic attacks when dittoAttacks returns null',
+    resolved.length, 2);
+  assertEqual('Normal opponent: first attack is Jab', resolved[0].name, 'Jab');
+  assertEqual('Normal opponent: second attack is Special Punch', resolved[1].name, 'Special Punch');
+}
+
+{
+  // Defensive: Ditto facing a Pokemon with no attacks (or Ditto-vs-Ditto → both
+  // empty) returns an empty list; handler's early-return guard then logs and exits.
+  const ditto = { name: 'Ditto', attacks: [], images: {} };
+  const dittoAttacksStub = () => []; // Transform active but nothing to copy
+  const resolved = resolveAmnesiaTargetAttacks(ditto, dittoAttacksStub, 2);
+  assertEqual('Ditto-vs-Ditto (or Ditto vs attacker with no attacks) → empty resolved list',
+    resolved.length, 0);
+}
+
+{
+  // Verify the identifier roundtrip: the name we write to disabledAttack is what
+  // later checks read. Nothing here is Ditto-specific — it's a sanity check that
+  // the picker-output → flag-setter → AI/UI-checker chain uses stable names.
+  const copiedAttack = { name: 'Amnesia', damage: '', cost: ['Water','Water'] };
+  const victim = { name: 'Ditto', attacks: [], disabledAttack: null };
+  // Simulate what handler does after picker returns index 0:
+  victim.disabledAttack = copiedAttack.name;
+  // Simulate what AI check does (game-ai.js:924):
+  const isBlocked = victim.disabledAttack && victim.disabledAttack === copiedAttack.name;
+  assert('Disabled attack name (Amnesia) round-trips through flag → AI check',
+    isBlocked === true);
+}
+
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// prizesRemaining — prize counting helper for prize-race awareness
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('prizesRemaining');
+
+// Import added alongside the existing aiChooseEnergyTarget block. We re-require
+// here because the earlier block exports what we need but not with these names
+// in scope.
+const {
+  prizesRemaining: _prizesRemaining,
+  aiFindBestKOPlan: _aiFindBestKOPlan,
+} = require('./game-ai.js');
+
+{
+  const p = { prizes: [{ card: {} }, { card: {} }, { card: {} }, { card: {} }, { card: {} }, { card: {} }] };
+  assertEqual('Fresh game: 6 prizes remaining', _prizesRemaining(p), 6);
+}
+{
+  const p = { prizes: [{ card: {} }, null, { card: {} }, null, null, { card: {} }] };
+  assertEqual('Some prizes taken: counts only non-null', _prizesRemaining(p), 3);
+}
+{
+  const p = { prizes: [null, null, null, null, null, null] };
+  assertEqual('All prizes taken: 0', _prizesRemaining(p), 0);
+}
+{
+  const p = { prizes: [{ card: {} }] };
+  assertEqual('One prize left', _prizesRemaining(p), 1);
+}
+{
+  // Defensive: no prizes field → treat as "fresh game" (6). This matters if a
+  // test harness or partial-state snapshot skips the prize field.
+  assertEqual('Missing prizes field: defaults to 6', _prizesRemaining({}), 6);
+  assertEqual('Null player: defaults to 6',         _prizesRemaining(null), 6);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// aiFindBestKOPlan — top-level KO search
+//
+// The planner evaluates (gust target × energy attach × PlusPower count × attack)
+// and returns the best-scoring plan. These tests exercise the main branches:
+//   • No affordable attack anywhere → returns null or a non-KO plan
+//   • Direct KO with current energy → plan.willKO === true
+//   • KO only possible with energy attach → plan chooses to attach
+//   • KO only possible with PlusPower → plan chooses to play PlusPower
+//   • KO only possible via Gust of Wind on weak bench Pokémon
+//   • Winning KO (last prize) preferred over any other plan
+//   • Weakness/resistance correctly applied to damage
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('aiFindBestKOPlan');
+
+// Helper to build a fresh 6-prize array
+function sixPrizes() {
+  return [{ card: {} }, { card: {} }, { card: {} }, { card: {} }, { card: {} }, { card: {} }];
+}
+function onePrize() {
+  return [{ card: {} }, null, null, null, null, null];
+}
+
+// Minimal attacker: Charmander-ish. One attack costing RR, 20 dmg.
+function makeAttacker(overrides = {}) {
+  return {
+    name: 'TestAttacker',
+    hp: '50',
+    damage: 0,
+    types: ['Fire'],
+    attacks: [
+      { name: 'Ember', cost: ['Fire', 'Fire'], damage: '20', text: '' },
+    ],
+    attachedEnergy: [],
+    weaknesses: [],
+    resistances: [],
+    ...overrides,
+  };
+}
+
+function makeDefender(overrides = {}) {
+  return {
+    name: 'TestDefender',
+    hp: '60',
+    damage: 0,
+    types: ['Water'],
+    attacks: [
+      { name: 'Splash', cost: ['Water'], damage: '10', text: '' },
+    ],
+    attachedEnergy: [{ name: 'Water Energy' }],
+    weaknesses: [],
+    resistances: [],
+    ...overrides,
+  };
+}
+
+function makeState(p2Overrides = {}, p1Overrides = {}) {
+  const p2 = {
+    active: null,
+    bench: [null, null, null, null, null],
+    hand: [],
+    discard: [],
+    prizes: sixPrizes(),
+    ...p2Overrides,
+  };
+  const p1 = {
+    active: null,
+    bench: [null, null, null, null, null],
+    hand: [],
+    discard: [],
+    prizes: sixPrizes(),
+    ...p1Overrides,
+  };
+  return { p2, p1 };
+}
+
+// The planner reads the global G for energyPlayedThisTurn and evolvedThisTurn.
+// Stub it before running any planner tests.
+global.G = { energyPlayedThisTurn: false, evolvedThisTurn: [], players: {} };
+
+// ── CASE: unaffordable attack with no energy in hand → no KO plan ────────────
+{
+  const { p2, p1 } = makeState(
+    { active: makeAttacker({ attachedEnergy: [] }) }, // no energy attached
+    { active: makeDefender() }                         // defender still up
+  );
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('No KO plan when attack is unaffordable and no energy in hand',
+    plan === null || !plan.willKO);
+}
+
+// ── CASE: direct KO with energy already attached ─────────────────────────────
+{
+  // Attacker has [F,F] attached; defender has 20 HP left — Ember (20) KOs.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const { p2, p1 } = makeState({ active: attacker }, { active: defender });
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Direct KO: plan exists', plan !== null);
+  assert('Direct KO: plan.willKO is true', plan?.willKO === true);
+  assertEqual('Direct KO: no energy attach needed',
+    plan?.attachList?.length || 0, 0);
+  assertEqual('Direct KO: no PlusPower needed',
+    plan?.plusPowerCount, 0);
+}
+
+// ── CASE: KO requires attaching one more energy ──────────────────────────────
+{
+  // Attacker has [F] attached, needs [F,F]. Has a Fire Energy in hand.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [{ supertype: 'Energy', name: 'Fire Energy' }],
+    discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.energyPlayedThisTurn = false;
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('KO-needs-attach: plan exists', plan !== null);
+  assert('KO-needs-attach: plan.willKO is true', plan?.willKO === true);
+  assertEqual('KO-needs-attach: 1 energy attach in plan',
+    plan?.attachList?.length, 1);
+  assertEqual('KO-needs-attach: attach is Fire Energy',
+    plan?.attachList?.[0]?.name, 'Fire Energy');
+}
+
+// ── CASE: energy already played this turn → planner won't attach ─────────────
+{
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [{ supertype: 'Energy', name: 'Fire Energy' }],
+    discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  global.G.energyPlayedThisTurn = true; // ← already played one!
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Energy already played: no plan attempts to attach',
+    plan === null || (plan.attachList?.length || 0) === 0);
+  assert('Energy already played: no KO plan since we can\'t afford',
+    plan === null || !plan.willKO);
+  global.G.energyPlayedThisTurn = false; // reset for next tests
+}
+
+// ── CASE: KO requires a PlusPower ────────────────────────────────────────────
+{
+  // Defender has 25 HP, attacker does 20. PlusPower adds 10 → 30 → KO.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '25' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [{ supertype: 'Trainer', name: 'PlusPower' }],
+    discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('KO-needs-PP: plan exists', plan !== null);
+  assert('KO-needs-PP: plan.willKO is true', plan?.willKO === true);
+  assertEqual('KO-needs-PP: 1 PlusPower in plan',
+    plan?.plusPowerCount, 1);
+}
+
+// ── CASE: KO via Gust of Wind on weak bench Pokémon ──────────────────────────
+{
+  // Main defender is tanky (60 HP, can't KO). But opponent's bench has a
+  // 20-HP Pokémon. With Gust of Wind, we pull it up and KO it.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const tankyDefender = makeDefender({ hp: '60' });
+  const weakBench = makeDefender({ name: 'WeakBench', hp: '20' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [{ supertype: 'Trainer', name: 'Gust of Wind' }],
+    discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: tankyDefender, bench: [weakBench,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Gust KO: plan exists', plan !== null);
+  assert('Gust KO: plan.willKO is true', plan?.willKO === true);
+  assertEqual('Gust KO: target is bench slot 0',
+    plan?.target?.benchIdx, 0);
+  assert('Gust KO: gust handIdx is populated',
+    plan?.target?.gustHandIdx !== null);
+}
+
+// ── CASE: winning KO (last prize) always wins score comparison ───────────────
+{
+  // Two options: KO tanky active (prizesLeft === 1, so this wins the game) or
+  // hit but not KO. The planner should pick the winning KO.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [],
+    discard: [], prizes: onePrize(), // ← last prize! KO = game win
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Last-prize KO: plan exists', plan !== null);
+  assert('Last-prize KO: wouldWinByPrizes flagged',
+    plan?.wouldWinByPrizes === true);
+  assert('Last-prize KO: score is enormous (> 1M)',
+    (plan?.score || 0) >= 1_000_000);
+}
+
+// ── CASE: KO + empty bench → win by no-Pokemon-left ─────────────────────────
+{
+  // Opponent has only active (no bench). KO'ing it wins the game.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [],
+    discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null], // empty!
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Empty-bench KO: wouldWinByNoPokemon flagged',
+    plan?.wouldWinByNoPokemon === true);
+  assert('Empty-bench KO: score is enormous',
+    (plan?.score || 0) >= 1_000_000);
+}
+
+// ── CASE: weakness doubles damage correctly in planner ──────────────────────
+{
+  // 40-HP Water Pokémon with weakness to Fire. Our Ember does 20 × 2 = 40 → KO.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({
+    hp: '40',
+    weaknesses: [{ type: 'Fire' }],
+  });
+  const p2 = {
+    active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes(),
+  };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Weakness-KO: plan finds the KO via 2x damage',
+    plan?.willKO === true);
+  assertEqual('Weakness-KO: expectedDamage is 40',
+    plan?.expectedDamage, 40);
+}
+
+// ── CASE: paralyzed attacker → no plan (can't attack) ────────────────────────
+{
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+    status: 'paralyzed',
+  });
+  const defender = makeDefender({ hp: '20' });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Paralyzed attacker: no KO plan', plan === null);
+}
+
+// ── CASE: no opponent active → no plan (nothing to target) ───────────────────
+{
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: null, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('No opponent active: no plan', plan === null);
+}
+
+// ── CASE: planner does NOT consider Gust when we already KO current active ──
+{
+  // We can KO the current active — no need to Gust. Planner should NOT spend
+  // the Gust card on a bench pull when a direct KO is available.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender  = makeDefender({ hp: '20' });  // KO-able directly
+  const weakBench = makeDefender({ name: 'WeakBench', hp: '20' });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [{ supertype: 'Trainer', name: 'Gust of Wind' }],
+    discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [weakBench,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Gust not wasted: plan picks direct KO over Gust KO',
+    plan?.target?.benchIdx === null);
+  assertEqual('Gust not wasted: gustHandIdx is null',
+    plan?.target?.gustHandIdx, null);
+}
+
+// ── CASE: Defender on target: plan correctly accounts for -20 reduction ─────
+{
+  // Defender has 25 HP, is holding Defender (reduces damage by 20). Our 20-dmg
+  // attack gets reduced to 0 → can't KO. Planner must detect the non-KO.
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '25', defender: true });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  // With 20-dmg attack and Defender (-20), damage is 0 → not a KO plan.
+  // Planner may return null (no useful attack) or a plan with willKO false.
+  assert('Defender on target: no KO plan (damage reduced to 0)',
+    plan === null || !plan.willKO);
+}
+
+// ── CASE: Invisible Wall blocks ≥30 damage attacks in planner ────────────────
+{
+  // Target has Mr. Mime's Invisible Wall. Our 20-dmg attack gets doubled to
+  // 40 by weakness — blocked entirely. Planner should NOT think it KOs.
+  // We stub hasInvisibleWall as a global just for this case.
+  const originalIWall = global.hasInvisibleWall;
+  global.hasInvisibleWall = (card) => card?.name === 'MrMime';
+
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({
+    name: 'MrMime',
+    hp: '20',
+    weaknesses: [{ type: 'Fire' }], // would make dmg = 40 = blocked
+  });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('Invisible Wall: planner does NOT claim a KO on blocked attack',
+    plan === null || !plan.willKO);
+
+  global.hasInvisibleWall = originalIWall; // restore
+}
+
+// ── CASE: under Invisible Wall, a 20-damage (non-blocked) plan is fine ──────
+{
+  // Target has Invisible Wall but our attack deals 20 (< 30) so it goes
+  // through. Defender has 20 HP → KO.
+  const originalIWall = global.hasInvisibleWall;
+  global.hasInvisibleWall = (card) => card?.name === 'MrMime';
+
+  const attacker = makeAttacker({
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ name: 'MrMime', hp: '20' });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  assert('IWall allows <30 damage: plan KOs the 20 HP Mr. Mime',
+    plan?.willKO === true);
+
+  global.hasInvisibleWall = originalIWall; // restore
+}
+
+// ── CASE: prize-race suicide — opponent on last prize, our KO leaves us dead ─
+{
+  // We can KO their active, but their bench has a big threat that will KO us
+  // back. Since THEY are on their last prize — wait, they're NOT on their
+  // last prize. WE are on their last prize means: we drop to 0 prizes = we win.
+  // For the suicide case: oppPrizesLeft === 1 means if OUR attacker dies, the
+  // opponent takes their last prize and wins. In that case, the -200k penalty
+  // applies. But the KO also gives us a prize — if MY prizesLeft === 1 too,
+  // we win first (wouldWinByPrizes dominates).
+  //
+  // So: opp on last prize, we're not, KO puts us at risk of counter-KO.
+  //   - Plan A: KO → takes 1 prize (we're at 5). Counter-KO possible.
+  //     If counter happens, opp takes their last prize. OPP WINS.
+  //     score = 100k (KO) - 200k (suicide with opp on last) = -100k
+  //   - Plan B (hypothetical non-KO): no KO, no suicide → score = damage only.
+  //
+  // But our planner only returns the BEST plan, and a KO plan with negative
+  // score might still be the only KO plan. The test should verify that when a
+  // non-KO safe plan exists alongside a suicide KO plan, the suicide is not
+  // preferred. In v1 though, we only return the single best plan and the
+  // aiTakeTurn caller checks `willKO` — non-KO plans fall through.
+  //
+  // So the correct test: in a suicide scenario, the score should reflect the
+  // penalty (negative or near-zero), so the aiTakeTurn caller can make its
+  // own decision about whether to commit. We verify the score is penalized.
+  const attacker = makeAttacker({
+    hp: '30', damage: 20, // only 10 HP left → any counter KOs us
+    attachedEnergy: [{ name: 'Fire Energy' }, { name: 'Fire Energy' }],
+  });
+  const defender = makeDefender({ hp: '20' });
+  // Opponent has a bench Pokémon with an attack ready to one-shot us
+  const oppBench = makeDefender({
+    name: 'Heavy',
+    hp: '80',
+    attacks: [
+      { name: 'Smash', cost: ['Water'], damage: '50', text: '' },
+    ],
+    attachedEnergy: [{ name: 'Water Energy' }],
+  });
+  const p2 = { active: attacker, bench: [null,null,null,null,null],
+    hand: [], discard: [], prizes: sixPrizes() };
+  const p1 = { active: defender, bench: [oppBench,null,null,null,null],
+    hand: [], discard: [], prizes: onePrize() }; // ← opp on last prize
+  global.G.players = { 1: p1, 2: p2 };
+  const plan = _aiFindBestKOPlan(p2, p1);
+  // Plan still KOs — but score reflects the suicide penalty.
+  assert('Suicide-KO on opp last prize: plan exists (still a KO)',
+    plan !== null && plan.willKO === true);
+  assert('Suicide-KO on opp last prize: score is penalized (< 100k)',
+    (plan?.score || 0) < 100_000);
+}
+
 
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
