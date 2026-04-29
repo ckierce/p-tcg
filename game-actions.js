@@ -1011,14 +1011,19 @@ async function applyDamageModifiers(dmg, atk, player, myActive, oppActive) {
   }
 
   // Transparency (Haunter): flip — heads = prevent all effects including damage
+  // Per WotC ruling, Transparency mirrors Agility — it only blocks effects
+  // "done TO" Haunter. Self-effects on the attacker (Fetch's draw, recoil)
+  // and bench effects still apply. We mark the same atk._defenderEffectsBlocked
+  // flag so move-effects.js / parseStatusEffects skip defender-targeting bits.
   let transparencyBlocked = false;
   if (typeof isPowerActive === 'function' && isPowerActive(oppActive, 'Transparency')) {
-    const transpHeads = await flipCoin(`Transparency: Heads = prevent ALL effects on ${oppActive.name} (including damage)!`);
+    const transpHeads = await flipCoin(`Transparency: Heads = prevent effects on ${oppActive.name} (including damage)!`);
     if (transpHeads) {
-      addLog(`Transparency: HEADS — all damage and attack effects prevented!`, true);
-      showBlockedFlash(player, myActive?.name || '?', atk.name, `TRANSPARENCY — all effects prevented`);
+      addLog(`Transparency: HEADS — damage and effects on ${oppActive.name} prevented!`, true);
+      showBlockedFlash(player, myActive?.name || '?', atk.name, `TRANSPARENCY — defender protected`);
       dmg = 0;
       transparencyBlocked = true;
+      atk._defenderEffectsBlocked = true;
     } else {
       addLog(`Transparency: TAILS — attack applies normally.`);
     }
@@ -1066,7 +1071,9 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
 
     const modResult = await applyDamageModifiers(dmg, atk, player, myActive, oppActive);
     dmg = modResult.dmg;
-    if (modResult.transparencyBlocked) atk._transparencyBlocked = true;
+    // Note: applyDamageModifiers sets atk._defenderEffectsBlocked directly
+    // when Transparency is heads — same flag the Agility/Barrier branch in
+    // performAttack uses. There's no separate _transparencyBlocked anymore.
 
     // Damage modifiers (Kabuto Armor, Transparency, Defender, Invisible Wall, Pounce)
     // have already been applied by applyDamageModifiers above.
@@ -1229,26 +1236,35 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
   }
 
   // ── Smokescreen / Sand Attack: "If Defending Pokémon tries to attack next turn, flip coin; tails = does nothing" ──
+  // Defender-targeting: skipped if Agility/Barrier/Transparency block defender effects.
   const smokescreenMatch = (atk.text || '').match(/if the defending pok[eé]mon tries to attack next turn[^.]*flip a coin[^.]*tails[^.]*does nothing/i)
     || (atk.text || '').match(/defending pok[eé]mon.+attack next turn.+tails.+does nothing/i);
-  if (smokescreenMatch && oppActive) {
+  if (smokescreenMatch && oppActive && !atk._defenderEffectsBlocked) {
     oppActive.smokescreened = true;
     addLog(`${atk.name}: ${oppActive.name} must flip before attacking next turn — tails = no attack!`, true);
+  } else if (smokescreenMatch && oppActive && atk._defenderEffectsBlocked) {
+    addLog(`${atk.name}: ${oppActive.name} is protected — Smokescreen effect prevented.`);
   }
 
   // ── Leer / "The Defending Pokémon can't retreat during your opponent's next turn" ──
+  // Defender-targeting: skipped if defender effects are blocked.
   const leerMatch = (atk.text || '').match(/defending pok[eé]mon can.t retreat/i);
-  if (leerMatch && oppActive) {
+  if (leerMatch && oppActive && !atk._defenderEffectsBlocked) {
     oppActive.cantRetreat = true;
     addLog(`${atk.name}: ${oppActive.name} cannot retreat next turn!`, true);
+  } else if (leerMatch && oppActive && atk._defenderEffectsBlocked) {
+    addLog(`${atk.name}: ${oppActive.name} is protected — retreat-block prevented.`);
   }
 
   // ── Tail Whip / Growl / "Defending Pokémon's attacks do N less damage" ──
+  // Defender-targeting: skipped if defender effects are blocked.
   const growlMatch = (atk.text || '').match(/defending pok[eé]mon.s attacks do (\d+) less damage/i);
-  if (growlMatch && oppActive) {
+  if (growlMatch && oppActive && !atk._defenderEffectsBlocked) {
     const reduction = parseInt(growlMatch[1]);
     oppActive.attackReduction = (oppActive.attackReduction || 0) + reduction;
     addLog(`${atk.name}: ${oppActive.name}'s attacks do ${reduction} less damage next turn!`, true);
+  } else if (growlMatch && oppActive && atk._defenderEffectsBlocked) {
+    addLog(`${atk.name}: ${oppActive.name} is protected — attack-reduction prevented.`);
   }
 
   // ── Disable: canonical implementation lives in MOVE_EFFECTS['Amnesia'] (move-effects.js).
@@ -1296,14 +1312,25 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     }
   }
 
-  // Parse and apply status effects — skip if the dispatch table already handled them,
-  // or if Transparency blocked all effects this attack.
+  // Parse and apply status effects — skip the whole block if the dispatch
+  // table already handles this attack. Otherwise, parse effects and skip the
+  // non-self ones when the defender has full-effect protection (Transparency
+  // heads, Agility/Barrier heads). Self-targeting status effects (e.g.
+  // Vileplume's Petal Dance self-Confused) still apply because they are not
+  // "done TO" the defender.
   const _handledByDispatch = typeof applyMoveEffects === 'function' &&
     typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name];
-  const effects = (_handledByDispatch || atk._transparencyBlocked) ? [] : parseStatusEffects(atk.text || '');
+  const effects = _handledByDispatch ? [] : parseStatusEffects(atk.text || '');
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
     if (!target) continue;
+
+    // Defender protection (Agility/Barrier/Transparency): block only non-self
+    // status effects. Self-targeting effects on the attacker still apply.
+    if (atk._defenderEffectsBlocked && !eff.self) {
+      addLog(`${atk.name}: ${oppActive?.name || 'defender'} is protected — status effect prevented.`);
+      continue;
+    }
 
     // If resolveCoinFlipDamage already handled this attack's coin flip,
     // skip any status effects that require their own coin flip (they would be double-flipping
@@ -1415,14 +1442,30 @@ async function performAttack(player, atk) {
     }
   }
 
-  // ── Opponent full-effect immunity (Agility/Barrier heads, Tail Wag heads) ────
-  // defenderFull alone (Withdraw/Stiffen) only blocks damage — attack still proceeds
+  // ── Opponent full-effect immunity (Agility/Barrier heads) ───────────────────
+  // Per WotC ruling (compendium-bw.html): Agility/Transparency only block
+  // effects "done TO" the defending Pokémon — they do NOT block self-effects
+  // on the attacker (Fetch's draw, Thrash recoil, Selfdestruct), nor effects
+  // on the bench, hand, or deck. So instead of short-circuiting here, we set
+  // a flag the rest of the pipeline reads:
+  //   - applyDamageModifiers (defenderFull) zeroes damage to the defender.
+  //   - parseStatusEffects loop skips non-self status effects.
+  //   - applyMoveEffects skips dispatch entries flagged targetsDefender.
+  //   - Mixed-target handlers (Foul Odor, Mirror Move, Metronome) check
+  //     atk._defenderEffectsBlocked themselves to skip only the defender bit.
+  //
+  // immuneToAttack (Tail Wag / Leer heads) is different: that flag DOES
+  // short-circuit the entire attack — the rule says the opponent can't attack
+  // this Pokémon at all, so the attack just doesn't happen.
   if (oppActive?.defenderFullEffects) {
-    addLog(`${oppActive.name} is fully protected — ${myActive?.name}'s attack has no effect!`, true);
+    atk._defenderEffectsBlocked = true;
+    addLog(`${oppActive.name} is fully protected — effects on it are prevented (attack still proceeds).`, true);
     showToast(`${oppActive.name} is protected!`, true);
-    showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} FULLY PROTECTED`);
-    endTurn();
-    return;
+    // No flash here — the damage pipeline shows FULLY PROTECTED via
+    // applyDamageModifiers when dmg > 0, and individual handlers log their
+    // own "X effect prevented" messages when dmg == 0. Adding a flash here
+    // would cause a 5+ second double-flash on every Agility'd attack.
+    // fall through — the attack still resolves; protected flag handles the rest
   }
   if (oppActive?.immuneToAttack) {
     addLog(`${oppActive.name} cannot be attacked this turn!`, true);

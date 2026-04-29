@@ -2,11 +2,24 @@
 // MOVE-EFFECTS.JS — Name-keyed dispatch table for Pokémon TCG special attacks
 //
 // Each entry in MOVE_EFFECTS maps an attack name (exactly as in cards.json) to
-// an object with up to three optional hooks:
+// an object with up to three optional hooks plus an optional metadata flag:
 //
 //   preAttack(ctx)      — runs BEFORE damage. Return 'block' to cancel attack.
 //   modifyDamage(ctx)   — runs AFTER coin-flip damage, BEFORE W/R. Return new dmg.
 //   postAttack(ctx)     — runs AFTER damage + KO check. Return true to skip endTurn.
+//   targetsDefender     — true if postAttack ONLY does things to the opponent's
+//                         Active Pokémon (status, energy discard, smokescreen,
+//                         disable, etc.). When the defender has Agility/Barrier
+//                         heads or Transparency heads (both surfaced as
+//                         `atk._defenderEffectsBlocked`), `applyMoveEffects`
+//                         will skip handlers flagged this way — per WotC ruling
+//                         that these effects only block things "done TO" the
+//                         defender, NOT self-effects on the attacker (Fetch,
+//                         drains, etc.) nor effects on the bench. If a handler
+//                         does BOTH (e.g. Foul Odor confuses both, Mirror Move
+//                         reflects damage), leave this flag off and check
+//                         `atk._defenderEffectsBlocked` INSIDE the handler to
+//                         skip only the defender-targeting portion.
 //
 // ctx always contains: { player, opp, atk, dmg, dmgDealt, myActive, oppActive }
 //
@@ -22,6 +35,7 @@
 
 // No-flip status on opponent
 const _statusOpp = (status) => ({
+  targetsDefender: true,
   postAttack: async ({ oppActive, atk }) => {
     if (!oppActive) return;
     tryApplyStatus(oppActive, status);
@@ -31,6 +45,7 @@ const _statusOpp = (status) => ({
 
 // Flip → heads = status on opponent
 const _statusOppFlip = (status) => ({
+  targetsDefender: true,
   postAttack: async ({ oppActive, atk }) => {
     if (!oppActive) return;
     const heads = await flipCoin(`${atk.name}: Heads = ${oppActive.name} is now ${status}!`);
@@ -136,6 +151,7 @@ const _drain = (fraction) => ({
 // landed, not whoever is currently active (which may be null if KO'd or
 // different if a switch happened mid-attack).
 const _discardOppEnergy = () => ({
+  targetsDefender: true,
   postAttack: async ({ opp, oppActive, atk }) => {
     // oppActive is the snapshot passed from performAttack. Fall back to current
     // active only if the snapshot is somehow missing.
@@ -160,6 +176,7 @@ const _discardOppEnergy = () => ({
 
 // Smokescreen / Sand-attack: opponent must flip to attack next turn (tails = does nothing)
 const _smokescreen = () => ({
+  targetsDefender: true,
   postAttack: async ({ oppActive, atk }) => {
     if (!oppActive) return;
     oppActive.smokescreened = true;
@@ -386,6 +403,7 @@ const MOVE_EFFECTS = {
 
   // Acid (Victreebel): flip — heads = can't retreat next turn
   'Acid': {
+    targetsDefender: true,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
       const heads = await flipCoin(`${atk.name}: Heads = ${oppActive.name} can't retreat next turn!`);
@@ -403,7 +421,14 @@ const MOVE_EFFECTS = {
   // `oppActive.attacks` directly would be empty and the disable would silently
   // no-op. Use `dittoAttacks(opp)` which returns the copied attack list when
   // Transform is active; fall back to the intrinsic list otherwise.
+  //
+  // Cancel behaviour: if the player opens the picker (i.e. opp has 2+ attacks)
+  // and clicks Cancel, treat the whole attack as not-yet-resolved and return
+  // `true` so performAttack skips endTurn. Amnesia does no damage and discards
+  // no energy, so backing out leaves the game state where it was — the player
+  // can attack again or take some other action this turn.
   'Amnesia': {
+    targetsDefender: true,
     postAttack: async ({ opp, oppActive, atk }) => {
       if (!oppActive) return;
       const effectiveAttacks =
@@ -422,7 +447,13 @@ const MOVE_EFFECTS = {
           cards: effectiveAttacks.map(a => ({ name: a.name, images: oppActive.images })),
           maxSelect: 1
         });
-        if (picked && picked.length) atkName = effectiveAttacks[picked[0]].name;
+        if (!picked) {
+          // Picker was cancelled — abort the whole attack so the turn isn't spent.
+          addLog(`${atk.name}: cancelled — turn not used.`);
+          if (typeof showToast === 'function') showToast(`${atk.name} cancelled.`);
+          return true;
+        }
+        if (picked.length) atkName = effectiveAttacks[picked[0]].name;
       }
       if (atkName) { oppActive.disabledAttack = atkName; addLog(`${atk.name}: ${oppActive.name}'s ${atkName} disabled next turn!`, true); }
     }
@@ -518,7 +549,10 @@ const MOVE_EFFECTS = {
   // Clamp (Cloyster): single flip — heads = full damage + Paralyzed; tails = 0 damage, no effect
   // Must be in MOVE_EFFECTS so engine Pattern 3 (tails=no damage) doesn't fire a separate flip,
   // and parseStatusEffects doesn't fire a third flip.
+  // targetsDefender: postAttack only paralyzes the defender. Damage is already
+  // handled by the normal pipeline (and zeroed by defenderFull when applicable).
   'Clamp': {
+    targetsDefender: true,
     modifyDamage: async ({ atk }) => {
       const heads = await flipCoin('Clamp: Heads = damage + Paralyzed, Tails = does nothing');
       atk._clampHeads = heads;
@@ -658,10 +692,21 @@ const MOVE_EFFECTS = {
   'Confuse Ray': _statusOppFlip('confused'),
 
   // Conversion 1 (Porygon): change opp's weakness type — preAttack so cancel blocks the turn
+  // If the defender has full effect protection (Agility/Barrier/Transparency),
+  // the conversion can't take — but the attack itself proceeds (still uses the
+  // turn). Per the WotC ruling, those protections only block effects "done TO"
+  // the defender; here, changing the defender's weakness IS done to the defender,
+  // so we skip the conversion but DON'T return 'block' (the player has paid for
+  // and committed to the attack).
   'Conversion 1': {
     preAttack: async ({ opp, atk }) => {
       const oppActive = G.players[opp].active;
       if (!oppActive) return 'block';
+      if (oppActive.defenderFullEffects) {
+        addLog(`${atk.name}: ${oppActive.name} is fully protected — Conversion has no effect.`, true);
+        if (typeof showToast === 'function') showToast(`${oppActive.name} is protected!`);
+        return null; // don't block — attack still resolves (and ends the turn)
+      }
       if (!(oppActive.weaknesses || []).length) { addLog(`${atk.name}: ${oppActive.name} has no Weakness.`); return 'block'; }
       const chosen = await pickType(`${atk.name} — Choose new Weakness type for ${oppActive.name}`);
       if (!chosen || chosen === 'Colorless') return 'block';
@@ -797,6 +842,7 @@ const MOVE_EFFECTS = {
 
   // Foul Gas (Koffing): flip — heads=Poisoned, tails=Confused
   'Foul Gas': {
+    targetsDefender: true,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
       const heads = await flipCoin(`${atk.name}: Heads=Poisoned | Tails=Confused`);
@@ -807,10 +853,19 @@ const MOVE_EFFECTS = {
   },
 
   // Foul Odor (Gloom): both self and opp Confused
+  // Mixed-target: confuses BOTH attacker and defender. When defender has full
+  // effect protection (Agility/Barrier/Transparency), only the self-confusion
+  // applies. We deliberately do NOT set targetsDefender here; instead the
+  // handler inspects atk._defenderEffectsBlocked directly.
   'Foul Odor': {
     postAttack: async ({ myActive, oppActive, atk }) => {
       if (myActive)  { tryApplyStatus(myActive, 'confused');  addLog(`${atk.name}: ${myActive.name} is now Confused!`, true); }
-      if (oppActive) { tryApplyStatus(oppActive, 'confused'); addLog(`${atk.name}: ${oppActive.name} is now Confused!`, true); }
+      if (oppActive && !atk._defenderEffectsBlocked) {
+        tryApplyStatus(oppActive, 'confused');
+        addLog(`${atk.name}: ${oppActive.name} is now Confused!`, true);
+      } else if (oppActive && atk._defenderEffectsBlocked) {
+        addLog(`${atk.name}: ${oppActive.name} is protected — Confused effect blocked.`);
+      }
     }
   },
 
@@ -856,6 +911,7 @@ const MOVE_EFFECTS = {
 
   // Hurricane (Pidgeot): return opp + all attachments + pre-evos to hand (unless KO'd)
   'Hurricane': {
+    targetsDefender: true,
     postAttack: async ({ opp, player, atk }) => {
       const oppP = G.players[opp];
       const oppActive = oppP.active;
@@ -952,6 +1008,10 @@ const MOVE_EFFECTS = {
   'Mega Drain': _drain(0.5),
 
   // Metronome (Clefairy/Clefable): copy opp's attack including its effects
+  // When the defender has full effect protection (Agility/Barrier/Transparency),
+  // the copied attack's damage AND effects on the defender are also blocked.
+  // We propagate the flag onto the copied attack so its postAttack handler
+  // (and any of our internal _defenderEffectsBlocked checks) honour it.
   'Metronome': {
     postAttack: async ({ player, opp, myActive, atk }) => {
       const oppActive = G.players[opp].active;
@@ -975,6 +1035,9 @@ const MOVE_EFFECTS = {
         });
       }
       if (!chosenAtk) return;
+      // Propagate defender-protection flags onto the copied attack so its own
+      // postAttack respects them (Agility/Barrier/Transparency on defender).
+      if (atk._defenderEffectsBlocked) chosenAtk._defenderEffectsBlocked = true;
       addLog(`${atk.name}: copying ${oppActive.name}'s ${chosenAtk.name}!`, true);
       const energyCount = (myActive?.attachedEnergy || []).length;
       const coinDmg = await resolveCoinFlipDamage(chosenAtk, energyCount, myActive, player);
@@ -982,6 +1045,11 @@ const MOVE_EFFECTS = {
       // Apply damage scaling from dispatch table
       const copyEffect = MOVE_EFFECTS[chosenAtk.name];
       if (copyEffect?.modifyDamage) dmg = copyEffect.modifyDamage({ player, opp, atk: chosenAtk, dmg, myActive, oppActive }) ?? dmg;
+      // Defender protection zeroes the copied damage (Agility/Barrier/Transparency).
+      if (dmg > 0 && (oppActive.defenderFull || atk._defenderEffectsBlocked)) {
+        addLog(`${atk.name}: ${oppActive.name} is fully protected — copied damage prevented.`);
+        dmg = 0;
+      }
       if (dmg > 0) {
         const currentOpp = G.players[opp].active;
         if (currentOpp) {
@@ -991,10 +1059,16 @@ const MOVE_EFFECTS = {
           if (koResult === 'win') { renderAll(); return true; }
         }
       }
-      // Apply copied attack's post effects
+      // Apply copied attack's post effects — but skip defender-targeting ones
+      // when blocked, matching the same rule applyMoveEffects uses.
       if (copyEffect?.postAttack) {
-        const currentOpp2 = G.players[opp].active;
-        await copyEffect.postAttack({ player, opp, atk: chosenAtk, dmgDealt: dmg, myActive, oppActive: currentOpp2 });
+        const skipForDefenderBlock = atk._defenderEffectsBlocked && copyEffect.targetsDefender;
+        if (skipForDefenderBlock) {
+          addLog(`${atk.name}: ${chosenAtk.name}'s effect on ${oppActive.name} is prevented.`);
+        } else {
+          const currentOpp2 = G.players[opp].active;
+          await copyEffect.postAttack({ player, opp, atk: chosenAtk, dmgDealt: dmg, myActive, oppActive: currentOpp2 });
+        }
       }
       renderAll();
     }
@@ -1010,12 +1084,20 @@ const MOVE_EFFECTS = {
   },
 
   // Mirror Move (Pidgeotto/Spearow): reflect last attack taken back at opponent
+  // Mixed-target: the reflected damage is done TO the defender, so when the
+  // defender has full effect protection (Agility/Barrier/Transparency), the
+  // reflected damage doesn't apply. We don't use targetsDefender here because
+  // we still want to log the "no last attack" / "reflecting X" message.
   'Mirror Move': {
     postAttack: async ({ player, opp, myActive, atk }) => {
       const lastAtk = G.lastAttackOnPlayer?.[player];
       if (!lastAtk) { addLog(`${atk.name}: ${myActive?.name} was not attacked last turn.`); return; }
       addLog(`${atk.name}: reflecting ${lastAtk.attackName} back!`, true);
       if (lastAtk.damage > 0) {
+        if (atk._defenderEffectsBlocked) {
+          addLog(`${atk.name}: defender is protected — reflected damage prevented.`);
+          return;
+        }
         const currentOpp = G.players[opp].active;
         if (currentOpp) {
           currentOpp.damage = (currentOpp.damage || 0) + lastAtk.damage;
@@ -1060,6 +1142,7 @@ const MOVE_EFFECTS = {
   // Per card text: Ivysaur/Tangela/Gloom say "The Defending Pokémon is now Poisoned."
   //                Kakuna/Weepinbell say "Flip a coin. If heads, the Defending Pokémon is now Poisoned."
   'Poisonpowder': {
+    targetsDefender: true,
     postAttack: async ({ myActive, oppActive, atk }) => {
       const flipCards = ['Kakuna', 'Weepinbell'];
       if (flipCards.includes(myActive?.name)) {
@@ -1320,6 +1403,7 @@ const MOVE_EFFECTS = {
 
   // Toxic (Nidoking): heavy poison — 20 damage per turn instead of 10
   'Toxic': {
+    targetsDefender: true,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
       oppActive.status = 'poisoned-toxic';
@@ -1329,6 +1413,7 @@ const MOVE_EFFECTS = {
 
   // Venom Powder (Venomoth): flip — heads = Confused AND Poisoned
   'Venom Powder': {
+    targetsDefender: true,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
       const heads = await flipCoin(`${atk.name}: Heads = Confused AND Poisoned!`);
@@ -1392,6 +1477,16 @@ async function preDamageModify(player, atk, dmg, myActive, oppActive) {
 async function applyMoveEffects(player, atk, dmgDealt, myActive, oppActive) {
   const effect = MOVE_EFFECTS[atk.name];
   if (!effect?.postAttack) return;
+  // Defender protection (Agility/Barrier heads, Transparency heads) blocks
+  // effects "done TO" the defender's Active. If this handler is declared
+  // targetsDefender, skip the whole postAttack — but log so the player sees
+  // why nothing happened. Mixed-target handlers (Foul Odor, Mirror Move,
+  // Metronome) leave the flag off and check atk._defenderEffectsBlocked
+  // internally to skip only the defender-targeting portion.
+  if (atk._defenderEffectsBlocked && effect.targetsDefender) {
+    addLog(`${atk.name}: ${oppActive?.name || 'defender'} is fully protected — effect prevented.`, true);
+    return;
+  }
   return effect.postAttack({ player, opp: player === 1 ? 2 : 1, atk, dmgDealt, myActive, oppActive });
 }
 

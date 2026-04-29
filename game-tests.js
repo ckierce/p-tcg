@@ -4062,6 +4062,349 @@ function mkWaterAttacker(overrides = {}) {
     score, 280);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Agility/Barrier/Transparency only block effects "done TO" defender
+//
+// Bug 1: Raichu's Agility on heads incorrectly short-circuited the entire
+//        attack — including effects that don't target the defender at all.
+//        Reported scenario: Kangaskhan's Fetch ("Draw a card.") was blocked
+//        by Raichu's Agility, even though Fetch only draws a card for the
+//        attacker. Per WotC ruling (compendium-bw.html, Feb 3 2000):
+//
+//            Q: Does Fearow's Agility attack block Kangaskhan's Fetch?
+//            A: Actually it does not; Fearow's Agility says stops damage
+//               done to Fearow, and the Fetch just draws a card.
+//
+//        And the general rule (also from the compendium):
+//
+//            Crystal Body, Agility, and Haunter's Transparency do NOT
+//            prevent Eeeeeeek!, only effects of attacks that are done
+//            TO them.
+//
+// Fix: replaced the early-return in performAttack (game-actions.js) with a
+//      flag-set: oppActive.defenderFullEffects → atk._defenderEffectsBlocked.
+//      The damage pipeline already zeros damage via defenderFull. The flag
+//      drives downstream logic:
+//        • move-effects.js applyMoveEffects skips handlers flagged
+//          `targetsDefender: true`.
+//        • game-actions.js parseStatusEffects loop skips non-self effects.
+//        • applyPostAttackTextEffects skips defender-targeting clauses
+//          (smokescreen / leer / growl text matches).
+//        • Mixed-target handlers (Foul Odor, Mirror Move, Metronome,
+//          Conversion 1) check the flag inline and skip only the
+//          defender-targeting portion.
+//      Same flag is set when Transparency is heads, since Transparency
+//      mirrors Agility's wording.
+//
+// Bug 2: Poliwhirl's Amnesia opens an attack-picker. Hitting Cancel returned
+//        undefined, the attack fell through to endTurn, and the player lost
+//        their turn for nothing. Per the player's expectation: cancel = no
+//        commitment yet (no damage dealt, no energy paid by Amnesia), so
+//        the turn shouldn't be spent.
+//
+// Fix: Amnesia.postAttack now returns true on cancel, which performAttack
+//      treats as effectBlocked (skipping endTurn).
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('REGRESSION: Agility — _defenderEffectsBlocked dispatch rule');
+
+// Mirrors the rule in move-effects.js applyMoveEffects:
+// when atk._defenderEffectsBlocked is set AND effect.targetsDefender is true,
+// the handler is skipped entirely. Otherwise the handler runs.
+function shouldRunPostAttack(atk, effect) {
+  if (!effect?.postAttack) return false;
+  if (atk._defenderEffectsBlocked && effect.targetsDefender) return false;
+  return true;
+}
+
+{
+  // Defender-targeting handler (e.g. Toxic, Poisonpowder, Smokescreen) is
+  // SKIPPED when Agility/Transparency block defender effects.
+  const atk = { name: 'Toxic', _defenderEffectsBlocked: true };
+  const effect = { targetsDefender: true, postAttack: () => {} };
+  assert('Defender-targeting handler is skipped when defender protected',
+    shouldRunPostAttack(atk, effect) === false);
+}
+
+{
+  // Same handler runs normally when defender is NOT protected.
+  const atk = { name: 'Toxic' /* no _defenderEffectsBlocked */ };
+  const effect = { targetsDefender: true, postAttack: () => {} };
+  assert('Defender-targeting handler runs when defender NOT protected',
+    shouldRunPostAttack(atk, effect) === true);
+}
+
+{
+  // Self-effect handler (e.g. Fetch, Pay Day, Withdraw, Earthquake): runs
+  // even when defender has full-effect protection. This is the bug we fixed.
+  const atk = { name: 'Fetch', _defenderEffectsBlocked: true };
+  const effect = { /* targetsDefender NOT set */ postAttack: () => {} };
+  assert('Self-effect handler (Fetch) runs even when defender protected — THE BUG FIX',
+    shouldRunPostAttack(atk, effect) === true);
+}
+
+{
+  // No effect entry → no postAttack to run.
+  const atk = { name: 'Tackle' };
+  const effect = undefined;
+  assert('No effect entry → nothing to run',
+    shouldRunPostAttack(atk, effect) === false);
+}
+
+section('REGRESSION: Agility — parseStatusEffects loop skips non-self when blocked');
+
+// Mirrors the rule in game-actions.js: when atk._defenderEffectsBlocked is set,
+// non-self status effects are skipped but self-targeting effects still apply.
+function shouldApplyStatusEffect(atk, eff) {
+  if (atk._defenderEffectsBlocked && !eff.self) return false;
+  return true;
+}
+
+{
+  // Non-self status (e.g. "The Defending Pokémon is now Paralyzed."):
+  // SKIPPED when defender is protected.
+  const atk = { _defenderEffectsBlocked: true };
+  const eff = { status: 'paralyzed', self: false };
+  assert('Defender-targeting status effect skipped when defender protected',
+    shouldApplyStatusEffect(atk, eff) === false);
+}
+
+{
+  // Self-status (e.g. Petal Dance: "Vileplume is now Confused."):
+  // RUNS even when defender is protected — self-effects are not "done TO" the defender.
+  const atk = { _defenderEffectsBlocked: true };
+  const eff = { status: 'confused', self: true };
+  assert('Self-targeting status effect (e.g. Petal Dance self-Confused) still applies',
+    shouldApplyStatusEffect(atk, eff) === true);
+}
+
+{
+  // Without protection, all effects apply normally regardless of self/non-self.
+  const atk = {};
+  assert('Unprotected: defender status applies',
+    shouldApplyStatusEffect(atk, { status: 'paralyzed', self: false }) === true);
+  assert('Unprotected: self status applies',
+    shouldApplyStatusEffect(atk, { status: 'confused', self: true }) === true);
+}
+
+section('REGRESSION: targetsDefender flag is set on every defender-only handler');
+
+// Grep-based check: every named handler in move-effects.js whose postAttack
+// ONLY does things to oppActive (status, energy discard, smokescreen, disable,
+// hand-return) MUST have `targetsDefender: true`. Adding a new such handler
+// without the flag is the regression we want to catch.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const meffPath = path.join(__dirname, 'move-effects.js');
+  if (fs.existsSync(meffPath)) {
+    const src = fs.readFileSync(meffPath, 'utf8');
+
+    // Hand-curated list of attack names whose postAttack ONLY targets the
+    // opponent's active (no self-effect, no bench, no hand/deck). If you add
+    // a new attack with the same shape, add it here too.
+    //
+    // Mixed-target handlers (Foul Odor, Mirror Move, Conversion 1, Metronome)
+    // are intentionally NOT in this list — they check the flag inline.
+    const defenderOnlyAttacks = [
+      'Acid', 'Amnesia', 'Clamp', 'Foul Gas', 'Hurricane',
+      'Poisonpowder', 'Toxic', 'Venom Powder',
+    ];
+
+    for (const name of defenderOnlyAttacks) {
+      // Find the entry block: starts with `'Name': {` and continues until the
+      // matching `},` closing brace at the same indent level. We just need to
+      // confirm that `targetsDefender: true` appears between the open brace
+      // and the next `'OtherAttack':` declaration.
+      const startRe = new RegExp(`'${name.replace(/[^\w]/g, '\\$&')}':\\s*\\{`);
+      const startIdx = src.search(startRe);
+      if (startIdx === -1) {
+        assert(`move-effects.js: '${name}' entry exists`, false);
+        continue;
+      }
+      // Slice forward to the next `'SomethingElse':` or end of MOVE_EFFECTS.
+      const after = src.slice(startIdx);
+      const nextEntry = after.slice(1).search(/'\w[\w \-']*':\s*\{/);
+      const block = nextEntry === -1 ? after : after.slice(0, nextEntry + 1);
+      assert(`move-effects.js: '${name}' has targetsDefender: true (defender-only)`,
+        /targetsDefender:\s*true/.test(block));
+    }
+
+    // Also check that the four shared factories carry the flag. The factory
+    // expression assigns targetsDefender as the FIRST property, so we just
+    // grep for the closing pattern.
+    assert('move-effects.js: _statusOpp factory has targetsDefender: true',
+      /_statusOpp\s*=\s*\(status\)\s*=>\s*\(\{\s*targetsDefender:\s*true,/.test(src));
+    assert('move-effects.js: _statusOppFlip factory has targetsDefender: true',
+      /_statusOppFlip\s*=\s*\(status\)\s*=>\s*\(\{\s*targetsDefender:\s*true,/.test(src));
+    assert('move-effects.js: _smokescreen factory has targetsDefender: true',
+      /_smokescreen\s*=\s*\(\)\s*=>\s*\(\{\s*targetsDefender:\s*true,/.test(src));
+    assert('move-effects.js: _discardOppEnergy factory has targetsDefender: true',
+      /_discardOppEnergy\s*=\s*\(\)\s*=>\s*\(\{\s*targetsDefender:\s*true,/.test(src));
+  } else {
+    console.log('  (move-effects.js not found — skipping grep check)');
+  }
+}
+
+section('REGRESSION: Self-effects (Fetch et al.) do NOT have targetsDefender');
+
+{
+  const fs = require('fs');
+  const path = require('path');
+  const meffPath = path.join(__dirname, 'move-effects.js');
+  if (fs.existsSync(meffPath)) {
+    const src = fs.readFileSync(meffPath, 'utf8');
+
+    // Hand-curated: attacks whose postAttack only does self-effects on the
+    // attacker (draw, heal, retrieve, self-status, set self-flag). If any of
+    // these accidentally got targetsDefender, Fetch-through-Agility breaks again.
+    const selfOnlyAttacks = [
+      'Fetch', 'Pay Day', 'Scavenge', 'Energy Conversion', 'Spacing Out',
+      'Leech Seed', 'Petal Dance', 'Rampage', 'Tantrum',
+      'Harden', 'Minimize', 'Pounce', 'Snivel', 'Swords Dance', 'Destiny Bond',
+      'Barrier', 'Teleport', 'Earthquake',
+    ];
+
+    for (const name of selfOnlyAttacks) {
+      const startRe = new RegExp(`'${name.replace(/[^\w]/g, '\\$&')}':\\s*\\{`);
+      const startIdx = src.search(startRe);
+      if (startIdx === -1) continue; // optional — not all of these may exist
+      const after = src.slice(startIdx);
+      const nextEntry = after.slice(1).search(/'\w[\w \-']*':\s*\{/);
+      const block = nextEntry === -1 ? after : after.slice(0, nextEntry + 1);
+      assert(`move-effects.js: '${name}' does NOT have targetsDefender (self-only)`,
+        !/targetsDefender:\s*true/.test(block));
+    }
+  } else {
+    console.log('  (move-effects.js not found — skipping grep check)');
+  }
+}
+
+section('REGRESSION: performAttack defenderFullEffects is no longer a hard short-circuit');
+
+{
+  const fs = require('fs');
+  const path = require('path');
+  const ga = path.join(__dirname, 'game-actions.js');
+  if (fs.existsSync(ga)) {
+    const src = fs.readFileSync(ga, 'utf8');
+
+    // The original buggy block called endTurn() and returned right after
+    // detecting defenderFullEffects. Make sure that exact pattern is gone.
+    // We allow defenderFullEffects to still be referenced (for the flag-set),
+    // but it must NOT be followed within ~6 lines by `endTurn()` + `return;`.
+    const lines = src.split('\n');
+    let regressionFound = false;
+    lines.forEach((line, i) => {
+      if (/oppActive\?.defenderFullEffects/.test(line)) {
+        const window = lines.slice(i, i + 7).join('\n');
+        if (/endTurn\(\);[\s\S]*\breturn;/.test(window)) {
+          regressionFound = true;
+        }
+      }
+    });
+    assert('game-actions.js: defenderFullEffects no longer triggers endTurn+return (Bug 2 fix)',
+      !regressionFound);
+
+    // The flag MUST be set somewhere in the file (Agility branch in
+    // performAttack and Transparency branch in applyDamageModifiers).
+    const flagSetCount = (src.match(/_defenderEffectsBlocked\s*=\s*true/g) || []).length;
+    assert('game-actions.js: atk._defenderEffectsBlocked is set in at least 2 places (Agility + Transparency)',
+      flagSetCount >= 2);
+
+    // The parseStatusEffects loop must check the flag and skip non-self.
+    assert('game-actions.js: parseStatusEffects loop checks _defenderEffectsBlocked && !eff.self',
+      /_defenderEffectsBlocked\s*&&\s*!eff\.self/.test(src));
+
+    // The legacy text-match clauses (smokescreen / leer / growl) must be
+    // gated on the flag too.
+    assert('game-actions.js: smokescreenMatch clause gated on _defenderEffectsBlocked',
+      /smokescreenMatch[\s\S]{0,200}!atk\._defenderEffectsBlocked/.test(src));
+    assert('game-actions.js: leerMatch clause gated on _defenderEffectsBlocked',
+      /leerMatch[\s\S]{0,200}!atk\._defenderEffectsBlocked/.test(src));
+    assert('game-actions.js: growlMatch clause gated on _defenderEffectsBlocked',
+      /growlMatch[\s\S]{0,200}!atk\._defenderEffectsBlocked/.test(src));
+  } else {
+    console.log('  (game-actions.js not found — skipping grep check)');
+  }
+}
+
+section('REGRESSION: Amnesia cancel must return true (not undefined)');
+
+// Models the rule inside MOVE_EFFECTS['Amnesia'].postAttack: when the picker
+// is shown (i.e. opp has 2+ attacks) and the user clicks Cancel (picked=null),
+// the handler returns true so performAttack skips endTurn — letting the
+// player keep their turn. If picker returns indices, attack proceeds normally.
+function amnesiaCancelOutcome(pickerResult) {
+  // pickerResult is what openCardPicker resolves to.
+  //   null            → Cancel button or backdrop dismiss
+  //   [idx, ...]      → user confirmed a selection
+  if (pickerResult === null) {
+    // Bug 1 fix: this MUST be true so performAttack's
+    // `if (effectBlocked === true) return;` short-circuits before endTurn.
+    return true;
+  }
+  // User confirmed → attack resolves; return undefined (attack ends turn).
+  return undefined;
+}
+
+{
+  assert('Amnesia: picker cancelled (null) → handler returns true → endTurn skipped',
+    amnesiaCancelOutcome(null) === true);
+  assert('Amnesia: picker confirmed ([0]) → handler returns undefined → endTurn runs',
+    amnesiaCancelOutcome([0]) === undefined);
+  assert('Amnesia: picker confirmed ([1]) → handler returns undefined → endTurn runs',
+    amnesiaCancelOutcome([1]) === undefined);
+}
+
+// Grep-based check: the actual handler in move-effects.js must contain a
+// branch that returns true after the picker resolves to falsy.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const meffPath = path.join(__dirname, 'move-effects.js');
+  if (fs.existsSync(meffPath)) {
+    const src = fs.readFileSync(meffPath, 'utf8');
+    // Locate the Amnesia entry block.
+    const startIdx = src.indexOf("'Amnesia':");
+    assert("move-effects.js: 'Amnesia' entry exists", startIdx !== -1);
+    if (startIdx !== -1) {
+      const block = src.slice(startIdx, startIdx + 2500);
+      // The entry must contain a `return true;` statement (the cancel branch).
+      assert("move-effects.js: Amnesia handler contains a 'return true;' branch (cancel path)",
+        /return\s+true;/.test(block));
+      // And the cancel branch must be guarded by !picked or picked === null
+      // pattern to avoid firing on confirmed selections.
+      assert("move-effects.js: Amnesia 'return true' is guarded by !picked check",
+        /if\s*\(\s*!picked\s*\)[\s\S]{0,400}return\s+true;/.test(block));
+    }
+  } else {
+    console.log('  (move-effects.js not found — skipping grep check)');
+  }
+}
+
+section('REGRESSION: Amnesia keeps targetsDefender flag (disable IS done to defender)');
+
+// The fix-Bug-1 code path returns true on cancel (skipping endTurn), but the
+// success path still applies a state change to oppActive (disabledAttack).
+// That state change IS done to the defender, so Amnesia must also be flagged
+// targetsDefender so Agility/Transparency block the disable attempt entirely.
+// (Already covered by the defender-only grep above, but locked here too.)
+{
+  const fs = require('fs');
+  const path = require('path');
+  const meffPath = path.join(__dirname, 'move-effects.js');
+  if (fs.existsSync(meffPath)) {
+    const src = fs.readFileSync(meffPath, 'utf8');
+    const startIdx = src.indexOf("'Amnesia':");
+    if (startIdx !== -1) {
+      const block = src.slice(startIdx, startIdx + 2500);
+      assert("move-effects.js: Amnesia entry has targetsDefender: true",
+        /targetsDefender:\s*true/.test(block));
+    }
+  }
+}
+
 
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
