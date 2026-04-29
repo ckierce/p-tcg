@@ -4285,11 +4285,27 @@ function receiveGameState(state) {
       }
       // Phase advances to MAIN once we've drawn (matches drawCard's behavior)
       G.phase = 'MAIN';
-      // Push the post-draw state so the host sees our authoritative hand/deck.
-      // (renderHands/updateDeckCounts below will trigger renderAll's push too,
-      // but pushing explicitly here makes the timing tight and the intent clear.)
-      pushGameState();
     }
+  }
+
+  // ── Push authoritative state on SETUP→DRAW transition ─────────────────────
+  // Whenever we receive the SETUP→DRAW transition (regardless of whose turn it
+  // is), we MUST push our own authoritative state back to Firebase. The host's
+  // (P1's) snapshot of our private zones is stale because during SETUP we only
+  // pushed setup_p2 = {active, bench} — never our hand/deck mutations. The
+  // protection block above keeps OUR view correct on this receive, but the
+  // host still believes our hand is the original 7-card deal. As soon as the
+  // host takes any action (plays a Trainer, attaches energy, ends turn) and
+  // pushes state, the stale 7-card hand reappears on our screen — placed
+  // Pokémon back in hand, total cards exceed 60.
+  //
+  // Pushing here gives the host an authoritative copy of our private zones
+  // BEFORE they take any action, so subsequent host pushes carry the correct
+  // hand/deck/discard. Required for both firstPlayer cases (we just drew) and
+  // non-firstPlayer cases (we didn't draw, but our placed-card splices still
+  // need to propagate).
+  if (wasStarted && wasSetup && G.phase !== 'SETUP' && myRole !== null) {
+    pushGameState();
   }
 
   // Hide setup screen and show board

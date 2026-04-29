@@ -1021,6 +1021,68 @@ function mergeIncomingForReceiver(localG, incomingState, myRole) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: P2 must push authoritative state on SETUP→DRAW receive
+//
+// Bug: protecting P2's local hand at the SETUP→DRAW transition (the test above)
+// is necessary but NOT sufficient. After the protection block fires, P2's local
+// view is correct — but the host (P1) still has stale snapshots of P2's
+// hand/deck/discard. As soon as P1 takes ANY action and pushes state (plays
+// Bill, attaches energy, ends turn), the stale 7-card hand round-trips back to
+// P2 because at that point wasSetup=false on P2's client and the protection
+// block no longer fires. The placed Pokémon reappear in P2's hand, and the
+// total card count exceeds 60.
+//
+// Symptom (April 2026): P2 sees their placed Pokémon back in hand "immediately
+// during first turn" — specifically the moment P1's first state push lands.
+//
+// Fix: regardless of who is firstPlayer, P2 MUST push their authoritative state
+// to Firebase as part of receiveGameState's SETUP→DRAW transition handling.
+// The OLD code only pushed if P2 was firstPlayer (via the local-opening-draw
+// block); the NEW code unconditionally pushes whenever wasStarted && wasSetup
+// && incoming-phase !== SETUP, ensuring the host learns our actual private
+// zones BEFORE acting on (and re-pushing) its stale view.
+//
+// This test is structural — it asserts the fix is present in receiveGameState
+// by reading the source. We can't easily simulate the async Firebase race in a
+// unit test, but we can lock down the requirement that the push must fire
+// unconditionally on this transition (not gated by G.turn === myRole).
+// ═══════════════════════════════════════════════════════════════════════════════
+console.log('\n── regression: SETUP→DRAW receive must push authoritative state ─');
+{
+  const fs = require('fs');
+  const html = fs.readFileSync('pokemon-game.html', 'utf8');
+
+  // Find the receiveGameState body (between its opening brace and the next
+  // top-level function declaration).
+  const startIdx = html.indexOf('function receiveGameState(state)');
+  assert('receiveGameState exists in pokemon-game.html', startIdx !== -1);
+  // Walk forward until we hit the next `function ` at column 0 — that's
+  // the end of receiveGameState.
+  const tail = html.slice(startIdx);
+  const nextFnIdx = tail.search(/\nfunction\s+\w+\s*\(/);
+  const body = nextFnIdx === -1 ? tail : tail.slice(0, nextFnIdx);
+
+  // Look for an UNCONDITIONAL pushGameState() call gated only by
+  // (wasStarted && wasSetup && incoming-not-SETUP && myRole !== null).
+  // The gate must NOT include a turn-owner check, because that was the
+  // original (buggy) gate.
+  //
+  // We check for a block that looks like:
+  //   if (wasStarted && wasSetup && ... !== 'SETUP' ... && myRole !== null) {
+  //     pushGameState();
+  //   }
+  // and we also check that this block does NOT also require G.turn === myRole.
+  const pushBlockRegex = /if\s*\(\s*wasStarted\s*&&\s*wasSetup\s*&&\s*[^)]*?!==\s*['"]SETUP['"][^)]*?myRole\s*!==\s*null\s*\)\s*\{\s*pushGameState\s*\(\s*\)\s*;\s*\}/;
+  const match = body.match(pushBlockRegex);
+  assert('receiveGameState contains an unconditional pushGameState() on SETUP→DRAW',
+    !!match);
+  if (match) {
+    assert('The push block does NOT gate on G.turn === myRole (was the bug)',
+      !/G\.turn\s*===\s*myRole/.test(match[0]));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: between-turn poison/burn ticks BOTH players' actives every endTurn
 //
 // Bug history (multiple regressions):
