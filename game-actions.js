@@ -727,7 +727,15 @@ function flipCoin(label, opts = {}) {
 
     const heads = Math.random() < 0.5;
     if (!G.coinFlipLog) G.coinFlipLog = [];
-    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips, ts: Date.now() });
+    const _flipTs = Date.now();
+    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips, ts: _flipTs });
+    // Advance the receive-replay watermark so this client's own listener — which
+    // can fire for the local optimistic write echo if isWriting toggles between
+    // pushes — doesn't replay a flip we just animated live. The opponent's
+    // window._lastCoinFlipTs is independent (separate browser context), so they
+    // still see the flip on their next receiveGameState. See bug: "Coin flips
+    // are happening twice (Lickitung Tongue Wrap)".
+    if (typeof window !== 'undefined') window._lastCoinFlipTs = _flipTs;
     const endDeg = heads ? 1440 : 1620;
 
     // Shorter pre-delay if overlay is already showing (consecutive flips)
