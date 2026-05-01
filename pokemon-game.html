@@ -3984,36 +3984,19 @@ function resumeGame(code) {
     roomCode = code;
     myRole = role;
     gameRef = db.ref(`games/${code}`);
-    Object.assign(G, s);
-    [1,2].forEach(p => {
-      const pl = G.players[p];
-      if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
-      if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
-      if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
-      if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
-      if (pl.prizes && !Array.isArray(pl.prizes)) pl.prizes = Object.values(pl.prizes);
-    });
-    if (G.evolvedThisTurn && !Array.isArray(G.evolvedThisTurn)) G.evolvedThisTurn = Object.values(G.evolvedThisTurn);
-    document.getElementById('setup-screen').style.display = 'none';
-    renderAll();
-    applyRoleVisibility();
+    // Delegate state decoding to receiveGameState — it pads bench to 5,
+    // pads prizes to 6, runs every card through enrichCard (which restores
+    // attack text/cost lost in Firebase round-trip), and handles all the
+    // SETUP/PROMOTE/win-screen transitions. Duplicating that logic here is
+    // exactly the drift pattern that caused the "Bench is full" bug when
+    // resuming with a 4-card bench (Firebase strips trailing nulls, and the
+    // old manual decode forgot to re-pad to 5).
+    receiveGameState(s);
     gameRef.on('value', data => {
       if (isWriting) return;
       const d = data.val();
       if (d && d.state && G.phase !== 'SETUP') {
-        const ns = d.state;
-        Object.assign(G, ns);
-        [1,2].forEach(p => {
-          const pl = G.players[p];
-          if (pl.bench && !Array.isArray(pl.bench)) pl.bench = Object.values(pl.bench).map(v=>v||null);
-          if (pl.hand && !Array.isArray(pl.hand)) pl.hand = Object.values(pl.hand);
-          if (pl.deck && !Array.isArray(pl.deck)) pl.deck = Object.values(pl.deck);
-          if (pl.discard && !Array.isArray(pl.discard)) pl.discard = Object.values(pl.discard);
-          if (pl.prizes && !Array.isArray(pl.prizes)) pl.prizes = Object.values(pl.prizes);
-        });
-        if (G.evolvedThisTurn && !Array.isArray(G.evolvedThisTurn)) G.evolvedThisTurn = Object.values(G.evolvedThisTurn);
-        renderAll();
-        applyRoleVisibility();
+        receiveGameState(d.state);
       }
     });
     addLog(`P${role} rejoined game ${code}.`, true);
