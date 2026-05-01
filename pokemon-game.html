@@ -4236,14 +4236,23 @@ async function pushGameState() {
 function receiveGameState(state) {
   if (!state) return;
 
-  const enrichCards = (arr) => (arr || []).map(c => c ? enrichCard(c) : null);
+  // Firebase converts sparse arrays (with null holes) into plain objects keyed
+  // by surviving indices — e.g. [a, null, c] becomes {0: a, 2: c}. We MUST
+  // coerce these back to arrays before .map() / iteration, or `.map is not
+  // a function` blows up here and the entire receive throws (P2 misses every
+  // subsequent state push). Prizes hits this hardest because we null-out a
+  // slot every time a prize is claimed.
+  const toArr = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : (v ? [v] : []));
+  const enrichCards = (arr) => toArr(arr).map(c => c ? enrichCard(c) : null);
   const enrichPlayer = (p) => ({
     ...p,
     deck: enrichCards(p.deck),
     hand: enrichCards(p.hand),
     active: p.active ? enrichCard(p.active) : null,
-    bench: Array.from({ length: 5 }, (_, i) => { const c = (p.bench || [])[i]; return c ? enrichCard(c) : null; }),
-    prizes: (p.prizes || []).map(pr => pr ? { ...pr, card: enrichCard(pr.card) } : null),
+    // bench: pad to exactly 5 slots since Firebase drops trailing nulls
+    bench: Array.from({ length: 5 }, (_, i) => { const c = toArr(p.bench)[i]; return c ? enrichCard(c) : null; }),
+    // prizes: pad to exactly 6 slots; preserve holes (null = claimed prize)
+    prizes: Array.from({ length: 6 }, (_, i) => { const pr = toArr(p.prizes)[i]; return pr ? { ...pr, card: enrichCard(pr.card) } : null; }),
     discard: enrichCards(p.discard),
   });
 

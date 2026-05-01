@@ -752,7 +752,8 @@ function enrichCard(card) {
       resistances: Array.isArray(card.resistances) ? card.resistances : [],
       retreatCost: Array.isArray(card.retreatCost) ? card.retreatCost : [],
       convertedRetreatCost: card.convertedRetreatCost || 0,
-      attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
+      attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy
+        : (card.attachedEnergy && typeof card.attachedEnergy === 'object' ? Object.values(card.attachedEnergy) : []),
       ...gameState,
     };
   }
@@ -769,7 +770,8 @@ function enrichCard(card) {
     resistances: full.resistances || [],
     retreatCost: full.retreatCost || [],
     convertedRetreatCost: full.convertedRetreatCost || 0,
-    attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy : [],
+    attachedEnergy: Array.isArray(card.attachedEnergy) ? card.attachedEnergy
+      : (card.attachedEnergy && typeof card.attachedEnergy === 'object' ? Object.values(card.attachedEnergy) : []),
     // Game-state fields — applied from GAME_STATE_DEFAULTS above
     ...gameState,
   };

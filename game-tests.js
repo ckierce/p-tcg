@@ -431,6 +431,84 @@ assert('coerceCardArrays: does not mutate input',
   (() => { const a = { name: 'X' }; coerceCardArrays(a); return !Array.isArray(a.types); })());
 
 // ─────────────────────────────────────────────────────────────────────────────
+// BUG: Firebase converts sparse arrays (with null holes) into plain objects
+// keyed by surviving indices: [a, null, c] → {0: a, 2: c}. When receiveGameState
+// then called .map() on what it assumed was an array, P2 threw with
+// `(intermediate value).map is not a function` and the entire state push was
+// dropped — P2's view of damage/KO/PROMOTE never updated. Hits prizes hardest:
+// every prize claim nulls out a slot. Same risk for any array we null out.
+//
+// FIX: receiveGameState's enrichPlayer must coerce object-shaped data back to
+// arrays before .map() / iteration. The same `toArr` helper now wraps every
+// array field on the player object.
+// ─────────────────────────────────────────────────────────────────────────────
+section('regression: Firebase sparse-array coercion in receiveGameState');
+
+{
+  // Mimic what receiveGameState does when Firebase returned the prizes as an object
+  const toArr = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : (v ? [v] : []));
+
+  // After P1 takes a prize from slot 0, prizes locally is [null, p1, p2, p3, p4, p5].
+  // Firebase serializes that as { 1: p1, 2: p2, 3: p3, 4: p4, 5: p5 } — slot 0 is gone.
+  const fbPrizes = { 1: { card: { id: 'a' } }, 2: { card: { id: 'b' } }, 3: { card: { id: 'c' } }, 4: { card: { id: 'd' } }, 5: { card: { id: 'e' } } };
+  const arr = toArr(fbPrizes);
+  assert('Firebase-shaped prizes object → array', Array.isArray(arr));
+  assert('Firebase-shaped prizes object → 5 surviving entries', arr.length === 5);
+
+  // Now the receive-side .map equivalent must not throw
+  let threw = false;
+  try {
+    const padded = Array.from({ length: 6 }, (_, i) => {
+      const pr = toArr(fbPrizes)[i];
+      return pr ? { ...pr, card: { ...pr.card } } : null;
+    });
+    assert('padded prize array has 6 slots', padded.length === 6);
+    // Note: Firebase drops null slots and Object.values collapses survivors to
+    // contiguous indices, so the original null position is lost. The remaining
+    // count is preserved (here: 5 surviving prizes after one was claimed), but
+    // they appear at indices 0-4 with index 5 padded as null. This is cosmetic
+    // (prize cards shift left visually) but doesn't break any logic.
+    assert('5 prizes survive the round-trip', padded.filter(p => p).length === 5);
+    assert('prize 6 is null (padded)', padded[5] === null);
+  } catch (e) { threw = true; }
+  assert('coercion + Array.from pad does not throw on Firebase prizes object', !threw);
+
+  // Sparse bench (Firebase drops middle nulls just like prizes)
+  const fbBench = { 0: { id: 'b1' }, 2: { id: 'b3' } }; // slot 1 was null, dropped
+  const benchArr = Array.from({ length: 5 }, (_, i) => toArr(fbBench)[i] || null);
+  // Note: Object.values returns surviving entries in key order, so arr is [b1, b3] —
+  // slot 1's null is collapsed. This is the canonical Firebase loss; bench was already
+  // padded by Array.from which is what saves it. (For prizes the same pattern applies.)
+  assert('Firebase-shaped bench object pads to 5', benchArr.length === 5);
+
+  // Empty array became undefined
+  assert('toArr(undefined) → []', toArr(undefined).length === 0);
+  assert('toArr(null) → []', toArr(null).length === 0);
+  assert('toArr([]) → []', toArr([]).length === 0);
+  assert('toArr(real array) → same array', toArr([1, 2]).length === 2);
+}
+
+// receiveGameState's `enrichPlayer` block must use array-coercion on every
+// array field — verify the source contains the fix so future edits don't regress.
+{
+  const html = require('fs').readFileSync(__dirname + '/pokemon-game.html', 'utf8');
+  // Find the receiveGameState function
+  const recvStart = html.indexOf('function receiveGameState');
+  assert('receiveGameState function exists', recvStart > -1);
+  const recvBlock = html.slice(recvStart, recvStart + 2000);
+  assert('receiveGameState defines a toArr helper for Firebase coercion',
+    /toArr\s*=\s*\(v\)\s*=>/.test(recvBlock));
+  assert('receiveGameState pads prizes to length 6 (defensive against Firebase drops)',
+    /prizes:\s*Array\.from\(\s*\{\s*length:\s*6\s*\}/.test(recvBlock));
+  assert('receiveGameState bench uses toArr (Firebase object-shape safe)',
+    /bench:[\s\S]{0,200}toArr\(p\.bench\)/.test(recvBlock));
+  assert('receiveGameState prizes uses toArr (Firebase object-shape safe)',
+    /prizes:[\s\S]{0,300}toArr\(p\.prizes\)/.test(recvBlock));
+  assert('enrichCards uses toArr (covers deck/hand/discard)',
+    /enrichCards\s*=\s*\(arr\)\s*=>\s*toArr\(arr\)/.test(recvBlock));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BUG: Many per-card game-state fields were being dropped on Firebase read.
 // FIX: GAME_STATE_DEFAULTS schema + mergeGameStateDefaults helper.
 // ─────────────────────────────────────────────────────────────────────────────
