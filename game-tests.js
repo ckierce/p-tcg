@@ -4406,6 +4406,67 @@ section('REGRESSION: Amnesia keeps targetsDefender flag (disable IS done to defe
 }
 
 
+section('REGRESSION: card-picker tile aspect-ratio must be on .picker-card, not on its <img>');
+
+// Background: in Firefox, when `aspect-ratio: 5/7` lives on the child <img> of
+// a .picker-card grid item — and the parent grid (#card-picker-grid) has
+// `overflow-y: auto` + `max-height: 50vh` and `1fr` columns — Firefox sizes
+// the grid rows from the image's intrinsic (pre-load) dimensions and collapses
+// them to ~10px slivers. The visible symptom: Computer Search (or any picker
+// with many cards) shows only the top edge of each card + the name label.
+// Chrome forgives this; Firefox does not.
+//
+// Fix: aspect-ratio belongs on .picker-card (the grid item), and the <img>
+// fills the remaining flex space. If anyone "simplifies" this back, this
+// test fails.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'pokemon-game.html');
+  if (fs.existsSync(htmlPath)) {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+
+    // Pull out the .picker-card rule and the .picker-card img rule.
+    // Match the rule body up to the next `}`.
+    const cardRuleMatch  = src.match(/\.picker-card\s*\{([^}]*)\}/);
+    const cardImgMatches = [...src.matchAll(/\.picker-card\s+img\s*\{([^}]*)\}/g)];
+
+    assert('pokemon-game.html: .picker-card rule exists', !!cardRuleMatch);
+    assert('pokemon-game.html: .picker-card img rule exists', cardImgMatches.length > 0);
+
+    if (cardRuleMatch) {
+      const body = cardRuleMatch[1];
+      // The grid-item must declare aspect-ratio so Firefox has a definite
+      // row height before the img loads.
+      assert('pokemon-game.html: .picker-card has aspect-ratio (5/7) declared on the grid item itself',
+        /aspect-ratio\s*:\s*5\s*\/\s*7/.test(body));
+      // It must be a flex column so the img can fill remaining space below
+      // the name/meta rows.
+      assert('pokemon-game.html: .picker-card uses flex column layout (image fills remaining space)',
+        /display\s*:\s*flex/.test(body) && /flex-direction\s*:\s*column/.test(body));
+    }
+
+    // CRITICAL: every `.picker-card img` rule (desktop + mobile media query)
+    // must NOT have aspect-ratio — that's exactly what triggered the Firefox
+    // sliver bug.
+    cardImgMatches.forEach((m, i) => {
+      assert(`pokemon-game.html: .picker-card img rule #${i + 1} must NOT set aspect-ratio (Firefox sliver bug)`,
+        !/aspect-ratio/.test(m[1]));
+    });
+
+    // And the img must use `flex: ... auto` (or similar) so it grows to fill
+    // the parent's aspect-ratio-derived height.
+    const desktopImgRule = cardImgMatches[0] && cardImgMatches[0][1];
+    if (desktopImgRule) {
+      assert('pokemon-game.html: .picker-card img uses flex sizing to fill parent height',
+        /flex\s*:\s*1/.test(desktopImgRule));
+    }
+  } else {
+    console.log('  (pokemon-game.html not found — skipping CSS regression check)');
+  }
+}
+
+
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));
