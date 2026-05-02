@@ -4597,6 +4597,128 @@ section('REGRESSION: card-picker tile aspect-ratio must be on .picker-card, not 
 }
 
 
+// ─────────────────────────────────────────────────────────────────────────────
+// REGRESSION: SETUP ready-up flow — P2 must be able to signal ready before
+// P1 advances. Without an explicit ready handshake, P1 could click DONE SETUP
+// the moment P2 placed any Active and cut P2 off mid-bench-placement. The
+// fix introduces a setupReady = {1,2} map, a toggleSetupReady() function,
+// and a maybeAutoAdvanceSetup() that fires doneSetup on P1's side once both
+// flags are true. Any non-toggle push during SETUP must clear the local flag
+// (otherwise placing a new bench Pokémon after readying leaves the ready flag
+// stale and P1 advances on a stale state).
+// ─────────────────────────────────────────────────────────────────────────────
+section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
+{
+  const fs = require('fs');
+  const path = require('path');
+  const htmlPath = path.join(__dirname, 'pokemon-game.html');
+  if (fs.existsSync(htmlPath)) {
+    const src = fs.readFileSync(htmlPath, 'utf8');
+
+    // 1. The setupReady state map must exist
+    assert('pokemon-game.html: setupReady map declared',
+      /let\s+setupReady\s*=\s*\{\s*1\s*:\s*false\s*,\s*2\s*:\s*false\s*\}/.test(src));
+
+    // 2. The _pushPreservesReady guard exists
+    assert('pokemon-game.html: _pushPreservesReady guard declared',
+      /let\s+_pushPreservesReady\s*=\s*false/.test(src));
+
+    // 3. toggleSetupReady function exists
+    assert('pokemon-game.html: toggleSetupReady function defined',
+      /function\s+toggleSetupReady\s*\(/.test(src));
+
+    // 4. maybeAutoAdvanceSetup function exists
+    assert('pokemon-game.html: maybeAutoAdvanceSetup function defined',
+      /function\s+maybeAutoAdvanceSetup\s*\(/.test(src));
+
+    // 5. handleEndTurnBtn must route through toggleSetupReady in multiplayer SETUP.
+    //    If it goes straight to doneSetup() unconditionally, P1 can still cut P2 off.
+    const handleM = src.match(/function\s+handleEndTurnBtn\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    assert('pokemon-game.html: handleEndTurnBtn defined', !!handleM);
+    if (handleM) {
+      const body = handleM[1];
+      // Must reach toggleSetupReady() somewhere in the SETUP branch
+      assert('pokemon-game.html: handleEndTurnBtn calls toggleSetupReady() for multiplayer SETUP',
+        /toggleSetupReady\s*\(/.test(body));
+      // Must still call doneSetup() for vsComputer / single-player fallback
+      assert('pokemon-game.html: handleEndTurnBtn keeps doneSetup() fallback',
+        /doneSetup\s*\(/.test(body));
+    }
+
+    // 6. pushGameState must clear the local ready flag on non-toggle SETUP pushes
+    //    (i.e. when _pushPreservesReady is false). Otherwise placing a Pokémon
+    //    after readying leaves the flag stale.
+    const pushM = src.match(/async\s+function\s+pushGameState\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    assert('pokemon-game.html: pushGameState defined', !!pushM);
+    if (pushM) {
+      const body = pushM[1];
+      assert('pokemon-game.html: pushGameState references _pushPreservesReady guard',
+        /_pushPreservesReady/.test(body));
+      assert('pokemon-game.html: pushGameState clears setupReady on non-toggle SETUP pushes',
+        /setupReady\s*\[\s*myRole\s*\]\s*=\s*false/.test(body));
+      // Must serialize setupReady into the setup_pN slot so the opponent learns
+      // when we're ready
+      assert('pokemon-game.html: pushGameState writes setupReady into setup_pN slot',
+        /setupReady\s*:\s*!!setupReady\s*\[\s*myRole\s*\]/.test(body));
+    }
+
+    // 7. mergeSetupSlot must be defensive — only update fields that are
+    //    actually present. Otherwise the post-start setup_p1 = { setupReady }
+    //    push from P1 would wipe P1's active/bench from P2's view.
+    const mergeM = src.match(/function\s+mergeSetupSlot\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    assert('pokemon-game.html: mergeSetupSlot defined', !!mergeM);
+    if (mergeM) {
+      const body = mergeM[1];
+      assert('pokemon-game.html: mergeSetupSlot guards active update with hasOwnProperty',
+        /hasOwnProperty[^)]*active/.test(body) || /'active'\s*in\s*slotData/.test(body));
+      assert('pokemon-game.html: mergeSetupSlot guards bench update with hasOwnProperty',
+        /hasOwnProperty[^)]*bench/.test(body) || /'bench'\s*in\s*slotData/.test(body));
+      assert('pokemon-game.html: mergeSetupSlot reads setupReady from incoming slot',
+        /setupReady/.test(body));
+    }
+
+    // 8. doneSetup must clear setupReady after the SETUP→DRAW transition so
+    //    a future game starts with both flags cleared.
+    const doneM = src.match(/async\s+function\s+doneSetup\s*\([^)]*\)\s*\{([\s\S]*?)\nasync function/);
+    if (doneM) {
+      const body = doneM[1];
+      assert('pokemon-game.html: doneSetup resets setupReady on SETUP→DRAW transition',
+        /setupReady\s*=\s*\{\s*1\s*:\s*false\s*,\s*2\s*:\s*false\s*\}/.test(body));
+    }
+
+    // 9. toggleSetupReady must require an Active Pokémon before the player
+    //    can mark themselves ready (otherwise they could ready up with no
+    //    Active and cause maybeAutoAdvanceSetup → doneSetup to bail).
+    const toggleM = src.match(/function\s+toggleSetupReady\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (toggleM) {
+      const body = toggleM[1];
+      assert('pokemon-game.html: toggleSetupReady requires Active before marking ready',
+        /G\.players\s*\[\s*myRole\s*\]\s*\.\s*active/.test(body));
+      assert('pokemon-game.html: toggleSetupReady sets _pushPreservesReady before pushing',
+        /_pushPreservesReady\s*=\s*true/.test(body));
+    }
+
+    // 10. maybeAutoAdvanceSetup must require both flags true and only fire
+    //     on P1's side (P1 owns the SETUP→DRAW transition).
+    const autoM = src.match(/function\s+maybeAutoAdvanceSetup\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
+    if (autoM) {
+      const body = autoM[1];
+      assert('maybeAutoAdvanceSetup: gates on myRole === 1',
+        /myRole\s*!==\s*1/.test(body) || /myRole\s*===\s*1/.test(body));
+      assert('maybeAutoAdvanceSetup: requires both setupReady flags',
+        /setupReady\s*\[\s*1\s*\][\s\S]*setupReady\s*\[\s*2\s*\]/.test(body));
+      assert('maybeAutoAdvanceSetup: bails out in vsComputer mode',
+        /vsComputer/.test(body));
+      assert('maybeAutoAdvanceSetup: invokes doneSetup when both are ready',
+        /doneSetup\s*\(/.test(body));
+    }
+
+  } else {
+    console.log('  (pokemon-game.html not found — skipping SETUP ready-flow check)');
+  }
+}
+
+
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));

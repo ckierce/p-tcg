@@ -3287,13 +3287,25 @@ async function startGame() {
 
   addLog('Each player drew 7 cards and set aside 6 prizes.');
   renderAll();
-  setMidline('Both players: place your Active Pokémon (and optionally bench basics)');
-  showSetupFlash('SETUP', 'Place your Starting Pokémon', 'then click DONE SETUP');
+  const isMP = myRole !== null && !vsComputer;
+  setMidline(isMP
+    ? 'Place your Active Pokémon (and optional bench), then click READY'
+    : 'Both players: place your Active Pokémon (and optionally bench basics)');
+  showSetupFlash('SETUP', 'Place your Starting Pokémon',
+    isMP ? "then click I'M READY (or DONE SETUP)" : 'then click DONE SETUP');
 }
 
 function handleEndTurnBtn() {
   if (G.phase === 'SETUP') {
-    doneSetup();
+    // In multiplayer, the SETUP button toggles the local ready flag instead
+    // of advancing directly. P1's listener auto-advances when both flags are
+    // true (see maybeAutoAdvanceSetup). vsComputer / single-player still
+    // calls doneSetup() directly — AI setup is synchronous from P1's view.
+    if (myRole !== null && !vsComputer) {
+      toggleSetupReady();
+    } else {
+      doneSetup();
+    }
   } else {
     if (!G.players[G.turn].active) {
       showToast('You must have an Active Pokémon before ending your turn!', true);
@@ -3315,6 +3327,11 @@ async function doneSetup() {
   G.turn = firstPlayer;
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
+  // Clear the SETUP ready flags now that we've left SETUP — they're meaningless
+  // outside the setup phase, and the auto-advance guard needs to be cleared so
+  // a future game (e.g. via playAgain) can use it fresh.
+  setupReady = { 1: false, 2: false };
+  G._setupAdvancing = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
 
   // Opening draw — must happen on the firstPlayer's OWN client in networked
@@ -3927,6 +3944,15 @@ let roomCode = null;
 let gameRef = null;
 let isWriting = false;   // prevent echo loops
 
+// ── SETUP ready flags (multiplayer only) ──────────────────────────────────────
+// Each player explicitly signals when they're done placing — prevents P1 from
+// cutting P2 off mid-bench-placement. Both flags must be true before P1's
+// DONE SETUP advances the game. Toggling un-readies. Any field change during
+// SETUP also clears the local flag (see pushGameState — gated by
+// _pushPreservesReady which only the explicit toggle sets).
+let setupReady = { 1: false, 2: false };
+let _pushPreservesReady = false;
+
 // ── Panel helpers ─────────────────────────────────
 function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
 function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
@@ -4168,20 +4194,81 @@ function serializeG(g) {
 }
 
 // ── Merge opponent's setup slot without overwriting our own ──
+// slotData may contain any subset of: active, bench, setupReady. Only update
+// fields that are actually present so a setupReady-only push (P1's post-start
+// mirror) doesn't wipe out previously merged active/bench data.
 function mergeSetupSlot(playerNum, slotData) {
   if (!slotData) return;
   const p = G.players[playerNum];
-  p.active = slotData.active ? enrichCard(slotData.active) : null;
-  p.bench = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
+  const hasActive = Object.prototype.hasOwnProperty.call(slotData, 'active');
+  const hasBench  = Object.prototype.hasOwnProperty.call(slotData, 'bench');
+  const hasReady  = Object.prototype.hasOwnProperty.call(slotData, 'setupReady');
+  if (hasActive) p.active = slotData.active ? enrichCard(slotData.active) : null;
+  if (hasBench)  p.bench  = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
+  if (hasReady && playerNum !== myRole) setupReady[playerNum] = !!slotData.setupReady;
   // Re-render just the field without pushing (we're receiving)
   renderField(1);
   renderField(2);
   updatePerspectiveLabels();
+  // After the merge, P1 may now have both ready flags true → auto-advance
+  maybeAutoAdvanceSetup();
+}
+
+// ── Auto-advance: when we are P1 and both flags are true, fire doneSetup ──
+// Only P1 can advance the game (the existing architecture). P2's "I'M READY"
+// does not advance directly — P1's listener picks it up via mergeSetupSlot
+// and, if P1 is also ready, advances automatically.
+function maybeAutoAdvanceSetup() {
+  if (G.phase !== 'SETUP' || !G.started) return;
+  if (vsComputer || myRole !== 1) return;
+  if (!setupReady[1] || !setupReady[2]) return;
+  if (!G.players[1].active || !G.players[2].active) return;
+  if (G._setupAdvancing) return; // guard against double-fire
+  G._setupAdvancing = true;
+  // Defer to a microtask so any pending renders settle first
+  setTimeout(() => { try { doneSetup(); } catch (e) { console.error(e); G._setupAdvancing = false; } }, 0);
+}
+
+// ── Toggle our own ready flag (multiplayer SETUP only) ───────────────────────
+// Called when P1 or P2 clicks the SETUP button. Validates that the player has
+// at least placed an Active Pokémon, then flips the flag and pushes — the
+// _pushPreservesReady guard tells pushGameState NOT to clear the flag.
+function toggleSetupReady() {
+  if (G.phase !== 'SETUP' || !G.started) return;
+  if (vsComputer || myRole === null) return;
+  // Must have an Active Pokémon to mark ready
+  if (!G.players[myRole].active && !setupReady[myRole]) {
+    showToast('Place an Active Pokémon first!', true);
+    return;
+  }
+  setupReady[myRole] = !setupReady[myRole];
+  _pushPreservesReady = true;
+  try {
+    pushGameState();
+  } finally {
+    // pushGameState is async but we only need the guard for the synchronous
+    // ready-flag check at its top — clear immediately.
+    _pushPreservesReady = false;
+  }
+  renderField(myRole);
+  // If we're P1 and just set our flag, opponent may already be ready
+  maybeAutoAdvanceSetup();
 }
 
 // ── Push state to Firebase ────────────────────────
 async function pushGameState() {
   if (!gameRef) return;
+  // Any push during SETUP that ISN'T from the explicit ready-toggle means
+  // something on the field changed — invalidate our own ready flag so we
+  // can't accidentally advance with a bench we're still editing. The toggle
+  // sets _pushPreservesReady before calling, then clears it after.
+  if (G.phase === 'SETUP' && G.started && myRole !== null && !_pushPreservesReady) {
+    if (setupReady[myRole]) {
+      setupReady[myRole] = false;
+      // Re-render the button so P1/P2 sees their flag was reset
+      try { renderField(myRole); } catch (e) {}
+    }
+  }
   isWriting = true;
   try {
     if (G.phase === 'SETUP' && !G.started) {
@@ -4191,18 +4278,26 @@ async function pushGameState() {
         [`setup_p${myRole}`]: serializeG({
           active: myP.active,
           bench: myP.bench,
+          setupReady: !!setupReady[myRole],
         })
       });
     } else if (G.phase === 'SETUP' && G.started) {
       // Post-start SETUP: P1 owns and pushes full state; P2 pushes own slot only
       if (myRole === 1) {
-        await gameRef.update({ state: serializeG(G) });
+        await gameRef.update({
+          state: serializeG(G),
+          // Mirror P1's ready flag into setup_p1 so P2's listener can see it
+          // (P2 only reads setup_p1 / state.players[1] for P1's field, but the
+          // ready flag is a UI signal that doesn't belong inside G itself).
+          setup_p1: { setupReady: !!setupReady[1] },
+        });
       } else {
         const myP = G.players[myRole];
         await gameRef.update({
           [`setup_p${myRole}`]: serializeG({
             active: myP.active,
             bench: myP.bench,
+            setupReady: !!setupReady[myRole],
           })
         });
       }
@@ -4456,16 +4551,34 @@ function applyRoleVisibility() {
   const endBtn = document.getElementById('end-turn-btn');
   if (endBtn) {
     if (G.phase === 'SETUP') {
-      if (myRole === 1) {
-        // P1 can click DONE SETUP (subject to both having actives)
+      // Always interactive in SETUP — the click handler validates active
+      // placement and routes through toggleSetupReady (multiplayer) or
+      // doneSetup (vsComputer/single-player).
+      endBtn.style.opacity = '';
+      endBtn.style.pointerEvents = '';
+      const myReady    = !!setupReady[myRole];
+      const oppRole    = myRole === 1 ? 2 : 1;
+      const oppReady   = !!setupReady[oppRole];
+      const isMultiplayer = myRole !== null && !vsComputer;
+      if (!isMultiplayer) {
+        // Single-player / vsComputer — original DONE SETUP behavior
         endBtn.textContent = 'DONE SETUP';
-        endBtn.style.opacity = '';
-        endBtn.style.pointerEvents = '';
-      } else {
-        // P2 sees dimmed button — they place their own Pokémon but P1 advances
-        endBtn.textContent = 'WAITING FOR P1';
-        endBtn.style.opacity = '0.4';
+      } else if (myReady && oppReady) {
+        // Both ready — P1 advances on next tick via maybeAutoAdvanceSetup;
+        // P2 just sees a brief confirmation. Keep the button passive here.
+        endBtn.textContent = myRole === 1 ? 'STARTING...' : 'BOTH READY';
+        endBtn.style.opacity = '0.6';
         endBtn.style.pointerEvents = 'none';
+      } else if (myReady && !oppReady) {
+        // We're ready, opponent isn't — clicking again un-readies us
+        endBtn.textContent = `WAITING FOR P${oppRole}`;
+        endBtn.style.opacity = '0.7';
+      } else if (!myReady && oppReady) {
+        // Opponent is ready, we aren't — prompt us to confirm
+        endBtn.textContent = myRole === 1 ? 'DONE SETUP' : "I'M READY";
+      } else {
+        // Neither ready
+        endBtn.textContent = myRole === 1 ? 'DONE SETUP' : "I'M READY";
       }
     } else {
       const isAiTurn = vsComputer && G.turn === 2;
@@ -4475,7 +4588,7 @@ function applyRoleVisibility() {
       endBtn.style.pointerEvents = canAct ? '' : 'none';
       if (isAiTurn) {
         endBtn.textContent = 'AI THINKING...';
-      } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
+      } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING FOR P2' || endBtn.textContent === "I'M READY" || endBtn.textContent === 'STARTING...' || endBtn.textContent === 'BOTH READY' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
         endBtn.textContent = 'END TURN';
       }
     }

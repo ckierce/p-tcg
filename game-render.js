@@ -992,6 +992,10 @@ function playAgain() {
     gameRef = null;
   }
   roomCode = null; myRole = null; vsComputer = false; aiThinking = false;
+  // Reset SETUP ready flags from any previous match (tolerate the rare case
+  // where the inline script hasn't yet declared these — the try/catch avoids
+  // a temporal-dead-zone ReferenceError tripping the rest of cleanup).
+  try { setupReady = { 1: false, 2: false }; _pushPreservesReady = false; } catch (e) {}
   // Reset G
   G = {
     started: false, turn: 1, phase: 'SETUP', turnNum: 0,
@@ -1018,6 +1022,8 @@ function returnToLobby() {
     gameRef = null;
   }
   roomCode = null; myRole = null; vsComputer = false; aiThinking = false;
+  // Reset SETUP ready flags from any previous match (try/catch avoids TDZ)
+  try { setupReady = { 1: false, 2: false }; _pushPreservesReady = false; } catch (e) {}
   G = {
     started: false, turn: 1, phase: 'SETUP', turnNum: 0,
     energyPlayedThisTurn: false, plusPowerActive: false,
