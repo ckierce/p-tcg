@@ -4484,6 +4484,58 @@ section('REGRESSION: Amnesia keeps targetsDefender flag (disable IS done to defe
 }
 
 
+section('REGRESSION: _runFlashQueue must guard fn() against throws (queue jams forever otherwise)');
+
+// Background: end-of-attack flow queues two items into _flashQueue:
+//   1. renderAll  (from renderWhenIdle())
+//   2. endTurn
+// If the queued fn() throws (anywhere in renderAll, or directly in endTurn),
+// the setTimeout that resets _flashBusy=false never gets scheduled. The queue
+// is permanently jammed: every subsequent _runFlashQueue() call short-circuits
+// at the busy check, and the queued endTurn never runs. The visible symptom
+// is "I attacked but the turn didn't pass" — the attacker keeps playing on
+// the same turn number with no error visible to the user. We've hit this
+// pattern at least twice (transitionPhase undefined, and the Whirlpool +
+// Energy Removal multiplayer scenario). The fix is a try/catch around fn()
+// so a throwing handler doesn't take the whole turn-end pipeline down with
+// it. console.error keeps regressions surfaceable in DevTools.
+{
+  const fs = require('fs');
+  const path = require('path');
+  const renderPath = path.join(__dirname, 'game-render.js');
+  if (fs.existsSync(renderPath)) {
+    const src = fs.readFileSync(renderPath, 'utf8');
+    const m = src.match(/function _runFlashQueue\s*\(\s*\)\s*\{([\s\S]*?)\n\}/);
+    assert('game-render.js: _runFlashQueue is defined', !!m);
+    if (m) {
+      const body = m[1];
+      // Must invoke the queued fn inside a try/catch so a throw doesn't
+      // skip the setTimeout that releases _flashBusy.
+      assert('game-render.js: _runFlashQueue wraps fn() in try { ... } catch',
+        /try\s*\{[^}]*\bfn\s*\(\s*\)/.test(body) && /catch\s*\(/.test(body));
+      // The setTimeout that releases _flashBusy must come AFTER the try/catch
+      // so it always runs regardless of whether fn() threw. Strip line comments
+      // first so the word "setTimeout" inside the explanatory comment doesn't
+      // fool the position check.
+      const codeOnly = body.replace(/\/\/[^\n]*/g, '');
+      const tryIdx = codeOnly.indexOf('try');
+      const stIdx  = codeOnly.indexOf('setTimeout');
+      assert('game-render.js: setTimeout(release _flashBusy) is positioned after the try/catch',
+        tryIdx !== -1 && stIdx !== -1 && stIdx > tryIdx);
+      // A bare `fn()` call outside try/catch would defeat the guard. There
+      // must be no unguarded fn() invocation in the body.
+      // Strip the try { ... } block to check the rest.
+      const tryBlockMatch = body.match(/try\s*\{[\s\S]*?\}\s*catch\s*\([^)]*\)\s*\{[^}]*\}/);
+      const remainder = tryBlockMatch ? body.replace(tryBlockMatch[0], '') : body;
+      assert('game-render.js: no unguarded fn() call exists outside the try/catch',
+        !/\bfn\s*\(\s*\)/.test(remainder));
+    }
+  } else {
+    console.log('  (game-render.js not found — skipping flash queue regression check)');
+  }
+}
+
+
 section('REGRESSION: card-picker tile aspect-ratio must be on .picker-card, not on its <img>');
 
 // Background: in Firefox, when `aspect-ratio: 5/7` lives on the child <img> of

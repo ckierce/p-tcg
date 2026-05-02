@@ -810,7 +810,13 @@ function _runFlashQueue() {
   if (_flashBusy || _flashQueue.length === 0) return;
   _flashBusy = true;
   const { fn, duration } = _flashQueue.shift();
-  fn();
+  // Guard the queued fn — if it throws, the setTimeout that releases _flashBusy
+  // never gets scheduled and the queue jams forever. The visible symptom is
+  // "endTurn doesn't fire after an attack" because endTurn is itself queued
+  // here (with renderAll queued just before it). Any throw inside renderAll
+  // would prevent endTurn from ever being processed. Logging instead of
+  // swallowing silently so regressions surface in DevTools.
+  try { fn(); } catch (e) { console.error('Flash queue handler threw:', e); }
   setTimeout(() => { _flashBusy = false; _runFlashQueue(); }, duration + 80);
 }
 
