@@ -491,11 +491,11 @@ section('regression: Firebase sparse-array coercion in receiveGameState');
 // receiveGameState's `enrichPlayer` block must use array-coercion on every
 // array field — verify the source contains the fix so future edits don't regress.
 {
-  const html = require('fs').readFileSync(__dirname + '/pokemon-game.html', 'utf8');
+  const src = require('fs').readFileSync(__dirname + '/game-init.js', 'utf8');
   // Find the receiveGameState function
-  const recvStart = html.indexOf('function receiveGameState');
-  assert('receiveGameState function exists', recvStart > -1);
-  const recvBlock = html.slice(recvStart, recvStart + 2000);
+  const recvStart = src.indexOf('function receiveGameState');
+  assert('receiveGameState function exists in game-init.js', recvStart > -1);
+  const recvBlock = src.slice(recvStart, recvStart + 2000);
   assert('receiveGameState defines a toArr helper for Firebase coercion',
     /toArr\s*=\s*\(v\)\s*=>/.test(recvBlock));
   assert('receiveGameState pads prizes to length 6 (defensive against Firebase drops)',
@@ -1128,15 +1128,15 @@ function mergeIncomingForReceiver(localG, incomingState, myRole) {
 console.log('\n── regression: SETUP→DRAW receive must push authoritative state ─');
 {
   const fs = require('fs');
-  const html = fs.readFileSync('pokemon-game.html', 'utf8');
+  const src = fs.readFileSync('game-init.js', 'utf8');
 
   // Find the receiveGameState body (between its opening brace and the next
   // top-level function declaration).
-  const startIdx = html.indexOf('function receiveGameState(state)');
-  assert('receiveGameState exists in pokemon-game.html', startIdx !== -1);
+  const startIdx = src.indexOf('function receiveGameState(state)');
+  assert('receiveGameState exists in game-init.js', startIdx !== -1);
   // Walk forward until we hit the next `function ` at column 0 — that's
   // the end of receiveGameState.
-  const tail = html.slice(startIdx);
+  const tail = src.slice(startIdx);
   const nextFnIdx = tail.search(/\nfunction\s+\w+\s*\(/);
   const body = nextFnIdx === -1 ? tail : tail.slice(0, nextFnIdx);
 
@@ -1365,17 +1365,36 @@ function renderAllWouldPush(g, myRole, vsComputer) {
     true); // documentation assertion — the real check is grep-based below
 }
 
-// Grep-based check: every site that sets G.started = false in pokemon-game.html
-// must be followed (within ~5 lines) by a pushGameState() call. This catches
+// Grep-based check: every site that sets G.started = false in any source file
+// must be followed (within ~6 lines) by a pushGameState() call. This catches
 // future regressions where a new win/loss site is added without the explicit push.
+//
+// Originally this scanned only pokemon-game.html. After the inline JS extraction
+// into game-init.js, win sites also live in game-actions.js, game-ai.js, and
+// move-effects.js — so the scan must cover all source files. (The scope
+// expansion uncovered 6 latent multiplayer-win-not-recorded bugs at the time.)
 {
   const fs = require('fs');
   const path = require('path');
-  const htmlPath = path.join(__dirname, 'pokemon-game.html');
-  if (fs.existsSync(htmlPath)) {
-    const html = fs.readFileSync(htmlPath, 'utf8');
-    const lines = html.split('\n');
-    const issues = [];
+  const sourceFiles = [
+    'pokemon-game.html',
+    'game-init.js',
+    'game-actions.js',
+    'game-ai.js',
+    'game-render.js',
+    'game-utils.js',
+    'move-effects.js',
+    'pokemon-powers.js',
+    'trainer-cards.js',
+  ];
+  const issues = [];
+  let scanned = 0;
+  sourceFiles.forEach(name => {
+    const p = path.join(__dirname, name);
+    if (!fs.existsSync(p)) return;
+    scanned++;
+    const src = fs.readFileSync(p, 'utf8');
+    const lines = src.split('\n');
     lines.forEach((line, i) => {
       if (/G\.started\s*=\s*false/.test(line)) {
         // Look ahead 6 lines for either pushGameState() or playAgain()/reset
@@ -1384,18 +1403,16 @@ function renderAllWouldPush(g, myRole, vsComputer) {
         const isCleanup = /\bplayAgain\b|\bG\s*=\s*\{/.test(window);
         const hasPush = /pushGameState\s*\(/.test(window);
         if (!isCleanup && !hasPush) {
-          issues.push(`line ${i+1}: ${line.trim()}`);
+          issues.push(`${name}:${i+1}: ${line.trim()}`);
         }
       }
     });
-    assert('Every G.started=false site is followed by pushGameState() (or is cleanup)',
-      issues.length === 0);
-    if (issues.length > 0) {
-      console.error('    Sites missing pushGameState():');
-      issues.forEach(s => console.error('      ' + s));
-    }
-  } else {
-    console.log('  (pokemon-game.html not found — skipping grep check)');
+  });
+  assert(`Every G.started=false site is followed by pushGameState() (scanned ${scanned} files)`,
+    issues.length === 0);
+  if (issues.length > 0) {
+    console.error('    Sites missing pushGameState():');
+    issues.forEach(s => console.error('      ' + s));
   }
 }
 
@@ -1445,33 +1462,45 @@ function shouldFireGenericDraw(atkText, hasNamedPostAttack) {
     shouldFireGenericDraw('Does 30 damage.', false) === false);
 }
 
-// Grep-based check: every generic draw-card regex in pokemon-game.html must be
-// guarded by a named-handler check. Catches future regressions if someone adds
-// a new generic effect-text regex without the guard.
+// Grep-based check: every generic draw-card regex must be guarded by a
+// named-handler check. Catches future regressions if someone adds a new
+// generic effect-text regex without the guard. After the inline-JS extraction,
+// this regex lives in game-actions.js, but we scan all source files in case
+// it gets moved or duplicated.
 {
   const fs = require('fs');
   const path = require('path');
-  const htmlPath = path.join(__dirname, 'pokemon-game.html');
-  if (fs.existsSync(htmlPath)) {
-    const html = fs.readFileSync(htmlPath, 'utf8');
-    const lines = html.split('\n');
-    const issues = [];
+  const sourceFiles = [
+    'pokemon-game.html', 'game-init.js', 'game-actions.js', 'game-ai.js',
+    'game-render.js', 'game-utils.js', 'move-effects.js',
+    'pokemon-powers.js', 'trainer-cards.js',
+  ];
+  const issues = [];
+  let sawAny = false;
+  sourceFiles.forEach(name => {
+    const p = path.join(__dirname, name);
+    if (!fs.existsSync(p)) return;
+    const src = fs.readFileSync(p, 'utf8');
+    const lines = src.split('\n');
     lines.forEach((line, i) => {
       if (/\/draw a card\/i\.test/.test(line) || /\/draw \(\\d\+\) cards/.test(line)) {
+        sawAny = true;
         // Look at the surrounding ~6 lines for the named-handler guard
         const window = lines.slice(Math.max(0, i - 3), i + 4).join('\n');
-        const guarded = /_hasNamedPostAttack|MOVE_EFFECTS\[atk\.name\]/.test(window);
-        if (!guarded) issues.push(`line ${i+1}: ${line.trim()}`);
+        const guarded = /_hasNamedPostAttack|_hasPostAttackDispatch|MOVE_EFFECTS\[atk\.name\]/.test(window);
+        if (!guarded) issues.push(`${name}:${i+1}: ${line.trim()}`);
       }
     });
-    assert('Every generic draw-card regex is guarded by named-handler check',
-      issues.length === 0);
-    if (issues.length > 0) {
-      console.error('    Unguarded sites:');
-      issues.forEach(s => console.error('      ' + s));
-    }
-  } else {
-    console.log('  (pokemon-game.html not found — skipping grep check)');
+  });
+  assert('Every generic draw-card regex is guarded by named-handler check',
+    issues.length === 0);
+  // Sanity: at least ONE source file actually has the regex — otherwise the
+  // test is silently passing because the code we're checking has been removed.
+  assert('At least one source file contains the generic draw-card regex',
+    sawAny);
+  if (issues.length > 0) {
+    console.error('    Unguarded sites:');
+    issues.forEach(s => console.error('      ' + s));
   }
 }
 
@@ -4611,37 +4640,37 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
 {
   const fs = require('fs');
   const path = require('path');
-  const htmlPath = path.join(__dirname, 'pokemon-game.html');
-  if (fs.existsSync(htmlPath)) {
-    const src = fs.readFileSync(htmlPath, 'utf8');
+  const initPath = path.join(__dirname, 'game-init.js');
+  if (fs.existsSync(initPath)) {
+    const src = fs.readFileSync(initPath, 'utf8');
 
     // 1. The setupReady state map must exist
-    assert('pokemon-game.html: setupReady map declared',
+    assert('game-init.js: setupReady map declared',
       /let\s+setupReady\s*=\s*\{\s*1\s*:\s*false\s*,\s*2\s*:\s*false\s*\}/.test(src));
 
     // 2. The _pushPreservesReady guard exists
-    assert('pokemon-game.html: _pushPreservesReady guard declared',
+    assert('game-init.js: _pushPreservesReady guard declared',
       /let\s+_pushPreservesReady\s*=\s*false/.test(src));
 
     // 3. toggleSetupReady function exists
-    assert('pokemon-game.html: toggleSetupReady function defined',
+    assert('game-init.js: toggleSetupReady function defined',
       /function\s+toggleSetupReady\s*\(/.test(src));
 
     // 4. maybeAutoAdvanceSetup function exists
-    assert('pokemon-game.html: maybeAutoAdvanceSetup function defined',
+    assert('game-init.js: maybeAutoAdvanceSetup function defined',
       /function\s+maybeAutoAdvanceSetup\s*\(/.test(src));
 
     // 5. handleEndTurnBtn must route through toggleSetupReady in multiplayer SETUP.
     //    If it goes straight to doneSetup() unconditionally, P1 can still cut P2 off.
     const handleM = src.match(/function\s+handleEndTurnBtn\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    assert('pokemon-game.html: handleEndTurnBtn defined', !!handleM);
+    assert('game-init.js: handleEndTurnBtn defined', !!handleM);
     if (handleM) {
       const body = handleM[1];
       // Must reach toggleSetupReady() somewhere in the SETUP branch
-      assert('pokemon-game.html: handleEndTurnBtn calls toggleSetupReady() for multiplayer SETUP',
+      assert('game-init.js: handleEndTurnBtn calls toggleSetupReady() for multiplayer SETUP',
         /toggleSetupReady\s*\(/.test(body));
       // Must still call doneSetup() for vsComputer / single-player fallback
-      assert('pokemon-game.html: handleEndTurnBtn keeps doneSetup() fallback',
+      assert('game-init.js: handleEndTurnBtn keeps doneSetup() fallback',
         /doneSetup\s*\(/.test(body));
     }
 
@@ -4649,16 +4678,16 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
     //    (i.e. when _pushPreservesReady is false). Otherwise placing a Pokémon
     //    after readying leaves the flag stale.
     const pushM = src.match(/async\s+function\s+pushGameState\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    assert('pokemon-game.html: pushGameState defined', !!pushM);
+    assert('game-init.js: pushGameState defined', !!pushM);
     if (pushM) {
       const body = pushM[1];
-      assert('pokemon-game.html: pushGameState references _pushPreservesReady guard',
+      assert('game-init.js: pushGameState references _pushPreservesReady guard',
         /_pushPreservesReady/.test(body));
-      assert('pokemon-game.html: pushGameState clears setupReady on non-toggle SETUP pushes',
+      assert('game-init.js: pushGameState clears setupReady on non-toggle SETUP pushes',
         /setupReady\s*\[\s*myRole\s*\]\s*=\s*false/.test(body));
       // Must serialize setupReady into the setup_pN slot so the opponent learns
       // when we're ready
-      assert('pokemon-game.html: pushGameState writes setupReady into setup_pN slot',
+      assert('game-init.js: pushGameState writes setupReady into setup_pN slot',
         /setupReady\s*:\s*!!setupReady\s*\[\s*myRole\s*\]/.test(body));
     }
 
@@ -4666,14 +4695,14 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
     //    actually present. Otherwise the post-start setup_p1 = { setupReady }
     //    push from P1 would wipe P1's active/bench from P2's view.
     const mergeM = src.match(/function\s+mergeSetupSlot\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
-    assert('pokemon-game.html: mergeSetupSlot defined', !!mergeM);
+    assert('game-init.js: mergeSetupSlot defined', !!mergeM);
     if (mergeM) {
       const body = mergeM[1];
-      assert('pokemon-game.html: mergeSetupSlot guards active update with hasOwnProperty',
+      assert('game-init.js: mergeSetupSlot guards active update with hasOwnProperty',
         /hasOwnProperty[^)]*active/.test(body) || /'active'\s*in\s*slotData/.test(body));
-      assert('pokemon-game.html: mergeSetupSlot guards bench update with hasOwnProperty',
+      assert('game-init.js: mergeSetupSlot guards bench update with hasOwnProperty',
         /hasOwnProperty[^)]*bench/.test(body) || /'bench'\s*in\s*slotData/.test(body));
-      assert('pokemon-game.html: mergeSetupSlot reads setupReady from incoming slot',
+      assert('game-init.js: mergeSetupSlot reads setupReady from incoming slot',
         /setupReady/.test(body));
     }
 
@@ -4682,7 +4711,7 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
     const doneM = src.match(/async\s+function\s+doneSetup\s*\([^)]*\)\s*\{([\s\S]*?)\nasync function/);
     if (doneM) {
       const body = doneM[1];
-      assert('pokemon-game.html: doneSetup resets setupReady on SETUP→DRAW transition',
+      assert('game-init.js: doneSetup resets setupReady on SETUP→DRAW transition',
         /setupReady\s*=\s*\{\s*1\s*:\s*false\s*,\s*2\s*:\s*false\s*\}/.test(body));
     }
 
@@ -4692,9 +4721,9 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
     const toggleM = src.match(/function\s+toggleSetupReady\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/);
     if (toggleM) {
       const body = toggleM[1];
-      assert('pokemon-game.html: toggleSetupReady requires Active before marking ready',
+      assert('game-init.js: toggleSetupReady requires Active before marking ready',
         /G\.players\s*\[\s*myRole\s*\]\s*\.\s*active/.test(body));
-      assert('pokemon-game.html: toggleSetupReady sets _pushPreservesReady before pushing',
+      assert('game-init.js: toggleSetupReady sets _pushPreservesReady before pushing',
         /_pushPreservesReady\s*=\s*true/.test(body));
     }
 
@@ -4714,7 +4743,7 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
     }
 
   } else {
-    console.log('  (pokemon-game.html not found — skipping SETUP ready-flow check)');
+    console.log('  (game-init.js not found — skipping SETUP ready-flow check)');
   }
 }
 

@@ -927,7 +927,7 @@ const MOVE_EFFECTS = {
       oppP.active = null; oppP.hand.push(...toHand);
       addLog(`${atk.name}: ${oppActive.name} + attachments returned to P${opp}'s hand!`, true);
       const benchLeft = oppP.bench.filter(s => s !== null);
-      if (!benchLeft.length) { G.started = false; showWinScreen(player, 'OPPONENT HAS NO POKÉMON LEFT'); renderAll(); return true; }
+      if (!benchLeft.length) { G.started = false; showWinScreen(player, 'OPPONENT HAS NO POKÉMON LEFT'); if (typeof pushGameState === 'function') pushGameState(); renderAll(); return true; }
       else if (benchLeft.length === 1) { const idx = oppP.bench.findIndex(s => s !== null); oppP.active = oppP.bench[idx]; oppP.bench[idx] = null; addLog(`${oppP.active.name} auto-promoted.`, true); }
       else { await forceOpponentSwitch(opp, false, `${atk.name} (promote)`); if (!G.players[opp].active) { const idx = G.players[opp].bench.findIndex(s => s !== null); if (idx !== -1) { G.players[opp].active = G.players[opp].bench[idx]; G.players[opp].bench[idx] = null; } } }
       renderAll();
@@ -1394,7 +1394,7 @@ const MOVE_EFFECTS = {
         if (hp > 0 && myActive.damage >= hp) {
           addLog(`${myActive.name} KO'd by recoil!`, true);
           G.players[player].discard.push(myActive); G.players[player].active = null;
-          if (!G.players[player].bench.filter(s => s !== null).length) { G.started = false; showWinScreen(opp, "ZAPDOS KO'D ITSELF"); renderAll(); return true; }
+          if (!G.players[player].bench.filter(s => s !== null).length) { G.started = false; showWinScreen(opp, "ZAPDOS KO'D ITSELF"); if (typeof pushGameState === 'function') pushGameState(); renderAll(); return true; }
         }
       }
       renderAll();
@@ -1447,7 +1447,7 @@ const MOVE_EFFECTS = {
         const milled = G.players[opp].deck.splice(0, picked.length);
         G.players[opp].discard.push(...milled);
         addLog(`${atk.name}: discarded ${picked.length} Fire Energy — milled ${milled.length} cards!`, true);
-        if (!G.players[opp].deck.length) { G.started = false; showWinScreen(player, "OPPONENT'S DECK EMPTY"); renderAll(); return true; }
+        if (!G.players[opp].deck.length) { G.started = false; showWinScreen(player, "OPPONENT'S DECK EMPTY"); if (typeof pushGameState === 'function') pushGameState(); renderAll(); return true; }
         renderAll();
       }
     }
@@ -1511,10 +1511,11 @@ function checkDestinyBond(koedCard, attackingPlayer) {
     G.players[defPlayer].prizes[prizeIdx] = null;
     const remaining = G.players[defPlayer].prizes.filter(p => p).length;
     addLog(`P${defPlayer} took a prize from Destiny Bond! (${remaining} remaining)`, true);
-    if (remaining === 0) { G.started = false; showWinScreen(defPlayer, 'ALL 6 PRIZES TAKEN'); return; }
+    if (remaining === 0) { G.started = false; showWinScreen(defPlayer, 'ALL 6 PRIZES TAKEN'); if (typeof pushGameState === 'function') pushGameState(); return; }
   }
   if (!G.players[attackingPlayer].bench.filter(s => s !== null).length) {
     G.started = false; showWinScreen(defPlayer, 'DESTINY BOND — ATTACKER HAS NO POKÉMON LEFT');
+    if (typeof pushGameState === 'function') pushGameState();
   }
 }
 

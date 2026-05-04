@@ -1803,6 +1803,7 @@ function aiDoPromotion() {
       addLog(`Computer has no Pokémon left — Player 1 wins!`, true);
       G.started = false;
       showWinScreen(1, 'OPPONENT HAS NO POKÉMON LEFT');
+      if (typeof pushGameState === 'function') pushGameState();
     }
     return;
   }
