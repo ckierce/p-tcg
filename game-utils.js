@@ -77,6 +77,7 @@ const GAME_STATE_DEFAULTS = {
   pounceActive:         false,
   pounceReduction:      0,
   swordsDanceActive:    false,
+  swordsDanceJustSet:   false,
   attackReduction:      0,
   conversionWeakness:   null,
   conversionResistance: null,

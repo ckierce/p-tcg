@@ -720,7 +720,7 @@ const requiredStateFields = [
   'immuneToAttack', 'disabledAttack', 'cantRetreat',
   'destinyBond', 'leekSlapUsed',
   'pounceActive', 'pounceReduction',
-  'swordsDanceActive', 'attackReduction',
+  'swordsDanceActive', 'swordsDanceJustSet', 'attackReduction',
   'conversionWeakness', 'conversionResistance',
   'trainerBlocked',
 ];
@@ -4629,6 +4629,98 @@ section('REGRESSION: performAttack defenderFullEffects is no longer a hard short
       /growlMatch[\s\S]{0,200}!atk\._defenderEffectsBlocked/.test(src));
   } else {
     console.log('  (game-actions.js not found — skipping grep check)');
+  }
+}
+
+section('REGRESSION: Swords Dance buff must survive across the turn boundary');
+
+{
+  const fs = require('fs');
+  const path = require('path');
+  const ga = path.join(__dirname, 'game-actions.js');
+  const me = path.join(__dirname, 'move-effects.js');
+  const gu = path.join(__dirname, 'game-utils.js');
+
+  // Bug: _finishEndTurn was unconditionally clearing swordsDanceActive on
+  // the same turn Swords Dance fired, so Slash on the player's NEXT turn
+  // never saw the buff and reverted to base 30 damage.
+  //
+  // Fix: postAttack sets BOTH swordsDanceActive AND swordsDanceJustSet.
+  // _finishEndTurn clears swordsDanceJustSet (consuming the "skip" guard) on
+  // the same-turn endTurn, leaving swordsDanceActive intact for the player's
+  // next turn. A later endTurn (after Slash had a chance to fire) clears
+  // swordsDanceActive normally. Slash's modifyDamage clears both flags on
+  // consume so the cleanup branch is a no-op when the buff was used.
+  if (fs.existsSync(ga) && fs.existsSync(me) && fs.existsSync(gu)) {
+    const gaSrc = fs.readFileSync(ga, 'utf8');
+    const meSrc = fs.readFileSync(me, 'utf8');
+    const guSrc = fs.readFileSync(gu, 'utf8');
+
+    // 1. The Swords Dance postAttack must set swordsDanceJustSet alongside
+    //    swordsDanceActive so endTurn's same-turn pass leaves the buff alone.
+    const swordsDanceBlock = meSrc.match(
+      /'Swords Dance':\s*\{[\s\S]*?\n\s{2}\},/);
+    assert(`move-effects.js: 'Swords Dance' block exists`,
+      !!swordsDanceBlock);
+    if (swordsDanceBlock) {
+      assert(`move-effects.js: Swords Dance postAttack sets swordsDanceActive = true`,
+        /swordsDanceActive\s*=\s*true/.test(swordsDanceBlock[0]));
+      assert(`move-effects.js: Swords Dance postAttack ALSO sets swordsDanceJustSet = true (Bug fix)`,
+        /swordsDanceJustSet\s*=\s*true/.test(swordsDanceBlock[0]));
+    }
+
+    // 2. _finishEndTurn must NOT unconditionally clear swordsDanceActive.
+    //    The fix is an if/else where JustSet short-circuits the clear.
+    const finishBlock = gaSrc.match(
+      /function\s+_finishEndTurn\s*\([^)]*\)\s*\{[\s\S]*?\n\}/);
+    assert(`game-actions.js: _finishEndTurn function exists`,
+      !!finishBlock);
+    if (finishBlock) {
+      const body = finishBlock[0];
+      assert(`game-actions.js: _finishEndTurn checks swordsDanceJustSet before clearing swordsDanceActive (Bug fix)`,
+        /swordsDanceJustSet[\s\S]{0,400}else[\s\S]{0,200}swordsDanceActive\s*=\s*false/.test(body));
+
+      // The buggy pattern was a bare `if (active?.swordsDanceActive) ... = false`
+      // with no JustSet guard. Make sure that exact lone-clear is gone.
+      const buggyPattern =
+        /if\s*\(\s*G\.players\[prev\]\.active\?\.swordsDanceActive\s*\)\s*\{[\s\S]{0,80}swordsDanceActive\s*=\s*false[\s\S]{0,150}\}\s*(?!\s*else)/;
+      // Allow the new if/else form, but reject a lone if without an else right after.
+      // The new code is: `if (...JustSet) { ... } else if (...Active) { ... }`
+      // We accept that. We reject the OLD `if (...Active)` standalone block.
+      const matches = body.match(/if\s*\(\s*G\.players\[prev\]\.active\?\.swordsDanceActive\s*\)/g) || [];
+      // The new form has `else if (...swordsDanceActive)`, so an unconditional `if (...swordsDanceActive)`
+      // (NOT preceded by `else`) would be the bug.
+      const looseIf = /(?<!else\s)if\s*\(\s*G\.players\[prev\]\.active\?\.swordsDanceActive\s*\)/.test(body);
+      assert(`game-actions.js: _finishEndTurn does NOT unconditionally clear swordsDanceActive (Bug fix)`,
+        !looseIf);
+    }
+
+    // 3. Slash's modifyDamage must clear BOTH flags on consume — otherwise
+    //    JustSet leaks into the next turn and skips a future legitimate clear.
+    const slashBlock = meSrc.match(/'Slash':\s*\{[\s\S]*?\n\s{2}\},/);
+    assert(`move-effects.js: 'Slash' block exists`, !!slashBlock);
+    if (slashBlock) {
+      assert(`move-effects.js: Slash modifyDamage clears swordsDanceActive on consume`,
+        /swordsDanceActive\s*=\s*false/.test(slashBlock[0]));
+      assert(`move-effects.js: Slash modifyDamage clears swordsDanceJustSet on consume`,
+        /swordsDanceJustSet\s*=\s*false/.test(slashBlock[0]));
+      assert(`move-effects.js: Slash modifyDamage returns 60 when buff is active`,
+        /return\s+60/.test(slashBlock[0]));
+    }
+
+    // 4. swordsDanceJustSet must be in GAME_STATE_DEFAULTS so Firebase merges
+    //    initialize it correctly (otherwise undefined ?? false flips to false
+    //    fine, but explicit defaults guard against accidental ===  comparisons).
+    assert(`game-utils.js: GAME_STATE_DEFAULTS includes swordsDanceJustSet`,
+      /swordsDanceJustSet:\s*false/.test(guSrc));
+
+    // 5. Retreat path (executeRetreat in game-actions.js) must clear BOTH flags.
+    //    A retreated Pokémon loses all special status & buffs per TCG rules.
+    const retreatHits = (gaSrc.match(/old\.swordsDanceJustSet\s*=\s*false/g) || []).length;
+    assert(`game-actions.js: retreat path clears swordsDanceJustSet`,
+      retreatHits >= 1);
+  } else {
+    console.log('  (one of game-actions.js / move-effects.js / game-utils.js missing — skipping)');
   }
 }
 

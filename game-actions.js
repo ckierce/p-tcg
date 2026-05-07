@@ -615,6 +615,7 @@ async function executeRetreat(player, benchIdx) {
     old.leekSlapUsed = false;
     old.immuneToAttack = false;
     old.swordsDanceActive = false;
+    old.swordsDanceJustSet = false;
     old.destinyBond = false;
     old.pounceActive = false;
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
@@ -1893,7 +1894,13 @@ function _finishEndTurn(prev) {
   if (G.players[prev].active?.plusPower) {
     G.players[prev].active.plusPower = 0;
   }
-  if (G.players[prev].active?.swordsDanceActive) {
+  // Swords Dance: the buff must survive across the turn boundary so it can
+  // apply to Slash on the player's NEXT turn. The JustSet flag is set when
+  // Swords Dance fires; we only clear swordsDanceActive on a later endTurn
+  // (after the player has had their chance to use Slash).
+  if (G.players[prev].active?.swordsDanceJustSet) {
+    G.players[prev].active.swordsDanceJustSet = false;
+  } else if (G.players[prev].active?.swordsDanceActive) {
     G.players[prev].active.swordsDanceActive = false;
     addLog(`Swords Dance boost expired — Slash returns to 30 damage.`);
   }

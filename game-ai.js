@@ -1669,6 +1669,7 @@ async function executePreStepOnly(step, delayMs) {
       active.leekSlapUsed = false;
       active.immuneToAttack = false;
       active.swordsDanceActive = false;
+      active.swordsDanceJustSet = false;
       active.destinyBond = false;
       active.pounceActive = false;
       if (active.status) active.status = null;
@@ -1695,6 +1696,7 @@ async function executePreStepOnly(step, delayMs) {
       old.leekSlapUsed = false;
       old.immuneToAttack = false;
       old.swordsDanceActive = false;
+      old.swordsDanceJustSet = false;
       old.destinyBond = false;
       old.pounceActive = false;
       if (old.status) old.status = null;

@@ -302,7 +302,21 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
     const entry = bench.find(x => x.i === idx);
     if (!entry) return;
     const old = oppP.active;
+    // Multi-status: per TCG rules, all special conditions are removed when
+    // a Pokémon leaves the active spot — including via forced switches like
+    // Whirlwind, Terror Strike, Ram, and Hurricane's promote step. Without
+    // this clear, a Poisoned/Asleep/etc. active that gets benched would
+    // continue carrying its status on the bench.
+    if (old) {
+      const conds = (typeof activeStatuses === 'function')
+        ? activeStatuses(old)
+        : (old.status ? [old.status] : []);
+      if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared on being benched.`);
+      if (typeof clearAllStatus === 'function') clearAllStatus(old);
+    }
     oppP.active = entry.s; oppP.bench[idx] = old;
+    // Defensive pad — bench should always be exactly 5 slots
+    while (oppP.bench.length < 5) oppP.bench.push(null);
     addLog(`${attackName}: P${opp}'s ${entry.s.name} forced to Active!`, true);
     renderAll();
   };
@@ -1245,6 +1259,7 @@ const MOVE_EFFECTS = {
     modifyDamage: ({ myActive }) => {
       if (myActive?.swordsDanceActive) {
         myActive.swordsDanceActive = false;
+        myActive.swordsDanceJustSet = false;
         addLog(`Swords Dance: Slash boosted to 60!`, true);
         return 60;
       }
@@ -1317,11 +1332,16 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Swords Dance (Scyther): flag next Slash to do 60 instead of 30
+  // Swords Dance (Scyther): flag next Slash to do 60 instead of 30.
+  // swordsDanceJustSet prevents endTurn from clearing the buff on the same
+  // turn it was set — the buff must survive until the player's NEXT turn
+  // when they can actually use Slash. endTurn will see the JustSet flag,
+  // clear it, and leave swordsDanceActive intact for the upcoming turn.
   'Swords Dance': {
     postAttack: async ({ myActive, atk }) => {
       if (!myActive) return;
       myActive.swordsDanceActive = true;
+      myActive.swordsDanceJustSet = true;
       addLog(`${atk.name}: ${myActive.name}'s next Slash will do 60!`, true);
     }
   },
