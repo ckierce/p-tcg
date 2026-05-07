@@ -115,7 +115,7 @@ const TRAINER_EFFECTS = {
   'Full Heal': async ({ player, p, consume }) => {
     if (!p.active) { showToast('No active Pokémon!', true); return; }
     consume();
-    p.active.status = null;
+    clearAllStatus(p.active);
     addLog(`P${player} used Full Heal — ${p.active.name} is cured of all status conditions.`, true);
     renderAll();
   },
@@ -126,7 +126,7 @@ const TRAINER_EFFECTS = {
     if (!p.active) { showToast('No active Pokémon!', true); return; }
     consume();
     p.active.damage = 0;
-    p.active.status = null;
+    clearAllStatus(p.active);
     addLog(`P${player} used Full Restore — ${p.active.name} fully healed and cured.`, true);
     renderAll();
   },
@@ -181,7 +181,7 @@ const TRAINER_EFFECTS = {
     const revived = p.discard.splice(idx, 1)[0];
     const halfHp = parseInt(revived.hp) || 0;
     revived.damage = Math.floor(halfHp / 20) * 10; // half HP rounded DOWN to nearest 10
-    revived.attachedEnergy = []; revived.status = null;
+    revived.attachedEnergy = []; clearAllStatus(revived);
     const slot = p.bench.findIndex(s => s === null);
     p.bench[slot] = revived;
     addLog(`P${player} used Revive — ${revived.name} returned to bench at half HP.`, true);
@@ -204,7 +204,7 @@ const TRAINER_EFFECTS = {
     const doScoop = (zone, idx) => {
       const target = zone === 'active' ? p.active : p.bench[idx];
       p.discard.push(...(target.attachedEnergy || []));
-      target.attachedEnergy = []; target.damage = 0; target.status = null;
+      target.attachedEnergy = []; target.damage = 0; clearAllStatus(target);
       p.hand.push(target);
       if (zone === 'active') p.active = null; else p.bench[idx] = null;
       addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
@@ -222,7 +222,14 @@ const TRAINER_EFFECTS = {
     const doSwitch = ({ s, i }) => {
       consume();
       const old = p.active;
-      if (old?.status) { addLog(`${old.name}'s ${old.status} cleared by Switch.`); old.status = null; }
+      // Multi-status: log every active condition before clearing.
+      if (old) {
+        const conds = (typeof activeStatuses === 'function')
+          ? activeStatuses(old)
+          : (old.status ? [old.status] : []);
+        if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared by Switch.`);
+        clearAllStatus(old);
+      }
       p.active = s; p.bench[i] = old;
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
       renderAll();
@@ -239,7 +246,14 @@ const TRAINER_EFFECTS = {
     const doGust = ({ s, i }) => {
       consume();
       const old = oppP.active;
-      if (old?.status) { addLog(`${old.name}'s ${old.status} cleared on being benched.`); old.status = null; }
+      // Multi-status: log every active condition before clearing.
+      if (old) {
+        const conds = (typeof activeStatuses === 'function')
+          ? activeStatuses(old)
+          : (old.status ? [old.status] : []);
+        if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared on being benched.`);
+        clearAllStatus(old);
+      }
       oppP.active = s; oppP.bench[i] = old;
       // Defensive pad — ensure bench stays exactly 5 slots after swap
       while (oppP.bench.length < 5) oppP.bench.push(null);
@@ -632,7 +646,7 @@ const TRAINER_EFFECTS = {
           const restored = src.splice(si, 1)[0];
           restored.damage = target.damage;
           restored.attachedEnergy = target.attachedEnergy;
-          restored.status = null;
+          clearAllStatus(restored);
           // Discard all evolution cards in the chain
           discardedEvolutions.forEach(e => p.discard.push(e));
           if (zone === 'active') p.active = restored; else p.bench[idx] = restored;
@@ -757,7 +771,7 @@ const TRAINER_EFFECTS = {
     }));
     const doBreed = ({ zone, idx }) => {
       const tCard = zone === 'active' ? p.active : p.bench[idx];
-      stage2.damage = tCard.damage || 0; stage2.attachedEnergy = tCard.attachedEnergy || []; stage2.status = null;
+      stage2.damage = tCard.damage || 0; stage2.attachedEnergy = tCard.attachedEnergy || []; clearAllStatus(stage2);
       // Preserve the Basic (and any pre-existing prevStages) underneath stage2
       // so it goes to discard on KO — physical TCG rule: Breeder stacks the
       // Stage 2 directly on the Basic, and both discard together on KO (no
@@ -787,7 +801,7 @@ const TRAINER_EFFECTS = {
     const di = oppP.discard.findIndex(c => c === chosen);
     if (di !== -1) {
       const moved = oppP.discard.splice(di, 1)[0];
-      moved.damage = 0; moved.attachedEnergy = []; moved.status = null;
+      moved.damage = 0; moved.attachedEnergy = []; clearAllStatus(moved);
       oppP.bench[oppP.bench.findIndex(s => s === null)] = moved;
       addLog(`P${player} used Pokémon Flute — ${moved.name} placed on opponent's bench.`, true);
     }

@@ -125,9 +125,9 @@ function getActionsForCard(player, card, handIdx) {
       unplayableReason = 'No damaged Pokémon to heal';
     else if (/^pokémon center$/i.test(nm) && !myPokemon.some(s => (s.damage || 0) > 0))
       unplayableReason = 'No damaged Pokémon to heal';
-    else if (/^full heal$/i.test(nm) && !p.active?.status)
+    else if (/^full heal$/i.test(nm) && !hasAnyStatus(p.active))
       unplayableReason = 'Active Pokémon has no status condition';
-    else if (/^full restore$/i.test(nm) && !p.active?.status)
+    else if (/^full restore$/i.test(nm) && !hasAnyStatus(p.active))
       unplayableReason = 'Active Pokémon has no status condition';
     else if (/^scoop up$/i.test(nm) && !myPokemon.some(s => s.subtypes?.includes('Basic') && !s.isDoll))
       unplayableReason = 'No eligible Basic Pokémon';
@@ -194,7 +194,7 @@ function playAsActive(player, handIdx) {
   }
   const p = G.players[player];
   const card = p.hand.splice(handIdx, 1)[0];
-  card.damage = 0; card.attachedEnergy = []; card.status = null;
+  card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.active = card;
   // Mark as played this turn — cannot evolve until next turn
   if (G.phase !== 'SETUP') {
@@ -228,10 +228,10 @@ function evolve(player, handIdx, zone, benchIdx) {
   // All guards passed — now remove card from hand
   const evoCard = p.hand.splice(handIdx, 1)[0];
 
-  // Carry over damage, energy, status from the base pokemon
+  // Carry over damage, energy from the base pokemon (status is cleared)
   evoCard.damage = target.damage || 0;
   evoCard.attachedEnergy = target.attachedEnergy || [];
-  evoCard.status = null; // evolving cures status conditions
+  clearAllStatus(evoCard); // evolving cures all status conditions
 
   // Store pre-evolution cards underneath (they go to discard only when KO'd, not on evolve)
   // Mysterious Fossil is an exception — it IS discarded on evolution per Base Set rules
@@ -265,7 +265,7 @@ function startBenchPlay(player, handIdx) {
   const freeSlot = p.bench.findIndex(s => s === null);
   if (freeSlot === -1) { showToast('Bench is full!', true); return; }
   const card = p.hand.splice(handIdx, 1)[0];
-  card.damage = 0; card.attachedEnergy = []; card.status = null;
+  card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.bench[freeSlot] = card;
   // Mark as played this turn — cannot evolve until next turn
   if (G.phase !== 'SETUP') {
@@ -285,7 +285,7 @@ function playToBench(player, slotIdx) {
   const { handIdx } = G.pendingAction;
   const p = G.players[player];
   const card = p.hand.splice(handIdx, 1)[0];
-  card.damage = 0; card.attachedEnergy = []; card.status = null;
+  card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.bench[slotIdx] = card;
   G.pendingAction = null;
   clearHighlights();
@@ -393,11 +393,14 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         // Conversion 1 requires the opponent to have a Weakness — block it if they don't
         const isConversion1Blocked = atk.name === 'Conversion 1' &&
           !(G.players[player === 1 ? 2 : 1].active?.weaknesses || []).length;
-        const isStatusBlocked = card.status === 'paralyzed' || card.status === 'asleep';
+        // Multi-status: only the "special" slot blocks attacks (Asleep/Paralyzed).
+        // Poison and Burn never prevent attacking. Read special with legacy fallback.
+        const specialStatus = card.special ?? card.status ?? null;
+        const isStatusBlocked = specialStatus === 'paralyzed' || specialStatus === 'asleep';
         // Agility/Barrier (defenderFullEffects) and Tail Wag (immuneToAttack) are handled
         // inside performAttack — don't grey out attacks here, player should still be able to select them
         const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked;
-        const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${card.status.toUpperCase()})` :
+        const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${specialStatus.toUpperCase()})` :
                          isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
                          isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
@@ -411,7 +414,9 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         });
       });
     }
-    const activeStatus = card.status;
+    // Multi-status: retreat eligibility is determined by the special slot only.
+    // Poison/Burn never affect retreat.
+    const activeStatus = card.special ?? card.status ?? null;
     const retreatBlocked = activeStatus === 'paralyzed' || activeStatus === 'asleep';
     const retreatConfused = activeStatus === 'confused';
     const retreatLabel = retreatBlocked
@@ -460,15 +465,18 @@ function attemptRetreat(player) {
   if (!p.active) return;
   if (p.active.cantRetreat) { showToast(`${p.active.name} cannot retreat this turn!`, true); return; }
 
-  // Paralyzed and Asleep Pokémon cannot retreat (TCG rule)
-  if (p.active.status === 'paralyzed') {
+  // Paralyzed and Asleep Pokémon cannot retreat (TCG rule).
+  // Multi-status: only the special slot is relevant — Poisoned/Burned retreat
+  // normally; if also Confused, the Confused branch wins (it's the special).
+  const _activeSpecial = p.active.special ?? p.active.status ?? null;
+  if (_activeSpecial === 'paralyzed') {
     showToast(`${p.active.name} is Paralyzed and cannot retreat!`, true); return;
   }
-  if (p.active.status === 'asleep') {
+  if (_activeSpecial === 'asleep') {
     showToast(`${p.active.name} is Asleep and cannot retreat!`, true); return;
   }
   // Confused Pokémon must flip a coin to retreat — heads OK, tails fail
-  if (p.active.status === 'confused') {
+  if (_activeSpecial === 'confused') {
     (async () => {
       const heads = await flipCoin(`${p.active.name} is Confused! Heads = can retreat, Tails = cannot retreat`);
       if (!heads) {
@@ -518,8 +526,9 @@ async function doRetreat(player, p) {
 async function executeRetreat(player, benchIdx) {
   const p = G.players[player];
 
-  // Final guard
-  if (p.active?.status === 'paralyzed' || p.active?.status === 'asleep') {
+  // Final guard — multi-status: only special slot blocks retreat.
+  const _execSpecial = p.active?.special ?? p.active?.status ?? null;
+  if (_execSpecial === 'paralyzed' || _execSpecial === 'asleep') {
     showToast(`${p.active.name} cannot retreat!`, true);
     G.pendingAction = null; clearHighlights(); return;
   }
@@ -610,10 +619,19 @@ async function executeRetreat(player, benchIdx) {
     old.pounceActive = false;
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
-  if (old.status) {
+  // Multi-status: log every active condition before clearing all of them.
+  // Per TCG rules, retreating cures all status conditions on the retreating
+  // Pokémon. Listing each one in the log makes the cure visible to players
+  // (e.g. when a Poisoned + Confused Pokémon retreats, both go away).
+  if (typeof activeStatuses === 'function') {
+    const conds = activeStatuses(old);
+    if (conds.length) {
+      addLog(`${old.name}'s ${conds.join(' and ')} condition${conds.length > 1 ? 's' : ''} cleared on retreat.`);
+    }
+  } else if (old.status) {
     addLog(`${old.name}'s ${old.status} condition cleared on retreat.`);
-    old.status = null;
   }
+  clearAllStatus(old);
   p.active = p.bench[benchIdx];
   p.bench[benchIdx] = old;
   G.pendingAction = null;
@@ -804,8 +822,13 @@ function pickNumber(title, min, max) {
 // ══════════════════════════════════════════════════
 // parseStatusEffects — defined in game-utils.js (loaded before this file)
 
+// Orphan helper kept for any external/test callers — prefer tryApplyStatus
+// in pokemon-powers.js, which adds Thick Skinned + bench guards. This one
+// just routes a raw status string through the multi-status slot machinery.
 function applyStatus(target, status) {
-  target.status = status;
+  if (!target) return;
+  setStatusSlot(target, status);
+  target.status = status; // legacy mirror
 }
 
 // ══════════════════════════════════════════════════
@@ -1108,8 +1131,10 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
       // ── Strikes Back (Machamp) ─────────────────────────────────
       // Whenever Machamp takes damage, deal 10 automatic damage to the attacker.
       // No coin flip. Not usable if Machamp is Asleep, Confused, or Paralyzed.
+      // Multi-status: only the special slot suppresses the power.
+      const _oppSpecial = oppActive.special ?? oppActive.status ?? null;
       if (dmg > 0 && isPowerActive(oppActive, 'Strikes Back') &&
-          oppActive.status !== 'asleep' && oppActive.status !== 'confused' && oppActive.status !== 'paralyzed') {
+          _oppSpecial !== 'asleep' && _oppSpecial !== 'confused' && _oppSpecial !== 'paralyzed') {
         if (myActive) {
           myActive.damage = (myActive.damage || 0) + 10;
           addLog(`Strikes Back! (${oppActive.name}) — ${myActive.name} takes 10 damage! (${myActive.damage}/${myActive.hp} HP)`, true);
@@ -1420,13 +1445,16 @@ async function performAttack(player, atk) {
   if (!oppActive) { showToast('No opponent Active Pokémon to attack!', true); return; }
 
   // ── Status guards ────────────────────────────────────────────────────────────
-  if (myActive?.status === 'paralyzed') {
+  // Multi-status: only the special slot blocks/redirects attacks. Poisoned and
+  // Burned never affect attack flow. Read with legacy fallback.
+  const _myActiveSpecial = myActive?.special ?? myActive?.status ?? null;
+  if (_myActiveSpecial === 'paralyzed') {
     addLog(`${myActive.name} is Paralyzed and cannot attack!`, true);
     showToast(`${myActive.name} is Paralyzed!`, true);
     showBlockedFlash(player, myActive.name, atk.name, 'PARALYZED — cannot attack');
     return;
   }
-  if (myActive?.status === 'asleep') {
+  if (_myActiveSpecial === 'asleep') {
     addLog(`${myActive.name} is Asleep and cannot attack!`, true);
     showToast(`${myActive.name} is Asleep!`, true);
     showBlockedFlash(player, myActive.name, atk.name, 'ASLEEP — cannot attack');
@@ -1434,7 +1462,7 @@ async function performAttack(player, atk) {
   }
 
   // ── Confusion check ──────────────────────────────────────────────────────────
-  if (myActive?.status === 'confused') {
+  if (_myActiveSpecial === 'confused') {
     addLog(`${myActive.name} is Confused — flipping coin...`);
     const confusionHeads = await flipCoin(`${myActive.name} is Confused!\nHeads = attack normally, Tails = hurt itself`);
     addLog(`Coin flip: ${confusionHeads ? 'HEADS — attacks normally!' : 'TAILS — hurt itself for 30!'}`);
@@ -1850,10 +1878,14 @@ function resolvePromotion(player, benchIdx) {
 // Post-status-tick half of endTurn — called directly when a between-turns
 // KO promotion is resolved, to avoid double-flipping the turn.
 function _finishEndTurn(prev) {
-  // Paralysis wears off on the player whose turn just ended
+  // Paralysis wears off on the player whose turn just ended.
+  // Multi-status: only clear the special slot — poison/burn persist independently.
   const prevActive = G.players[prev].active;
-  if (prevActive?.status === 'paralyzed') {
-    prevActive.status = null;
+  const _prevSpecial = prevActive?.special ?? prevActive?.status ?? null;
+  if (prevActive && _prevSpecial === 'paralyzed') {
+    prevActive.special = null;
+    // Sync legacy field: pick whichever non-special condition remains, if any.
+    prevActive.status = prevActive.poison || (prevActive.burn ? 'burned' : null);
     addLog(`${prevActive.name} is no longer Paralyzed.`);
   }
 
@@ -1923,7 +1955,8 @@ function _finishEndTurn(prev) {
   }
 
   const sleepTarget = G.players[G.turn].active;
-  if (sleepTarget?.status === 'asleep') {
+  const _sleepSpecial = sleepTarget?.special ?? sleepTarget?.status ?? null;
+  if (_sleepSpecial === 'asleep') {
     G.pendingSleepFlip = sleepTarget.name;
   }
 
@@ -1937,10 +1970,14 @@ function _finishEndTurn(prev) {
     G.pendingSleepFlip = null;
     setTimeout(async () => {
       const target = G.players[G.turn].active;
-      if (target && target.name === sleepName && target.status === 'asleep') {
+      const _targetSpecial = target?.special ?? target?.status ?? null;
+      if (target && target.name === sleepName && _targetSpecial === 'asleep') {
         const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
         if (wakeUp) {
-          target.status = null;
+          // Multi-status: clear only the special slot. Any poison/burn the
+          // sleeping Pokémon also has must continue ticking.
+          target.special = null;
+          target.status = target.poison || (target.burn ? 'burned' : null);
           addLog(`${sleepName} woke up!`);
         } else {
           addLog(`${sleepName} is still asleep.`);
@@ -2017,7 +2054,22 @@ function endTurn() {
 
     for (const t of ticks) {
       const active = G.players[t.player]?.active;
-      if (!active || active.status !== t.status) continue; // may have changed mid-loop
+      if (!active) continue;
+      // Multi-status mid-loop guard: the condition that produced this tick
+      // could have been cleared by an earlier tick's KO or by code that ran
+      // synchronously between ticks. Verify the relevant slot still holds the
+      // expected status before applying damage.
+      let stillHas = false;
+      if (t.status === 'poisoned' || t.status === 'poisoned-toxic') {
+        const cur = active.poison ?? (
+          active.status === 'poisoned' || active.status === 'poisoned-toxic'
+            ? active.status : null
+        );
+        stillHas = (cur === t.status);
+      } else if (t.status === 'burned') {
+        stillHas = (active.burn === true || active.status === 'burned');
+      }
+      if (!stillHas) continue;
       const owner = t.player;
       const attacker = owner === 1 ? 2 : 1;
       active.damage = (active.damage || 0) + t.dmg;

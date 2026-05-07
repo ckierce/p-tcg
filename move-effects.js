@@ -243,7 +243,7 @@ const _callForFamily = (targetName) => ({
     }
     const di = myP.deck.findIndex(c => c === chosen);
     if (di !== -1) {
-      chosen.damage = 0; chosen.attachedEnergy = []; chosen.status = null;
+      chosen.damage = 0; chosen.attachedEnergy = []; clearAllStatus(chosen);
       myP.bench[slot] = myP.deck.splice(di, 1)[0];
       myP.deck = shuffle(myP.deck);
       addLog(`${atk.name}: ${chosen.name} placed on bench!`, true);
@@ -653,7 +653,7 @@ const MOVE_EFFECTS = {
       }
       const di = myP.deck.findIndex(c => c === chosen);
       if (di !== -1) {
-        chosen.damage = 0; chosen.attachedEnergy = []; chosen.status = null;
+        chosen.damage = 0; chosen.attachedEnergy = []; clearAllStatus(chosen);
         myP.bench[slot] = myP.deck.splice(di, 1)[0];
         myP.deck = shuffle(myP.deck);
         addLog(`${atk.name}: ${chosen.name} placed on bench!`, true);
@@ -783,7 +783,9 @@ const MOVE_EFFECTS = {
   // Dream Eater (Haunter): pre-check — only usable when opp is Asleep
   'Dream Eater': {
     preAttack: ({ oppActive, atk }) => {
-      if (oppActive?.status !== 'asleep') {
+      // Multi-status: read special slot; legacy `status` as fallback.
+      const oppSpecial = oppActive?.special ?? oppActive?.status ?? null;
+      if (oppSpecial !== 'asleep') {
         showToast(`${atk.name}: opponent must be Asleep!`, true);
         addLog(`${atk.name}: ${oppActive?.name} is not Asleep — failed!`, true);
         return 'block';
@@ -917,11 +919,11 @@ const MOVE_EFFECTS = {
       const oppActive = oppP.active;
       if (!oppActive) return; // already KO'd — no return effect
       const toHand = [oppActive, ...(oppActive.attachedEnergy || [])];
-      oppActive.attachedEnergy = []; oppActive.damage = 0; oppActive.status = null;
+      oppActive.attachedEnergy = []; oppActive.damage = 0; clearAllStatus(oppActive);
       let evoName = oppActive.evolvesFrom;
       while (evoName) {
         const idx = oppP.discard.findIndex(c => c.name === evoName && c.supertype === 'Pokémon');
-        if (idx !== -1) { const pre = oppP.discard.splice(idx, 1)[0]; pre.damage = 0; pre.attachedEnergy = []; pre.status = null; toHand.push(pre); evoName = pre.evolvesFrom; }
+        if (idx !== -1) { const pre = oppP.discard.splice(idx, 1)[0]; pre.damage = 0; pre.attachedEnergy = []; clearAllStatus(pre); toHand.push(pre); evoName = pre.evolvesFrom; }
         else break;
       }
       oppP.active = null; oppP.hand.push(...toHand);
@@ -1406,7 +1408,10 @@ const MOVE_EFFECTS = {
     targetsDefender: true,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
-      oppActive.status = 'poisoned-toxic';
+      // Use tryApplyStatus so Thick Skinned (Snorlax) properly blocks it,
+      // and so the multi-status routing puts this in the poison slot
+      // independently of any special condition the defender may have.
+      tryApplyStatus(oppActive, 'poisoned-toxic');
       addLog(`${atk.name}: ${oppActive.name} is now Badly Poisoned (20/turn)!`, true);
     }
   },

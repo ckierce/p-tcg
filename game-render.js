@@ -96,10 +96,12 @@ function renderField(player) {
         </div>`;
       } else {
         const card = p.active;
-        if (card.status) activeEl.classList.add(`status-${card.status.replace('-toxic','')}`);
+        const _statusClasses = statusClassesFor(card);
+        if (_statusClasses.length) activeEl.classList.add(..._statusClasses);
         const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', 26), energyIcon('Colorless Energy', 26)] : [energyIcon(e.name, 26)]).join('');
         const dmg = damageCounters(card.damage, true);
-        const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+        const _statusGlyph = statusEmojis(card);
+        const status = _statusGlyph ? `<div class="status-overlay">${_statusGlyph}</div>` : '';
         const oppPower1 = getPower(card);
         const oppPowerSup1 = oppPower1 && isMukActive() && oppPower1.name !== 'Toxic Gas';
         const badgeParts1 = [
@@ -127,8 +129,10 @@ function renderField(player) {
           slotEl.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:16px;">🂠</div>`;
           slotEl.classList.remove('empty');
         } else {
-          if (card.status) slotEl.classList.add(`status-${card.status.replace('-toxic','')}`);
-          const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+          const _benchClasses = statusClassesFor(card);
+          if (_benchClasses.length) slotEl.classList.add(..._benchClasses);
+          const _benchGlyph = statusEmojis(card);
+          const status = _benchGlyph ? `<div class="status-overlay">${_benchGlyph}</div>` : '';
           const benchPower = getPower(card);
           const benchPowerSup = benchPower && isMukActive() && benchPower.name !== 'Toxic Gas';
           const badgeParts2 = [
@@ -189,12 +193,14 @@ function renderSlotP1(el, card) {
     return;
   }
   el.classList.add('occupied');
-  if (card.status) el.classList.add(`status-${card.status.replace('-toxic','')}`);
+  const _myClasses = statusClassesFor(card);
+  if (_myClasses.length) el.classList.add(..._myClasses);
 
   const isActive = el.id.includes('active');
   const energyClass = isActive ? 'energy-overlay' : 'energy-overlay-bench';
   const dmg = damageCounters(card.damage, isActive);
-  const status = card.status ? `<div class="status-overlay">${statusEmoji(card.status)}</div>` : '';
+  const _myGlyph = statusEmojis(card);
+  const status = _myGlyph ? `<div class="status-overlay">${_myGlyph}</div>` : '';
   const power = getPower(card);
   const powerSuppressed = power && isMukActive() && power.name !== 'Toxic Gas';
   const badgeParts3 = [
@@ -690,6 +696,35 @@ function statusEmoji(s) {
   return { asleep:'😴', confused:'😵', paralyzed:'⚡', poisoned:'☠️', burned:'🔥' }[s] || '❓';
 }
 
+// Multi-status rendering helpers — see GAME_STATE_DEFAULTS in game-utils.js
+// for the underlying schema (special / poison / burn slots).
+//
+// statusEmojis(card)  → e.g. '😵☠️' for a Confused + Poisoned card.
+// statusClassesFor(card) → e.g. ['status-confused','status-poisoned'] —
+//   the CSS already targets these single-condition classes (see pokemon-game.html);
+//   stacking multiple just gives the slot the union of the visual cues
+//   (border-color from the last-applied class wins, glow from each class
+//   composes via box-shadow). For a single-condition card the result is
+//   identical to the old single-class behavior.
+function statusEmojis(card) {
+  if (!card) return '';
+  // Prefer the typed slots; fall back to the legacy single string for any
+  // un-migrated card we encountered before mergeGameStateDefaults ran.
+  const conditions = (typeof activeStatuses === 'function')
+    ? activeStatuses(card)
+    : (card.status ? [card.status] : []);
+  return conditions.map(statusEmoji).join('');
+}
+
+function statusClassesFor(card) {
+  if (!card) return [];
+  const conditions = (typeof activeStatuses === 'function')
+    ? activeStatuses(card)
+    : (card.status ? [card.status] : []);
+  // Toxic Poison shares the same visual cue as regular Poison — strip the suffix.
+  return conditions.map(s => `status-${s.replace('-toxic','')}`);
+}
+
 // ══════════════════════════════════════════════════
 // CARD DATA LOOKUP (loaded once from cards.json)
 // ══════════════════════════════════════════════════
@@ -1124,7 +1159,13 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
         ? `<div class="picker-card-meta">${energy.flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', 12), energyIcon('Colorless Energy', 12)] : [energyIcon(e.name, 12)]).join('')}</div>`
         : '';
       const dmg = card.damage ? `<div class="picker-card-meta">${damageCounters(card.damage)}</div>` : '';
-      const status = card.status ? `<div class="picker-card-meta" style="color:var(--accent)">${statusEmoji(card.status)} ${card.status}</div>` : '';
+      // Multi-status: list every active condition (e.g. "😵 confused ☠️ poisoned").
+      const _conds = (typeof activeStatuses === 'function')
+        ? activeStatuses(card)
+        : (card.status ? [card.status] : []);
+      const status = _conds.length
+        ? `<div class="picker-card-meta" style="color:var(--accent)">${_conds.map(s => `${statusEmoji(s)} ${s}`).join(' · ')}</div>`
+        : '';
       const isEnergy = card.supertype === 'Energy';
       return `
         <div class="picker-card${isEnergy ? ' is-energy' : ''}" id="picker-card-${i}"

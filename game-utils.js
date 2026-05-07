@@ -39,7 +39,27 @@ const RULES = {
 // tests can verify the schema without loading the renderer.
 // If you add a field in one place, add it in the other too.
 const GAME_STATE_DEFAULTS = {
+  // ── Status conditions ──────────────────────────────────────────────────────
+  // The TCG splits status conditions into two stacks. The "Special Conditions
+  // that affect attacking" — Asleep, Paralyzed, Confused — are mutually
+  // exclusive: applying any of them replaces whichever was there before.
+  // Poisoned (incl. Toxic) and Burned each have their own slot and stack
+  // independently with each other AND with the special slot. So a Pokémon can
+  // be (e.g.) Confused + Poisoned + Burned simultaneously, which matches
+  // physical-card behavior (e.g. Venom Powder applies Confused AND Poisoned).
+  //
+  //   special: 'asleep' | 'paralyzed' | 'confused' | null
+  //   poison:  'poisoned' | 'poisoned-toxic' | null
+  //   burn:    boolean
+  //
+  // The legacy single-string `status` field is preserved as an alias for
+  // backwards compatibility with any persisted Firebase state — see
+  // statusFieldsFromLegacy() and migration logic in mergeGameStateDefaults.
+  // No new code should write `status` directly; use tryApplyStatus().
   status:               null,
+  special:              null,
+  poison:               null,
+  burn:                 false,
   damage:               0,
   defender:             false,
   defenderFull:         false,
@@ -62,6 +82,89 @@ const GAME_STATE_DEFAULTS = {
   conversionResistance: null,
   trainerBlocked:       false,
 };
+
+// ── Status helpers — multi-condition support ──────────────────────────────────
+// As of the multi-status refactor, a card carries three independent status
+// slots (special / poison / burn). These helpers encapsulate the rules so the
+// rest of the codebase can stay schema-agnostic.
+
+// Which slot does a status string belong in?
+//   'asleep' | 'paralyzed' | 'confused'   → special
+//   'poisoned' | 'poisoned-toxic'         → poison
+//   'burned'                              → burn
+function statusSlot(s) {
+  if (s === 'asleep' || s === 'paralyzed' || s === 'confused') return 'special';
+  if (s === 'poisoned' || s === 'poisoned-toxic') return 'poison';
+  if (s === 'burned') return 'burn';
+  return null;
+}
+
+// Applies `status` to `card` according to TCG slot rules. Pure mutation of
+// the three slots; does NOT enforce Thick Skinned / bench guards (see
+// tryApplyStatus in pokemon-powers.js for the full guarded version).
+//
+// Special slot is overwriting (mutually exclusive). Poison slot is also
+// overwriting within itself — applying Poisoned over Toxic Poison downgrades,
+// and vice versa; this matches the rule that there is only one Poison stack.
+// Burn is a boolean; setting Burned when already Burned is a no-op.
+function setStatusSlot(card, status) {
+  if (!card) return;
+  const slot = statusSlot(status);
+  if (slot === 'special') card.special = status;
+  else if (slot === 'poison') card.poison = status;
+  else if (slot === 'burn') card.burn = true;
+}
+
+// Clears all status conditions (used by retreat, evolve, Switch, Full Heal,
+// Full Restore, Pokémon Center / Tentacool's Power, etc.). Also clears the
+// legacy `status` field so anything still reading it gets a clean view.
+function clearAllStatus(card) {
+  if (!card) return;
+  card.special = null;
+  card.poison = null;
+  card.burn = false;
+  card.status = null;
+}
+
+// True if the card has ANY active condition. Used by trainer playability
+// gates (Full Heal: "Active Pokémon has no status condition").
+function hasAnyStatus(card) {
+  if (!card) return false;
+  return !!(card.special || card.poison || card.burn);
+}
+
+// Returns the list of active status strings on a card, in display order:
+// special first, then poison, then burn. Used by the renderer.
+function activeStatuses(card) {
+  if (!card) return [];
+  const out = [];
+  if (card.special) out.push(card.special);
+  if (card.poison) out.push(card.poison);
+  if (card.burn) out.push('burned');
+  return out;
+}
+
+// Migration shim: given a (possibly legacy) card with only `card.status`
+// populated, derive the three slot values. If the new fields are already
+// present, they take precedence. Returns the slot values without mutating.
+function statusFieldsFromLegacy(card) {
+  if (!card) return { special: null, poison: null, burn: false };
+  // New fields take precedence if any of them is set.
+  const hasNew = card.special != null || card.poison != null || card.burn === true;
+  if (hasNew) {
+    return {
+      special: card.special ?? null,
+      poison:  card.poison  ?? null,
+      burn:    card.burn === true,
+    };
+  }
+  const legacy = card.status;
+  return {
+    special: (legacy === 'asleep' || legacy === 'paralyzed' || legacy === 'confused') ? legacy : null,
+    poison:  (legacy === 'poisoned' || legacy === 'poisoned-toxic') ? legacy : null,
+    burn:    legacy === 'burned',
+  };
+}
 
 // ── energyValue ───────────────────────────────────────────────────────────────
 // Returns the total number of energy tokens provided by an array of attached
@@ -195,9 +298,25 @@ function padBench(bench) {
 // separately). Healthy, Poisoned, Burned Pokémon may proceed to the normal
 // retreat-cost check.
 // Returns: 'yes' | 'no' | 'coinflip'
-function isLegalRetreatStatus(status) {
-  if (status === 'paralyzed' || status === 'asleep') return 'no';
-  if (status === 'confused') return 'coinflip';
+// Accepts either:
+//   - a status string (legacy single-status world), OR
+//   - a card object with `special` (multi-status world)
+// In multi-status mode, only the special slot affects retreat: a Poisoned or
+// Burned Pokémon retreats normally; a Poisoned + Confused Pokémon flips per
+// the Confused branch.
+function isLegalRetreatStatus(statusOrCard) {
+  let special = statusOrCard;
+  if (statusOrCard && typeof statusOrCard === 'object') {
+    // Card-shaped input — read the special slot, fall back to legacy.
+    special = statusOrCard.special ?? statusOrCard.status ?? null;
+    // If the legacy string was a non-special (poisoned/burned), it doesn't
+    // affect retreat — treat it as no special condition.
+    if (special === 'poisoned' || special === 'poisoned-toxic' || special === 'burned') {
+      special = null;
+    }
+  }
+  if (special === 'paralyzed' || special === 'asleep') return 'no';
+  if (special === 'confused') return 'coinflip';
   return 'yes'; // null, poisoned, burned
 }
 
@@ -279,6 +398,18 @@ function mergeGameStateDefaults(card) {
   for (const [k, def] of Object.entries(GAME_STATE_DEFAULTS)) {
     out[k] = out[k] ?? def;
   }
+  // Migrate legacy single-string `status` into the three new slots.
+  // If the new slots are already populated (already-migrated card), this is a
+  // no-op. If only `status` is set (legacy state from older Firebase rooms or
+  // older save files), derive the slot values.
+  const derived = statusFieldsFromLegacy(out);
+  out.special = derived.special;
+  out.poison  = derived.poison;
+  out.burn    = derived.burn;
+  // Keep the legacy `status` field in sync as a read-only convenience for any
+  // code paths that haven't been migrated yet. The "primary" condition is the
+  // special slot if present, else poison, else burn.
+  out.status = derived.special || derived.poison || (derived.burn ? 'burned' : null);
   return out;
 }
 
@@ -342,18 +473,36 @@ function computeBetweenTurnDamage(players) {
   const out = [];
   for (const pNum of [1, 2]) {
     const active = players?.[pNum]?.active;
-    if (!active || !active.status) continue;
-    let dmg = 0;
-    if (active.status === 'poisoned')        dmg = 10;
-    else if (active.status === 'poisoned-toxic') dmg = 20;
-    else if (active.status === 'burned')     dmg = 20;
-    if (dmg === 0) continue;
-    out.push({
-      player:    pNum,
-      status:    active.status,
-      dmg,
-      newDamage: (active.damage || 0) + dmg,
-    });
+    if (!active) continue;
+    // Poison tick (regular or toxic).
+    const poison = active.poison ?? (
+      active.status === 'poisoned' || active.status === 'poisoned-toxic'
+        ? active.status : null
+    );
+    if (poison === 'poisoned' || poison === 'poisoned-toxic') {
+      const dmg = poison === 'poisoned-toxic' ? 20 : 10;
+      out.push({
+        player:    pNum,
+        status:    poison,
+        dmg,
+        newDamage: (active.damage || 0) + dmg,
+      });
+    }
+    // Burn tick — stacks with poison; both apply this same end-of-turn.
+    const isBurned = active.burn === true || active.status === 'burned';
+    if (isBurned) {
+      out.push({
+        player:    pNum,
+        status:    'burned',
+        dmg:       20,
+        // Note: when both poison and burn apply, this newDamage value reflects
+        // the burn tick alone — callers either re-read damage after applying
+        // the prior tick (current callers do exactly this) or treat newDamage
+        // as advisory. The safer source of truth is `damage + dmg` at apply
+        // time, which is what game-actions does.
+        newDamage: (active.damage || 0) + 20,
+      });
+    }
   }
   return out;
 }
@@ -447,5 +596,7 @@ if (typeof module !== 'undefined') {
     transitionPhase,
     buildEvolutionStackUnder,
     GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
+    statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
+    activeStatuses, statusFieldsFromLegacy,
   };
 }

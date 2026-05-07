@@ -65,8 +65,14 @@ function isMukActive() {
 }
 
 // Internal: returns true if a card's status would block its power from working.
+// Per TCG rules, only the "special" conditions (Asleep / Paralyzed / Confused)
+// suppress Pokémon Powers — Poisoned and Burned do NOT. Multi-status note:
+// reads `card.special` first; falls back to legacy `card.status` for any
+// unmigrated state.
 function _isStatusBlocked(card) {
-  return card?.status === 'asleep' || card?.status === 'confused' || card?.status === 'paralyzed';
+  if (!card) return false;
+  const s = card.special ?? card.status ?? null;
+  return s === 'asleep' || s === 'confused' || s === 'paralyzed';
 }
 
 // Aerodactyl's Prehistoric Power: no evolution can be played while it's in play.
@@ -149,6 +155,13 @@ function tryApplyStatus(target, status) {
       return false;
     }
   }
+  // Multi-status routing: special slot is mutually exclusive
+  // (asleep/paralyzed/confused), poison and burn each stack independently.
+  // setStatusSlot writes to the correct slot — see game-utils.js.
+  setStatusSlot(target, status);
+  // Keep the legacy `status` field roughly in sync so any unmigrated reader
+  // that still looks at it sees the most recently applied condition.
+  // Reads should prefer the typed slots; this is a safety net.
   target.status = status;
   return true;
 }
@@ -539,7 +552,8 @@ function doCowardice(player) {
   }
 
   p.discard.push(...(tentacool.attachedEnergy || []));
-  tentacool.attachedEnergy = []; tentacool.damage = 0; tentacool.status = null;
+  tentacool.attachedEnergy = []; tentacool.damage = 0;
+  clearAllStatus(tentacool);
   p.hand.push(tentacool);
 
   if (p.active === tentacool) {

@@ -28,6 +28,9 @@ const {
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   buildEvolutionStackUnder,
+  // Multi-status helpers (added when status went from single-string to 3 slots)
+  statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
+  activeStatuses, statusFieldsFromLegacy,
 } = require('./game-utils.js');
 
 // ─── Test harness ─────────────────────────────────────────────────────────────
@@ -260,25 +263,218 @@ assert('no status text → empty array',
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// status application rules (stub contracts)
+// status application rules
 // ═══════════════════════════════════════════════════════════════════════════════
 
-section('status application rules (stub tests)');
+section('status application rules (using real helpers)');
 
 {
-  // Paralyzed cannot be stacked — applying it again should be a no-op in terms
-  // of game state (TCG rule: paralyzed replaces any existing status)
-  const card = { status: 'paralyzed' };
-  // Simulate what applyStatus does: status = newStatus
-  const applyStatus = (target, s) => { target.status = s; };
-  applyStatus(card, 'asleep');
-  assert('status replacement: paralyzed overwritten by asleep', card.status === 'asleep');
+  // Special slot is mutually exclusive: paralyzed → asleep replaces.
+  const card = { special: 'paralyzed' };
+  setStatusSlot(card, 'asleep');
+  assert('status replacement: paralyzed overwritten by asleep (special slot)', card.special === 'asleep');
 }
 
 {
   // Null status means no condition
-  const card = { status: null };
-  assert('null status means healthy', card.status === null);
+  const card = {};
+  assert('healthy card has no status',           hasAnyStatus(card) === false);
+  assert('healthy card has empty activeStatuses', activeStatuses(card).length === 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// multi-status: poison + burn + special slots stack independently
+//
+// TCG rule (rule-accurate model): a Pokémon can have at most one of
+// {Asleep, Paralyzed, Confused} — the "Special Conditions That Affect
+// Attacking" — but Poisoned (incl. Toxic) and Burned each have their own
+// independent slot. So a Pokémon can simultaneously be Confused + Poisoned
+// + Burned, and applying a new Special replaces the old Special without
+// touching poison or burn.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('multi-status: statusSlot routing');
+assert('asleep → special slot',           statusSlot('asleep') === 'special');
+assert('paralyzed → special slot',        statusSlot('paralyzed') === 'special');
+assert('confused → special slot',         statusSlot('confused') === 'special');
+assert('poisoned → poison slot',          statusSlot('poisoned') === 'poison');
+assert('poisoned-toxic → poison slot',    statusSlot('poisoned-toxic') === 'poison');
+assert('burned → burn slot',              statusSlot('burned') === 'burn');
+assert('null status → no slot',           statusSlot(null) === null);
+assert('unknown status → no slot',        statusSlot('frozen') === null);
+
+section('multi-status: independent stacking');
+{
+  const c = {};
+  setStatusSlot(c, 'confused');
+  setStatusSlot(c, 'poisoned');
+  assert('confused + poisoned both apply', c.special === 'confused' && c.poison === 'poisoned');
+}
+{
+  const c = {};
+  setStatusSlot(c, 'asleep');
+  setStatusSlot(c, 'poisoned');
+  setStatusSlot(c, 'burned');
+  assert('asleep + poisoned + burned all apply',
+    c.special === 'asleep' && c.poison === 'poisoned' && c.burn === true);
+}
+
+section('multi-status: special slot replaces special, leaves others');
+{
+  // Bug Craig was reporting: applying a new status removed the previous one.
+  // The fix is per-slot replacement — applying paralyzed when poisoned must
+  // NOT clear the poison.
+  const c = { poison: 'poisoned' };
+  setStatusSlot(c, 'paralyzed');
+  assert('paralyzed applied after poisoned: special set',  c.special === 'paralyzed');
+  assert('paralyzed applied after poisoned: poison KEPT',  c.poison === 'poisoned');
+}
+{
+  // The classic "sleep wins over confused" replacement still works WITHIN the
+  // special slot.
+  const c = {};
+  setStatusSlot(c, 'confused');
+  setStatusSlot(c, 'asleep');
+  assert('confused → asleep replaces special', c.special === 'asleep');
+}
+
+section('multi-status: poison slot upgrade/downgrade');
+{
+  const c = {};
+  setStatusSlot(c, 'poisoned');
+  setStatusSlot(c, 'poisoned-toxic');
+  assert('regular poison overwritten by toxic', c.poison === 'poisoned-toxic');
+}
+{
+  const c = { burn: true };
+  setStatusSlot(c, 'burned');
+  assert('applying burned when already burned stays true', c.burn === true);
+}
+
+section('multi-status: clearAllStatus clears every slot');
+{
+  const c = { special: 'confused', poison: 'poisoned-toxic', burn: true, status: 'confused' };
+  clearAllStatus(c);
+  assert('clearAll: special → null',    c.special === null);
+  assert('clearAll: poison → null',     c.poison === null);
+  assert('clearAll: burn → false',      c.burn === false);
+  assert('clearAll: legacy status → null', c.status === null);
+}
+
+section('multi-status: hasAnyStatus / activeStatuses');
+assert('hasAnyStatus: healthy → false',         hasAnyStatus({}) === false);
+assert('hasAnyStatus: only special → true',     hasAnyStatus({ special: 'asleep' }) === true);
+assert('hasAnyStatus: only poison → true',      hasAnyStatus({ poison: 'poisoned' }) === true);
+assert('hasAnyStatus: only burn → true',        hasAnyStatus({ burn: true }) === true);
+assert('hasAnyStatus: null card → false',       hasAnyStatus(null) === false);
+{
+  const arr = activeStatuses({ special: 'confused', poison: 'poisoned', burn: true });
+  assert('activeStatuses returns 3 items',      arr.length === 3);
+  assert('activeStatuses: special first',       arr[0] === 'confused');
+  assert('activeStatuses: poison second',       arr[1] === 'poisoned');
+  assert('activeStatuses: burn third',          arr[2] === 'burned');
+}
+
+section('multi-status: legacy migration (statusFieldsFromLegacy)');
+{
+  const r = statusFieldsFromLegacy({ status: 'asleep' });
+  assert('legacy asleep → special',  r.special === 'asleep' && r.poison === null && r.burn === false);
+}
+{
+  const r = statusFieldsFromLegacy({ status: 'poisoned-toxic' });
+  assert('legacy toxic → poison',    r.poison === 'poisoned-toxic' && r.special === null);
+}
+{
+  const r = statusFieldsFromLegacy({ status: 'burned' });
+  assert('legacy burned → burn',     r.burn === true && r.special === null && r.poison === null);
+}
+{
+  const r = statusFieldsFromLegacy({ status: null });
+  assert('legacy null → all empty',  r.special === null && r.poison === null && r.burn === false);
+}
+{
+  // If the new fields are already set, they must take precedence over the
+  // legacy mirror (covers Firebase round-trips of already-migrated state).
+  const r = statusFieldsFromLegacy({
+    special: 'confused', poison: 'poisoned-toxic', burn: true, status: 'asleep',
+  });
+  assert('new fields override legacy mirror',
+    r.special === 'confused' && r.poison === 'poisoned-toxic' && r.burn === true);
+}
+
+section('multi-status: mergeGameStateDefaults migrates legacy & preserves new');
+{
+  const m = mergeGameStateDefaults({ name: 'X', status: 'paralyzed' });
+  assert('legacy paralyzed → special set',         m.special === 'paralyzed');
+  assert('legacy paralyzed → poison still null',   m.poison === null);
+  assert('legacy paralyzed → burn still false',    m.burn === false);
+  assert('legacy mirror "status" preserved',       m.status === 'paralyzed');
+}
+{
+  // Already-migrated card round-trips intact.
+  const m = mergeGameStateDefaults({
+    name: 'X', special: 'confused', poison: 'poisoned', burn: true,
+  });
+  assert('migrated card: special preserved',  m.special === 'confused');
+  assert('migrated card: poison preserved',   m.poison === 'poisoned');
+  assert('migrated card: burn preserved',     m.burn === true);
+  assert('migrated card: legacy mirror is the special',  m.status === 'confused');
+}
+
+section('multi-status: GAME_STATE_DEFAULTS schema');
+assert('default special is null',  GAME_STATE_DEFAULTS.special === null);
+assert('default poison is null',   GAME_STATE_DEFAULTS.poison === null);
+assert('default burn is false',    GAME_STATE_DEFAULTS.burn === false);
+
+section('multi-status: isLegalRetreatStatus accepts card object');
+assert('card { special:asleep } → no',
+  isLegalRetreatStatus({ special: 'asleep' }) === 'no');
+assert('card { special:paralyzed } → no',
+  isLegalRetreatStatus({ special: 'paralyzed' }) === 'no');
+assert('card { special:confused, poison:poisoned } → coinflip (confused decides)',
+  isLegalRetreatStatus({ special: 'confused', poison: 'poisoned' }) === 'coinflip');
+assert('card { poison:poisoned-toxic } only → yes (poison alone never blocks retreat)',
+  isLegalRetreatStatus({ poison: 'poisoned-toxic' }) === 'yes');
+assert('card { burn:true } only → yes',
+  isLegalRetreatStatus({ burn: true }) === 'yes');
+assert('legacy card { status:asleep } only → no (legacy fallback)',
+  isLegalRetreatStatus({ status: 'asleep' }) === 'no');
+
+section('multi-status: computeBetweenTurnDamage emits poison+burn separately');
+{
+  // Both ticks fire in a single Pokémon Checkup when both slots are filled.
+  const players = { 1: { active: { damage: 0, hp: '80', poison: 'poisoned', burn: true } }, 2: {} };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('poison+burn → 2 ticks',   ticks.length === 2);
+  assert('first tick is poison 10', ticks[0].status === 'poisoned' && ticks[0].dmg === 10);
+  assert('second tick is burn 20',  ticks[1].status === 'burned' && ticks[1].dmg === 20);
+}
+{
+  // Toxic alone — 20/turn, single tick.
+  const players = { 1: { active: { damage: 0, hp: '80', poison: 'poisoned-toxic' } }, 2: {} };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('toxic alone → 1 tick of 20',
+    ticks.length === 1 && ticks[0].status === 'poisoned-toxic' && ticks[0].dmg === 20);
+}
+{
+  // Confused doesn't tick — special slot has no end-of-turn damage.
+  const players = { 1: { active: { damage: 0, hp: '80', special: 'confused' } }, 2: {} };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('confused alone → 0 ticks (no damage condition)', ticks.length === 0);
+}
+{
+  // Confused + poisoned → 1 tick (just the poison).
+  const players = { 1: { active: { damage: 0, hp: '80', special: 'confused', poison: 'poisoned' } }, 2: {} };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('confused + poisoned → 1 tick (poison only)',
+    ticks.length === 1 && ticks[0].status === 'poisoned');
+}
+{
+  // Legacy card with only `status` set: still ticks correctly via fallback.
+  const players = { 1: { active: { damage: 0, hp: '80', status: 'poisoned' } }, 2: {} };
+  const ticks = computeBetweenTurnDamage(players);
+  assert('legacy card { status:poisoned } still produces tick',
+    ticks.length === 1 && ticks[0].dmg === 10);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
