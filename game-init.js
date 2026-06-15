@@ -465,6 +465,10 @@ async function startGame() {
 
 function handleEndTurnBtn() {
   if (G.phase === 'SETUP') {
+    // An advance is already running (coin flip in progress). Ignore extra clicks
+    // so an impatient player can't toggle their own READY flag back off, or kick
+    // off a second advance, while the handshake is resolving.
+    if (G._setupAdvancing || G._doneSetupRunning) return;
     // In multiplayer, the SETUP button toggles the local ready flag instead
     // of advancing directly. P1's listener auto-advances when both flags are
     // true (see maybeAutoAdvanceSetup). vsComputer / single-player still
@@ -1138,6 +1142,19 @@ let isWriting = false;   // prevent echo loops
 let setupReady = { 1: false, 2: false };
 let _pushPreservesReady = false;
 
+// ── Dropped-snapshot replay (SETUP handshake reliability) ─────────────────────
+// The Firebase listeners ignore snapshots that arrive while THIS client is mid-
+// write (isWriting) to avoid processing our own echo. But that also drops the
+// opponent's update if it lands during our write — and during the SETUP ready
+// handshake the dropped update is often the opponent's READY flag (when both
+// players click at the same instant) or the SETUP→DRAW handoff. Losing it left
+// the player clicking READY with nothing happening. We stash the last snapshot
+// dropped during a write and replay it once the write finishes (see
+// pushGameState's finally). Scoped to SETUP so normal-gameplay echo handling is
+// unchanged.
+let _pendingSetupSnap = null;
+let _setupSnapHandler = null;
+
 // ── Panel helpers ─────────────────────────────────
 function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
 function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
@@ -1275,9 +1292,7 @@ async function createRoom() {
   document.getElementById('room-code-display').textContent = roomCode;
 
   // Watch for P2 joining and all game state changes
-  gameRef.on('value', snap => {
-    if (isWriting) return;
-    const data = snap.val();
+  const _handleRoomSnapshot = (data) => {
     if (!data) return;
     if (!G.started) {
       if (data.p2Ready) {
@@ -1294,6 +1309,13 @@ async function createRoom() {
       // Normal gameplay: receive opponent's state updates
       if (G.phase !== 'SETUP' && data.state) receiveGameState(data.state);
     }
+  };
+  gameRef.on('value', snap => {
+    const data = snap.val();
+    // Don't drop a snapshot that lands mid-write — stash it so pushGameState can
+    // replay it (the SETUP READY handshake depends on this; see _pendingSetupSnap).
+    if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleRoomSnapshot; return; }
+    _handleRoomSnapshot(data);
   });
 }
 
@@ -1324,9 +1346,7 @@ async function joinRoom() {
   G.players[2].name = trainerName || 'Player 2';
 
   // Watch for game start and all P1 moves
-  gameRef.on('value', snap => {
-    if (isWriting) return;
-    const data = snap.val();
+  const _handleJoinSnapshot = (data) => {
     if (!data) return;
     if (!G.started) {
       if (data.p1Ready) {
@@ -1346,6 +1366,14 @@ async function joinRoom() {
         receiveGameState(data.state);
       }
     }
+  };
+  gameRef.on('value', snap => {
+    const data = snap.val();
+    // Don't drop a snapshot that lands mid-write — stash it so pushGameState can
+    // replay it. For P2 the dropped event is usually P1's SETUP→DRAW handoff,
+    // which otherwise leaves P2 stuck on the SETUP screen. See _pendingSetupSnap.
+    if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleJoinSnapshot; return; }
+    _handleJoinSnapshot(data);
   });
 }
 
@@ -1410,8 +1438,17 @@ function maybeAutoAdvanceSetup() {
   if (!G.players[1].active || !G.players[2].active) return;
   if (G._setupAdvancing) return; // guard against double-fire
   G._setupAdvancing = true;
-  // Defer to a microtask so any pending renders settle first
-  setTimeout(() => { try { doneSetup(); } catch (e) { console.error(e); G._setupAdvancing = false; } }, 0);
+  // Defer to a microtask so any pending renders settle first. doneSetup is async
+  // (it awaits a ~3s coin-flip), so chain on the promise and ALWAYS release the
+  // guard if we're still in SETUP afterward — otherwise an early-return inside
+  // doneSetup would leave _setupAdvancing stuck true and permanently disable
+  // auto-advance, the "READY does nothing no matter how many times I click" bug.
+  setTimeout(() => {
+    Promise.resolve()
+      .then(() => doneSetup())
+      .catch(e => console.error(e))
+      .finally(() => { if (G.phase === 'SETUP') G._setupAdvancing = false; });
+  }, 0);
 }
 
 // ── Toggle our own ready flag (multiplayer SETUP only) ───────────────────────
@@ -1492,6 +1529,15 @@ async function pushGameState() {
     }
   } finally {
     isWriting = false;
+    // Replay any snapshot that arrived while we were writing so a SETUP handshake
+    // event (opponent's READY flag, or the SETUP→DRAW handoff) isn't lost to a
+    // write-collision. Scoped to SETUP: once past setup, the listener's normal
+    // echo-skip behavior is unchanged.
+    if (_pendingSetupSnap && _setupSnapHandler) {
+      const d = _pendingSetupSnap, h = _setupSnapHandler;
+      _pendingSetupSnap = null; _setupSnapHandler = null;
+      if (G.phase === 'SETUP') { try { h(d); } catch (e) { console.error(e); } }
+    }
   }
 }
 

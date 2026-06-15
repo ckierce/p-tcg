@@ -5137,6 +5137,40 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
         /doneSetup\s*\(/.test(body));
     }
 
+    // ── REGRESSION: SETUP handshake reliability (vs-human "keep clicking") ──────
+    // 11. The Firebase listeners must NOT drop a mid-write snapshot outright — a
+    //     bare `if (isWriting) return;` loses the opponent's READY flag (both
+    //     click at once) or the SETUP→DRAW handoff. They now stash it for replay.
+    assert('game-init.js: a dropped-snapshot stash (_pendingSetupSnap) exists',
+      /_pendingSetupSnap/.test(src) && /_setupSnapHandler/.test(src));
+    assert('game-init.js: listeners stash snapshot on isWriting instead of bare return',
+      /if\s*\(\s*isWriting\s*\)\s*\{\s*_pendingSetupSnap\s*=/.test(src));
+    // The two SETUP-capable listeners (createRoom/joinRoom) must stash, not drop.
+    // The resumeGame listener may still bare-return — it only handles past-SETUP
+    // states, so there's no handshake event to preserve. Allow at most that one.
+    assert('game-init.js: at most the resume listener still bare-drops on isWriting',
+      (src.match(/if\s*\(\s*isWriting\s*\)\s*return\s*;/g) || []).length <= 1);
+
+    // 12. pushGameState must replay the stashed snapshot once the write finishes.
+    if (pushM) {
+      assert('game-init.js: pushGameState replays the stashed SETUP snapshot in finally',
+        /_pendingSetupSnap[\s\S]{0,260}_setupSnapHandler/.test(pushM[1]) || /_setupSnapHandler[\s\S]{0,260}_pendingSetupSnap/.test(pushM[1]));
+    }
+
+    // 13. maybeAutoAdvanceSetup must release _setupAdvancing if the advance didn't
+    //     complete — otherwise an early-return in doneSetup sticks it true forever.
+    if (autoM) {
+      assert('maybeAutoAdvanceSetup: releases _setupAdvancing when still in SETUP (self-heal)',
+        /\.finally\s*\([\s\S]{0,120}_setupAdvancing\s*=\s*false/.test(autoM[1]));
+    }
+
+    // 14. handleEndTurnBtn must ignore SETUP clicks while an advance is running so
+    //     impatient clicking can't toggle READY back off mid-handshake.
+    if (handleM) {
+      assert('game-init.js: handleEndTurnBtn ignores clicks while advancing',
+        /_setupAdvancing\s*\|\|\s*G\._doneSetupRunning|_doneSetupRunning\s*\|\|\s*G\._setupAdvancing/.test(handleM[1]));
+    }
+
   } else {
     console.log('  (game-init.js not found — skipping SETUP ready-flow check)');
   }
