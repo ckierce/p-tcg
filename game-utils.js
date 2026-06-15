@@ -456,6 +456,33 @@ function eligibleEnergyForDiscard(attachedEnergy, requiredType) {
     .map(({ i }) => i);
 }
 
+// ── clearActiveOnlyEffects ────────────────────────────────────────────────────
+// Effects of attacks that are tied to a Pokémon BEING the Active Pokémon must be
+// removed the moment it leaves the Active spot (retreat, Switch, Gust of Wind,
+// Scoop Up, etc.). Otherwise a buff/debuff set while Active "freezes" on the
+// benched card and re-applies when it returns — e.g. Scyther's Swords Dance
+// boost surviving a bench-and-return, or a Smokescreen lingering for several
+// turns until the Pokémon comes back. This single helper is the canonical place
+// every active↔bench swap routes through so no path can forget a flag.
+//
+// Note: this clears ATTACK EFFECTS only. It deliberately does NOT touch attached
+// cards (PlusPower, Defender) or evolution/energy — those travel with the card.
+// Special Conditions (asleep/poisoned/…) are cleared separately via clearAllStatus.
+function clearActiveOnlyEffects(card) {
+  if (!card) return;
+  card.swordsDanceActive = false;
+  card.swordsDanceJustSet = false;
+  card.nextAttackDouble = false;
+  card.smokescreened = false;
+  card.leekSlapUsed = false;
+  card.immuneToAttack = false;
+  card.destinyBond = false;
+  card.pounceActive = false;
+  card.pounceReduction = 0;
+  card.disabledAttack = null;
+  card.attackReduction = 0;
+}
+
 
 // TCG rule: at every turn boundary, EVERY active Pokémon with poison/burn
 // takes a tick of damage. Not "the player whose turn just ended" — both.
@@ -594,6 +621,7 @@ if (typeof module !== 'undefined') {
     coerceCardArrays, mergeGameStateDefaults,
     computeBetweenTurnDamage,
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
+    clearActiveOnlyEffects,
     transitionPhase,
     buildEvolutionStackUnder,
     GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,

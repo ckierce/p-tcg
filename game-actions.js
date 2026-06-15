@@ -612,12 +612,12 @@ async function executeRetreat(player, benchIdx) {
 
   const old = p.active;
   if (old) {
-    old.leekSlapUsed = false;
-    old.immuneToAttack = false;
-    old.swordsDanceActive = false;
-    old.swordsDanceJustSet = false;
-    old.destinyBond = false;
-    old.pounceActive = false;
+    // Leaving the Active spot wipes all attack effects bound to being Active
+    // (Swords Dance buff, Smokescreen, Disable, etc.) so they don't "freeze"
+    // on the benched card and re-apply when it returns. Clearing both Swords
+    // Dance flags is part of that — a buff set then retreated must not carry over.
+    old.swordsDanceJustSet = false; // also handled by clearActiveOnlyEffects()
+    clearActiveOnlyEffects(old);
     if (typeof clearLastAttack === 'function') clearLastAttack(player);
   }
   // Multi-status: log every active condition before clearing all of them.
@@ -1705,13 +1705,53 @@ async function performAttack(player, atk) {
   // Covers: "in order to use this attack" (Charizard Fire Spin) AND
   //         "in order to [do/prevent]..." (Mewtwo Barrier, Arcanine Flamethrower, etc.)
   const discardCostMatch = (atk.text || '').match(
-    /discard (all|\d+|an?)\s+(?:\S+ )?energy card[s]?\s+attached[^.]*in order to/i
+    /discard (all|\d+|an?)\s+(?:(\S+) )?energy card[s]?\s+attached[^.]*in order to/i
   );
   if (discardCostMatch && myActive) {
     const rawN = discardCostMatch[1].toLowerCase();
-    const discarded = rawN === 'all'
-      ? myActive.attachedEnergy.splice(0)
-      : myActive.attachedEnergy.splice(0, /^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+    const requiredType = (discardCostMatch[2] || '').toLowerCase() === 'energy' ? '' : (discardCostMatch[2] || '').toLowerCase();
+    const isAll = rawN === 'all';
+    const wantN = isAll ? Infinity : (/^\d+$/.test(rawN) ? parseInt(rawN) : 1);
+
+    // Only energy cards matching the required type are eligible to be discarded.
+    // (A typed cost like "Fire Energy card" never accepts Double Colorless, even
+    // though Energy Burn lets DCE PAY a Fire cost — cost-payment and card-identity
+    // are independent rules.)
+    const eligibleIdx = eligibleEnergyForDiscard(myActive.attachedEnergy, requiredType);
+    const count = Math.min(wantN, eligibleIdx.length);
+
+    // The AI (vsComputer, player 2's turn) doesn't drive the card picker —
+    // openCardPicker auto-returns a single index for it. Pick the first `count`
+    // eligible cards directly so we never spin waiting for a human selection.
+    const aiAutoPick = (typeof vsComputer !== 'undefined' && vsComputer && G.turn === 2);
+
+    let chosenIdx;
+    if (isAll || eligibleIdx.length <= count || aiAutoPick) {
+      // No choice (or AI) — discard the first `count` eligible cards.
+      chosenIdx = eligibleIdx.slice(0, count);
+    } else {
+      // Player chooses WHICH eligible energy cards to discard. Loop until exactly
+      // `count` are selected; the cost is already committed so there's no cancel.
+      const eligibleCards = eligibleIdx.map(i => myActive.attachedEnergy[i]);
+      let picked = null;
+      while (!picked || picked.length !== count) {
+        picked = await openCardPicker({
+          title: `${atk.name} — Discard Energy`,
+          subtitle: `Choose ${count} Energy card${count > 1 ? 's' : ''} to discard`,
+          cards: eligibleCards,
+          maxSelect: count,
+          noCancel: true
+        });
+        if (picked === null) { picked = []; break; } // safety: AI/no-cards path
+      }
+      chosenIdx = picked.map(p => eligibleIdx[p]);
+    }
+
+    // Remove highest indices first so earlier splices don't shift later ones.
+    const discarded = [];
+    for (const i of chosenIdx.slice().sort((a, b) => b - a)) {
+      discarded.push(...myActive.attachedEnergy.splice(i, 1));
+    }
     G.players[player].discard.push(...discarded);
     addLog(`${myActive.name} discarded ${discarded.length} energy for ${atk.name}.`);
   }

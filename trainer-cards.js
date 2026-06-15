@@ -205,6 +205,7 @@ const TRAINER_EFFECTS = {
       const target = zone === 'active' ? p.active : p.bench[idx];
       p.discard.push(...(target.attachedEnergy || []));
       target.attachedEnergy = []; target.damage = 0; clearAllStatus(target);
+      clearActiveOnlyEffects(target); // returned to hand → wipe lingering attack effects
       p.hand.push(target);
       if (zone === 'active') p.active = null; else p.bench[idx] = null;
       addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
@@ -229,6 +230,7 @@ const TRAINER_EFFECTS = {
           : (old.status ? [old.status] : []);
         if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared by Switch.`);
         clearAllStatus(old);
+        clearActiveOnlyEffects(old); // benched → drop Swords Dance / Smokescreen / etc.
       }
       p.active = s; p.bench[i] = old;
       addLog(`P${player} used Switch — ${old?.name} ↔ ${p.active.name}.`, true);
@@ -253,6 +255,7 @@ const TRAINER_EFFECTS = {
           : (old.status ? [old.status] : []);
         if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared on being benched.`);
         clearAllStatus(old);
+        clearActiveOnlyEffects(old); // benched → drop Swords Dance / Smokescreen / etc.
       }
       oppP.active = s; oppP.bench[i] = old;
       // Defensive pad — ensure bench stays exactly 5 slots after swap

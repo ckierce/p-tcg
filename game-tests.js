@@ -26,6 +26,7 @@ const {
   coerceCardArrays, mergeGameStateDefaults,
   computeBetweenTurnDamage,
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
+  clearActiveOnlyEffects,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   buildEvolutionStackUnder,
   // Multi-status helpers (added when status went from single-string to 3 slots)
@@ -1821,6 +1822,112 @@ console.log('\n── regression: eligible energy for typed/untyped discards ─
   const eligible = eligibleEnergyForDiscard(attached, '');
   assert('Untyped discard accepts all 3',
     eligible.length === 3);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Fire Spin discard routes through the player picker (game-actions.js)
+//
+// Bug: the attack-cost discard in performAttack did a blind
+// `attachedEnergy.splice(0, N)` — it discarded the FIRST N energy cards with no
+// player choice, so Charizard with [Fire, Fire, DCE, DCE] using Fire Spin could
+// auto-discard both DCEs. The fix wires the discard through eligibleEnergyForDiscard
+// + openCardPicker so the player chooses which eligible cards to discard.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Fire Spin discard uses the picker, not a blind splice');
+{
+  const fs = require('fs');
+  const gaSrc = fs.readFileSync('./game-actions.js', 'utf8');
+  // Isolate the attack-cost discard block.
+  const block = gaSrc.match(/Attack energy cost discard[\s\S]{0,3200}?addLog\(`\$\{myActive\.name\} discarded/);
+  assert('game-actions.js: discard-cost block found', !!block);
+  if (block) {
+    const b = block[0];
+    assert('game-actions.js: discard uses eligibleEnergyForDiscard (typed filtering)',
+      /eligibleEnergyForDiscard\s*\(/.test(b));
+    assert('game-actions.js: discard prompts via openCardPicker when there is a choice',
+      /openCardPicker\s*\(/.test(b));
+    assert('game-actions.js: no blind splice(0, N) of attachedEnergy remains',
+      !/attachedEnergy\.splice\(0,\s*\/\^/.test(b) && !/splice\(0,\s*parseInt/.test(b));
+    assert('game-actions.js: AI path auto-picks instead of spinning on the picker',
+      /aiAutoPick/.test(b));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: leaving the Active spot clears position-bound attack effects
+//
+// Bug #2/#3: Swords Dance buff (swordsDanceActive) and Smokescreen (smokescreened)
+// "froze" on a Pokémon when it was benched and re-applied when it returned. The
+// fix centralizes the wipe in clearActiveOnlyEffects(), called from every
+// active↔bench swap path (retreat, Switch, Gust of Wind, Scoop Up, AI retreat/switch).
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: clearActiveOnlyEffects wipes benched buffs/debuffs');
+{
+  const card = {
+    swordsDanceActive: true, swordsDanceJustSet: true, nextAttackDouble: true,
+    smokescreened: true, leekSlapUsed: true, immuneToAttack: true,
+    destinyBond: true, pounceActive: true, pounceReduction: 20,
+    disabledAttack: 'Slash', attackReduction: 10,
+    // These must be left untouched — they travel with the card:
+    damage: 30, plusPower: 10, defender: true,
+    attachedEnergy: [{ name: 'Grass Energy' }],
+  };
+  clearActiveOnlyEffects(card);
+  assert('Swords Dance buff cleared on leaving Active', card.swordsDanceActive === false);
+  assert('swordsDanceJustSet cleared on leaving Active', card.swordsDanceJustSet === false);
+  assert('nextAttackDouble cleared on leaving Active', card.nextAttackDouble === false);
+  assert('Smokescreen cleared on leaving Active', card.smokescreened === false);
+  assert('Disable cleared on leaving Active', card.disabledAttack === null);
+  assert('attackReduction cleared on leaving Active', card.attackReduction === 0);
+  assert('pounceReduction cleared on leaving Active', card.pounceReduction === 0);
+  // Untouched — damage / attached cards / energy travel with the Pokémon.
+  assert('damage NOT touched by clearActiveOnlyEffects', card.damage === 30);
+  assert('attached PlusPower NOT touched', card.plusPower === 10);
+  assert('attached Defender NOT touched', card.defender === true);
+  assert('attached energy NOT touched', card.attachedEnergy.length === 1);
+  assert('clearActiveOnlyEffects(null) does not throw',
+    (() => { try { clearActiveOnlyEffects(null); return true; } catch { return false; } })());
+}
+{
+  // Every active↔bench swap path must route through the helper so none can forget.
+  const fs = require('fs');
+  const gaSrc = fs.readFileSync('./game-actions.js', 'utf8');
+  const tcSrc = fs.readFileSync('./trainer-cards.js', 'utf8');
+  const aiSrc = fs.readFileSync('./game-ai.js', 'utf8');
+  assert('game-actions.js: executeRetreat calls clearActiveOnlyEffects',
+    /clearActiveOnlyEffects\s*\(/.test(gaSrc));
+  assert('trainer-cards.js: Switch + Gust + Scoop call clearActiveOnlyEffects (>=3 sites)',
+    (tcSrc.match(/clearActiveOnlyEffects\s*\(/g) || []).length >= 3);
+  assert('game-ai.js: AI retreat + switch call clearActiveOnlyEffects (>=2 sites)',
+    (aiSrc.match(/clearActiveOnlyEffects\s*\(/g) || []).length >= 2);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: DONE SETUP is not blocked by the AI's setup timer (game-init.js)
+//
+// Bug #4: the AI placed its Active ~800ms after game start. Clicking DONE SETUP
+// before that fired left P2.active null, so the click silently failed ("keep
+// clicking, doesn't always work"). doneSetup now drives aiDoSetup() itself, and
+// guards against re-entrant double-advance during the coin-flip await.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: doneSetup drives AI setup + guards re-entrancy');
+{
+  const fs = require('fs');
+  const giSrc = fs.readFileSync('./game-init.js', 'utf8');
+  const aiSrc = fs.readFileSync('./game-ai.js', 'utf8');
+  const doneM = giSrc.match(/async\s+function\s+doneSetup\s*\([^)]*\)\s*\{([\s\S]*?)\nasync function/);
+  assert('game-init.js: doneSetup found', !!doneM);
+  if (doneM) {
+    const body = doneM[1];
+    assert('game-init.js: doneSetup drives aiDoSetup() when P2 has no Active',
+      /vsComputer\s*&&\s*!G\.players\[2\]\.active[\s\S]{0,120}aiDoSetup\s*\(/.test(body));
+    assert('game-init.js: doneSetup has a re-entrancy guard',
+      /_doneSetupRunning/.test(body));
+  }
+  assert('game-init.js: doneSetup clears the re-entrancy guard',
+    /_doneSetupRunning\s*=\s*false/.test(giSrc));
+  assert('game-ai.js: aiDoSetup is idempotent (bails if Active already placed)',
+    /function\s+aiDoSetup[\s\S]{0,400}if\s*\(\s*p2\.active\s*\)\s*return/.test(aiSrc));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

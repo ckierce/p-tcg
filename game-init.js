@@ -485,7 +485,23 @@ function handleEndTurnBtn() {
 
 async function doneSetup() {
   if (!G.players[1].active) { showToast('Player 1 must place an Active Pokémon first!', true); return; }
+
+  // vsComputer: the AI places its Active ~800ms after the game starts. If the
+  // human clicks DONE SETUP before that timer fires, P2.active is still null and
+  // setup would silently stall — the symptom of "keep clicking, nothing happens".
+  // Drive the AI's setup right now so the human is never blocked on a timer.
+  if (vsComputer && !G.players[2].active && typeof aiDoSetup === 'function') {
+    aiDoSetup();
+  }
+
   if (!G.players[2].active) { showToast('Player 2 must place an Active Pokémon first!', true); return; }
+
+  // Re-entrancy guard: this function awaits the coin-flip animation. Without a
+  // guard, a second click (or a multiplayer auto-advance) firing during that
+  // await would run the whole sequence twice — double coin flip, double opening
+  // draw, corrupted turn state.
+  if (G._doneSetupRunning) return;
+  G._doneSetupRunning = true;
 
   // Coin flip to decide who goes first — heads = P1, tails = P2
   const heads = await flipCoin('Coin flip! Heads = Player 1 goes first, Tails = Player 2 goes first');
@@ -500,6 +516,7 @@ async function doneSetup() {
   // a future game (e.g. via playAgain) can use it fresh.
   setupReady = { 1: false, 2: false };
   G._setupAdvancing = false;
+  G._doneSetupRunning = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
 
   // Opening draw — must happen on the firstPlayer's OWN client in networked

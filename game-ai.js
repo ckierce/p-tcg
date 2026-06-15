@@ -115,6 +115,10 @@ async function startVsCpuGame() {
 function aiDoSetup() {
   if (!vsComputer || G.phase !== 'SETUP') return;
   const p2 = G.players[2];
+  // Idempotent: the 800ms timer AND doneSetup (when the human clicks before the
+  // timer fires) can both reach here. Once the Active is placed, do nothing —
+  // re-running would overwrite the Active and re-bench cards.
+  if (p2.active) return;
   const hand = p2.hand;
 
   function basicScore(c) {
@@ -1666,12 +1670,7 @@ async function executePreStepOnly(step, delayMs) {
         addLog(`🤖 Computer discarded energy to retreat ${active.name}.`);
       }
       // Clear per-turn flags on the retreating Pokémon (match executeRetreat)
-      active.leekSlapUsed = false;
-      active.immuneToAttack = false;
-      active.swordsDanceActive = false;
-      active.swordsDanceJustSet = false;
-      active.destinyBond = false;
-      active.pounceActive = false;
+      clearActiveOnlyEffects(active);
       if (active.status) active.status = null;
       // Swap
       const out = p2.bench[step.benchIdx];
@@ -1693,12 +1692,7 @@ async function executePreStepOnly(step, delayMs) {
       p2.discard.push(card);
       const out = p2.bench[step.benchIdx];
       const old = p2.active;
-      old.leekSlapUsed = false;
-      old.immuneToAttack = false;
-      old.swordsDanceActive = false;
-      old.swordsDanceJustSet = false;
-      old.destinyBond = false;
-      old.pounceActive = false;
+      clearActiveOnlyEffects(old);
       if (old.status) old.status = null;
       p2.bench[step.benchIdx] = old;
       p2.active = out;
