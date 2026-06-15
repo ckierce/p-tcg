@@ -1729,17 +1729,25 @@ function receiveGameState(state) {
     const sleepName = G.pendingSleepFlip;
     const sleepTarget = G.players[G.turn].active;
     G.pendingSleepFlip = null; // always clear regardless of outcome
-    if (sleepTarget && sleepTarget.name === sleepName && sleepTarget.status === 'asleep'
+    // Multi-status: the Asleep condition lives in `.special` (`.status` is only a
+    // stale legacy alias and is NOT kept in sync by setStatusSlot). Reading
+    // `.status` here meant this check was always false, so in multiplayer the
+    // wake-up flip never fired — Asleep Pokémon never woke up. Read `.special`.
+    const _sleepSpecial = sleepTarget?.special ?? sleepTarget?.status ?? null;
+    if (sleepTarget && sleepTarget.name === sleepName && _sleepSpecial === 'asleep'
         && (myRole === null || G.turn === myRole)) {
       setTimeout(async () => {
         const wakeUp = await flipCoin(`${sleepName} is Asleep!\nHeads = wake up, Tails = stay asleep`);
         if (wakeUp) {
-          sleepTarget.status = null;
+          // Clear only the special slot; any poison/burn must keep ticking.
+          sleepTarget.special = null;
+          sleepTarget.status = sleepTarget.poison || (sleepTarget.burn ? 'burned' : null);
           addLog(`${sleepName} woke up!`, true);
         } else {
           addLog(`${sleepName} is still Asleep.`);
         }
         renderAll();
+        if (typeof pushGameState === 'function') pushGameState();
       }, 400);
     }
   }

@@ -1059,7 +1059,11 @@ function prizesRemaining(playerObj) {
 // view when enumerating attach / PlusPower / Gust options.
 function evaluateAttackerPlan(attacker, p2, p1, preStep) {
   if (!attacker || !p1?.active) return null;
-  if (attacker.status === 'paralyzed' || attacker.status === 'asleep') return null;
+  // Multi-status: the blocking condition lives in `.special` (`.status` is a
+  // stale legacy alias). Read `.special` first so the AI doesn't plan an attack
+  // with an Asleep/Paralyzed Pokémon (which performAttack would then block).
+  const _atkSpecial = attacker.special ?? attacker.status ?? null;
+  if (_atkSpecial === 'paralyzed' || _atkSpecial === 'asleep') return null;
   if (!attacker.attacks?.length) return null;
 
   const fullHand = p2.hand || [];
@@ -1719,7 +1723,9 @@ async function aiChooseAndAttack() {
   if (!p2.active || !p1.active) return false;
 
   const card = p2.active;
-  if (card.status === 'paralyzed' || card.status === 'asleep') return false;
+  // Multi-status: read `.special` (the live slot) not the stale `.status` alias.
+  const _cardSpecial = card.special ?? card.status ?? null;
+  if (_cardSpecial === 'paralyzed' || _cardSpecial === 'asleep') return false;
 
   const oppActive = p1.active;
 

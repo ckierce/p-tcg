@@ -1931,6 +1931,40 @@ section('REGRESSION: doneSetup drives AI setup + guards re-entrancy');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Asleep Pokémon must be able to wake up (multi-status field bug)
+//
+// Bug: the Special Condition lives in `card.special` (`card.status` is only a
+// stale legacy alias). The multiplayer wake-up flip read `.status === 'asleep'`
+// (often false → flip never fired) and, on a successful flip, cleared only
+// `.status` — leaving `.special = 'asleep'`. So the Pokémon stayed effectively
+// Asleep forever: attacks blocked (they read `.special`) and every later checkup
+// re-armed the flip via `.special` while the wake-check kept reading `.status`.
+// Fix: read `.special` for the check and clear `.special` on wake.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Asleep wake-up uses the .special slot');
+{
+  const fs = require('fs');
+  const giSrc2 = fs.readFileSync('./game-init.js', 'utf8');
+  // Isolate the pendingSleepFlip block in receiveGameState.
+  const block = giSrc2.match(/const sleepName = G\.pendingSleepFlip[\s\S]{0,1500}?\}, 400\)/);
+  assert('game-init.js: sleep-flip block found', !!block);
+  if (block) {
+    const b = block[0];
+    assert('game-init.js: wake-up CHECK reads the .special slot (not just .status)',
+      /\.special\s*\?\?/.test(b) && /[Ss]pecial\s*===\s*'asleep'/.test(b));
+    assert('game-init.js: wake-up CLEARS the .special slot on heads',
+      /\.special\s*=\s*null/.test(b));
+    assert('game-init.js: wake-up no longer clears ONLY .status (the bug)',
+      !/^\s*sleepTarget\.status\s*=\s*null\s*;\s*$/m.test(b));
+  }
+  // The AI must not plan/launch an attack with an Asleep/Paralyzed Pokémon —
+  // those reads were on the stale .status alias too.
+  const aiSrc2 = fs.readFileSync('./game-ai.js', 'utf8');
+  assert('game-ai.js: AI attack-planning reads .special for paralyzed/asleep gate',
+    (aiSrc2.match(/special\s*\?\?[\s\S]{0,60}===\s*'(paralyzed|asleep)'/g) || []).length >= 1);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // aiChooseEnergyTarget — AI picks the right Pokémon to attach energy to
 // ═══════════════════════════════════════════════════════════════════════════════
 
