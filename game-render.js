@@ -887,6 +887,105 @@ function showTurnFlash(player) {
   }, 1300);
 }
 
+// ── "Your turn" notifications ─────────────────────────────────────────────────
+// When the turn becomes the local player's WHILE the tab is in the background,
+// nudge them three ways: an OS notification (if they granted permission), a short
+// beep, and a blinking tab title. The on-screen turn flash already covers the
+// case where they're watching, so these deliberately only fire when the tab is
+// hidden — no nagging while you're actively looking at the board.
+let _titleBlinkTimer = null;
+const _origTitle = (typeof document !== 'undefined' && document.title) || 'Pokémon TCG';
+let _audioCtx = null;
+
+// Ask for OS-notification permission and prime the audio context. MUST be called
+// from a user gesture (e.g. the SETUP button click) or browsers ignore both.
+function ensureTurnNotifications() {
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch (e) {}
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (Ctx) {
+      if (!_audioCtx) _audioCtx = new Ctx();
+      if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+    }
+  } catch (e) {}
+}
+
+function _turnBeep() {
+  try {
+    if (!_audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      _audioCtx = new Ctx();
+    }
+    if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+    const t = _audioCtx.currentTime;
+    // Two quick rising notes — distinct from any game sound.
+    [880, 1175].forEach((freq, i) => {
+      const o = _audioCtx.createOscillator();
+      const g = _audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      const start = t + i * 0.18;
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      o.connect(g); g.connect(_audioCtx.destination);
+      o.start(start); o.stop(start + 0.17);
+    });
+  } catch (e) {}
+}
+
+function _startTitleBlink() {
+  if (typeof document === 'undefined') return;
+  _stopTitleBlink();
+  let on = false;
+  _titleBlinkTimer = setInterval(() => {
+    document.title = (on = !on) ? '🔔 YOUR TURN!' : _origTitle;
+  }, 900);
+}
+function _stopTitleBlink() {
+  if (_titleBlinkTimer) { clearInterval(_titleBlinkTimer); _titleBlinkTimer = null; }
+  if (typeof document !== 'undefined') document.title = _origTitle;
+}
+
+// Fire when the turn has just become the local player's. Self-gating: does
+// nothing in hotseat (one shared screen), when it isn't actually our turn, or
+// when the tab is already visible.
+function notifyMyTurn() {
+  if (typeof document === 'undefined') return;
+  if (typeof myRole === 'undefined' || myRole === null) return; // hotseat = shared screen
+  if (G.turn !== myRole) return;
+  if (document.visibilityState === 'visible') return;           // they're watching
+  _turnBeep();
+  _startTitleBlink();
+  try {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const oppName = G.players?.[myRole === 1 ? 2 : 1]?.name || 'Opponent';
+      const n = new Notification("Your turn — Pokémon TCG", {
+        body: `${oppName} just finished. It's your move.`,
+        tag: 'tcg-your-turn',  // collapse repeats into a single notification
+        renotify: true,
+        icon: 'back.jpg',
+      });
+      n.onclick = () => { try { window.focus(); } catch (e) {} n.close(); };
+    }
+  } catch (e) {}
+}
+
+// Stop the blinking title / clear state the moment the player returns to the tab.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _stopTitleBlink();
+  });
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('focus', _stopTitleBlink);
+}
+
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
   // Store for opponent to see — only set on the attacker's client
   if (myRole === null || attackingPlayer === myRole) {

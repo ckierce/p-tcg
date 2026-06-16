@@ -469,6 +469,9 @@ function handleEndTurnBtn() {
     // so an impatient player can't toggle their own READY flag back off, or kick
     // off a second advance, while the handshake is resolving.
     if (G._setupAdvancing || G._doneSetupRunning) return;
+    // This click is a user gesture — the one chance to request OS-notification
+    // permission and unlock audio for the "your turn" nudge. Harmless if denied.
+    if (typeof ensureTurnNotifications === 'function') ensureTurnNotifications();
     // In multiplayer, the SETUP button toggles the local ready flag instead
     // of advancing directly. P1's listener auto-advances when both flags are
     // true (see maybeAutoAdvanceSetup). vsComputer / single-player still
@@ -1691,6 +1694,9 @@ function receiveGameState(state) {
   // Show turn flash if turn just switched to this player
   if (G.started && G.phase !== 'SETUP' && G.turn === myRole && prevTurn !== myRole) {
     showTurnFlash(myRole);
+    // Background nudge (OS notification + beep + title blink) if they've tabbed
+    // away. notifyMyTurn() self-gates on visibility, so it's a no-op if focused.
+    if (typeof notifyMyTurn === 'function') notifyMyTurn();
   }
   // Show opponent move flash
   if (myRole !== null && G.lastMoveFlash && G.lastMoveFlash.ts !== window._lastMoveFlashTs) {

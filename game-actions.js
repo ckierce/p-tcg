@@ -2010,6 +2010,9 @@ function _finishEndTurn(prev) {
   drawCard(G.turn, true);
   renderAll();
   showTurnFlash(G.turn);
+  // Background nudge when the turn returns to the local player (e.g. the AI just
+  // finished while the player tabbed away). Self-gates on visibility + whose turn.
+  if (typeof notifyMyTurn === 'function') notifyMyTurn();
   if (typeof pushGameState === 'function') pushGameState();
 
   if (G.pendingSleepFlip && (myRole === null || vsComputer)) {
