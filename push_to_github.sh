@@ -85,22 +85,46 @@ done
 echo "→ Running tests..."
 node game-tests.js || { echo "❌ Tests failed — aborting push"; exit 1; }
 
+# ── 5b. Cache-bust: stamp a content hash of the JS bundle into the <script> ────
+# tags of pokemon-game.html. The browser re-fetches a .js file only when its
+# ?v=... changes, so deriving the version from the files' contents means the
+# cache busts EXACTLY when the code changes (and stays stable otherwise — no
+# churn). Without this, a stale cached game-*.js silently serves old behavior:
+# the "I deployed the fix but the game still does the old thing" trap.
+JS_BUNDLE="game-utils.js game-render.js game-actions.js game-ai.js pokemon-powers.js trainer-cards.js move-effects.js game-init.js"
+VER=$(cat $JS_BUNDLE | shasum | cut -c1-10)
+if [[ -n "$VER" ]]; then
+  # Add-or-replace ?v=<hash> on each script-tagged local .js src.
+  sed -i '' -E "s#(<script src=\"[a-z0-9_-]+\.js)(\?v=[0-9a-f]+)?\"#\1?v=$VER\"#" pokemon-game.html
+  echo "→ Stamped asset version v=$VER into pokemon-game.html"
+fi
+
 # ── 6. Stage everything and show what's about to ship ─────────────────────────
 git add -A
 
-# Bail early if there's nothing to commit (avoids empty-commit confusion)
-if git diff --cached --quiet; then
+# Commit any working-tree changes first (skip if the tree is already clean —
+# e.g. an auto-commit watcher already committed them).
+if ! git diff --cached --quiet; then
+  echo ""
+  echo "── About to commit these changes ─────────────────────────────────────────"
+  git diff --cached --stat
+  echo ""
+  git commit -m "${1:-Update}"
+fi
+
+# ── 7. Push if local is ahead of origin/main ──────────────────────────────────
+# Push based on COMMITS ahead of the remote, not on whether the working tree had
+# changes. Otherwise commits made earlier (clean tree at script time) never ship
+# — the "I fixed it but the deploy still shows old code" trap.
+if [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main 2>/dev/null)" ]]; then
   echo "✓ No changes to push — everything is already on GitHub."
   exit 0
 fi
 
 echo ""
-echo "── About to push these changes ───────────────────────────────────────────"
-git diff --cached --stat
+echo "── Pushing these commits to origin/main ──────────────────────────────────"
+git --no-pager log --oneline origin/main..HEAD
 echo ""
-
-# ── 7. Commit + push ──────────────────────────────────────────────────────────
-git commit -m "${1:-Update}"
 git push "$REMOTE_URL_WITH_TOKEN" main
 
 echo ""
