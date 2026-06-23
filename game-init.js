@@ -445,6 +445,8 @@ async function startGame() {
   G.phase = 'SETUP';
   G.turnNum = 0;
   G.energyPlayedThisTurn = false;
+  // Fresh game (incl. rematch) — clear any leftover handoff-guard state.
+  _preserveOwnPrivateZones = false;
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('end-turn-btn').textContent = 'DONE SETUP';
 
@@ -1158,6 +1160,16 @@ let _pushPreservesReady = false;
 let _pendingSetupSnap = null;
 let _setupSnapHandler = null;
 
+// At the SETUP→post-SETUP handoff the host's snapshot of OUR private zones
+// (hand/deck/discard/prizes) is stale — during SETUP we only pushed our
+// active/bench, never the cards we played out of hand. We re-push our
+// authoritative private zones on the transition (see receiveGameState), but
+// the host may push again before ingesting that re-push, re-broadcasting the
+// stale 7-card hand. This flag keeps us guarding our own private zones on
+// EVERY receive until the host's pushes echo our real hand back — i.e. until
+// it has caught up. Without it, played Pokémon pop back into the hand.
+let _preserveOwnPrivateZones = false;
+
 // ── Panel helpers ─────────────────────────────────
 function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
 function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
@@ -1588,8 +1600,23 @@ function receiveGameState(state) {
   // Only applies the FIRST receive after wasStarted && wasSetup — once we've
   // seen one full-state push past SETUP, both clients are in sync.
   if (wasStarted && wasSetup && state.phase !== 'SETUP' && myRole !== null) {
+    _preserveOwnPrivateZones = true;
+  }
+  if (_preserveOwnPrivateZones && myRole !== null) {
     const localMe = G.players[myRole];
     const incomingMe = myRole === 1 ? incomingP1 : incomingP2;
+    // Has the host caught up to our authoritative hand yet? Compare what it
+    // actually sent against what we hold locally. The first stale push still
+    // carries our original 7-card deal, so this won't match until the host has
+    // ingested our re-push (line below) — at which point it's safe to accept
+    // incoming private zones normally again. (Matching means the overwrite is a
+    // no-op anyway, so clearing here can't drop a legitimate update.)
+    const sameUids = (a, b) => {
+      const ua = (a || []).filter(Boolean).map(c => c.uid).sort();
+      const ub = (b || []).filter(Boolean).map(c => c.uid).sort();
+      return ua.length === ub.length && ua.every((x, i) => x === ub[i]);
+    };
+    if (sameUids(incomingMe.hand, localMe.hand)) _preserveOwnPrivateZones = false;
     incomingMe.hand    = localMe.hand;
     incomingMe.deck    = localMe.deck;
     incomingMe.discard = localMe.discard;
