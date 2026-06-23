@@ -13,6 +13,93 @@
 //   applyRoleVisibility, escapeHtml, escapeAttr, shuffle
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SKIN / THEME — "Business Time" spreadsheet skin
+//
+// The whole board is theme-able from a single <body> class. CURRENT_SKIN drives:
+//   • a CSS theme (body.skin-sheet) that repaints the board as a spreadsheet, and
+//   • the card-face / energy-icon renderers below, which emit text cells instead
+//     of card images when the sheet skin is active (the skin uses NO images).
+// A player on the spreadsheet skin can play against a player on the normal skin —
+// the skin is purely local/cosmetic and never touches game state.
+// ══════════════════════════════════════════════════════════════════════════════
+let CURRENT_SKIN = 'normal';
+
+function applySkin(skin) {
+  CURRENT_SKIN = (skin === 'sheet') ? 'sheet' : 'normal';
+  if (document.body) document.body.classList.toggle('skin-sheet', CURRENT_SKIN === 'sheet');
+  try { localStorage.setItem('tcg-skin', CURRENT_SKIN); } catch (e) {}
+  const btn = document.getElementById('skin-toggle-btn');
+  if (btn) {
+    btn.textContent = CURRENT_SKIN === 'sheet' ? '🟢 NORMAL' : '📊 BUSINESS TIME';
+    btn.title = CURRENT_SKIN === 'sheet'
+      ? 'Switch back to the normal card skin'
+      : 'Switch to the spreadsheet skin';
+  }
+  // Re-render so card faces / energy chips swap representation immediately.
+  if (typeof G !== 'undefined' && G && typeof renderAll === 'function') {
+    try { renderAll(); } catch (e) {}
+  }
+}
+
+function toggleSkin() {
+  applySkin(CURRENT_SKIN === 'sheet' ? 'normal' : 'sheet');
+}
+
+// Apply any saved preference as soon as this script loads (scripts run at end of
+// <body>, so document.body already exists).
+(function initSkin() {
+  let saved = 'normal';
+  try { saved = localStorage.getItem('tcg-skin') || 'normal'; } catch (e) {}
+  applySkin(saved); // syncs body class + toggle-button label (renderAll is guarded)
+})();
+
+// Single-letter energy code used by the spreadsheet skin's text chips.
+function energyCode(name) {
+  return { fire:'R', water:'W', grass:'G', lightning:'L', psychic:'P',
+           fighting:'F', darkness:'D', metal:'M', colorless:'C'
+         }[energyTypeKey(name)] || 'C';
+}
+
+// Readable type tag for a Pokémon card in the spreadsheet skin (e.g. "FIRE").
+function typeTag(card) {
+  const types = card.types || [];
+  if (types.length) return types.join('/').toUpperCase();
+  return 'POKéMON';
+}
+
+// Renders the "face" of a card inside a board slot.
+//   normal skin → the card image (as before)
+//   sheet skin  → a spreadsheet cell: a type-tinted box with the card's name +
+//                 key stat as plain text (no image)
+function cardFace(card) {
+  if (!card) return '';
+  if (CURRENT_SKIN !== 'sheet') {
+    return `<img src="${card.images?.small || ''}" alt="${card.name || ''}">`;
+  }
+  const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s => s);
+  const name = esc(card.name || '');
+  let accent, kind, stat = '';
+  if (card.supertype === 'Energy') {
+    accent = energyColor(card.name); kind = 'ENERGY';
+  } else if (card.supertype === 'Trainer') {
+    accent = '#c8a04a'; kind = 'TRAINER';
+  } else { // Pokémon (or anything with HP)
+    accent = energyColor((card.types || [])[0] || '');
+    kind = typeTag(card);
+    if (card.hp != null) stat = `${card.hp} HP`;
+  }
+  // Damage shows inline as a red negative value next to HP (accounting style).
+  const dmg = (card.damage > 0) ? `<span class="sheet-cell-dmg">−${card.damage}</span>` : '';
+  return `<div class="sheet-cell" style="--cell-accent:${accent}">
+      <div class="sheet-cell-top">
+        <span class="sheet-cell-name">${name}</span>
+        ${stat ? `<span class="sheet-cell-stat">${stat}</span>` : ''}${dmg}
+      </div>
+      <div class="sheet-cell-tag">${kind}</div>
+    </div>`;
+}
+
 function renderAll() {
   document.body.dataset.phase = G.phase || 'SETUP';
   renderHands();
@@ -72,7 +159,7 @@ function renderField(player) {
     const discardEl = document.getElementById('discard-p1');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}">`;
+      discardEl.innerHTML = cardFace(top);
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISCARD</span>`;
     }
@@ -111,7 +198,7 @@ function renderField(player) {
           typeof conversionBadges === 'function' ? conversionBadges(card) : '',
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
-        activeEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
+        activeEl.innerHTML = `${cardFace(card)}
           <div class="energy-overlay" style="max-height:168px">${energyPips}</div>${dmg}${status}${badges}`;
       }
     } else {
@@ -149,7 +236,7 @@ function renderField(player) {
           const oppIconPlusgap = oppIconSize + 3;
           const benchEnergyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', oppIconSize), energyIcon('Colorless Energy', oppIconSize)] : [energyIcon(e.name, oppIconSize)]).join('');
           const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
-          slotEl.innerHTML = `<img src="${card.images?.small || ''}" alt="${card.name}">
+          slotEl.innerHTML = `${cardFace(card)}
             <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
           // Push next bench card right to avoid overlap
@@ -173,7 +260,7 @@ function renderField(player) {
     const discardEl = document.getElementById('discard-p2');
     if (p.discard.length > 0) {
       const top = p.discard[p.discard.length - 1];
-      discardEl.innerHTML = `<img src="${top.images?.small || ''}" alt="${top.name}">`;
+      discardEl.innerHTML = cardFace(top);
     } else {
       discardEl.innerHTML = `<span style="font-size:6px">DISC</span>`;
     }
@@ -210,8 +297,6 @@ function renderSlotP1(el, card) {
     typeof conversionBadges === 'function' ? conversionBadges(card) : '',
   ].filter(Boolean);
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
-  const imgSrc = card.images?.small || '';
-
   const slotH = el.clientHeight || (isActive ? 200 : 90);
   const slotW = el.clientWidth  || (isActive ? 130 : 64);
 
@@ -223,7 +308,7 @@ function renderSlotP1(el, card) {
 
   const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', iconSize), energyIcon('Colorless Energy', iconSize)] : [energyIcon(e.name, iconSize)]).join('');
   const energyStyle = `max-height:${slotH}px;max-width:none`;
-  el.innerHTML = `<img src="${imgSrc}" alt="${card.name}">
+  el.innerHTML = `${cardFace(card)}
     <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
 
   // Reserve right margin for energy columns so the next bench card is pushed right
@@ -358,7 +443,7 @@ function renderPrizes(player) {
     const container = document.getElementById('prizes-p1');
     container.innerHTML = prizes.map((p, i) => {
       if (!p) return `<div class="prize-slot gone"></div>`;
-      if (p.revealed) return `<div class="prize-slot"><img src="${p.card.images?.small || ''}" alt="${p.card.name}"></div>`;
+      if (p.revealed) return `<div class="prize-slot">${cardFace(p.card)}</div>`;
       return `<div class="prize-slot face-down" title="Prize ${i+1}"></div>`;
     }).join('');
   } else {
@@ -669,6 +754,13 @@ function energyIcon(energyName, size = 16) {
   const url = ENERGY_ICONS[key];
   const s = size;
 
+  // Spreadsheet skin: render energy as a small colored text chip (no images).
+  if (CURRENT_SKIN === 'sheet') {
+    const c = energyColor(energyName);
+    const fs = Math.max(7, Math.round(s * 0.64));
+    return `<span class="sheet-energy" style="width:${s}px;height:${s}px;background:${c};font-size:${fs}px">${energyCode(energyName)}</span>`;
+  }
+
   if (url) {
     // Icon PNGs are transparent-background symbol images — render at size directly, no cropping.
     return `<img src="${url}" alt="${key}" style="width:${s}px;height:${s}px;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));vertical-align:middle">`;
@@ -685,6 +777,9 @@ function energyIcon(energyName, size = 16) {
 // Returns HTML for damage counter dots — one black dot per 10 damage
 function damageCounters(damage, isActive = false) {
   if (!damage || damage <= 0) return '';
+  // Spreadsheet skin: damage is shown inline inside the cell by cardFace(), so
+  // the floating counter overlay is suppressed here.
+  if (CURRENT_SKIN === 'sheet') return '';
   const dots = Math.floor(damage / 10);
   if (dots === 0) return '';
   const cls = isActive ? 'damage-counters active-dmg' : 'damage-counters';

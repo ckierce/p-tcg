@@ -2377,6 +2377,363 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #hand-toggle-btn { display: inline-block; }
   #player-aux { display: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   "BUSINESS TIME" — SPREADSHEET SKIN
+   Toggled by adding `skin-sheet` to <body> (see toggleSkin() in game-render.js).
+   It repaints the whole board as a spreadsheet: light grid, gridlines, no
+   images. Card faces become text cells (rendered by cardFace()), energy becomes
+   colored letter chips. Purely cosmetic & local — fully cross-compatible with a
+   player on the normal skin.
+   ────────────────────────────────────────────────────────────────────────── */
+body.skin-sheet {
+  /* Spreadsheet palette — light gutter gray + white cells + gridlines */
+  --bg:        #d9dbdf;
+  --surface:   #ffffff;
+  --surface2:  #f1f3f4;
+  --border:    #c6cbd1;   /* cell gridline */
+  --border2:   #9aa0a6;
+  --text:      #202124;
+  --muted:     #80868b;
+  --accent:    #188038;   /* sheet green */
+  --p1color:   #1a73e8;
+  --p2color:   #d93025;
+  --ok:        #188038;
+  --warn:      #e37400;
+  --font:      'Calibri', 'Segoe UI', Arial, sans-serif;
+  --font-title:'Calibri', 'Segoe UI', Arial, sans-serif;
+  /* Everything is a CELL: wide & short, uniform row height — not card-shaped */
+  --active-w:  clamp(150px, 18vw, 210px);
+  --active-h:  48px;
+  --card-w-sm: clamp(96px, 11vw, 150px);
+  --card-h-sm: 48px;
+  --prize-w:   clamp(56px, 7vw, 84px);
+  --prize-h:   28px;
+  /* Face-down cards: no image — a diagonal hatch "redacted cell" pattern */
+  --card-back-bg:
+    repeating-linear-gradient(45deg, #c6cbd1 0 6px, #d9dbdf 6px 12px);
+}
+
+/* Kill every remaining bitmap so the skin is genuinely image-free.
+   (Board faces already render as text via cardFace(); these are the
+   text-accompanied images in hand / picker / sidebar.) */
+body.skin-sheet .hand-card-img,
+body.skin-sheet .picker-card > img { display: none; }
+
+/* ── The card "cell" produced by cardFace() in sheet mode ── */
+/* A card rendered as a spreadsheet cell value: two tight lines, left-aligned.
+   Row 1: name + stat (HP). Row 2: type tag (energy chips pin to bottom-right). */
+.sheet-cell {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 1px;
+  padding: 3px 7px;
+  text-align: left;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--cell-accent, #90a4ae) 12%, #ffffff);
+  border-left: 3px solid var(--cell-accent, #90a4ae);
+  color: #202124;
+  font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+}
+.sheet-cell-top {
+  display: flex; align-items: baseline; gap: 6px;
+  min-width: 0;
+}
+.sheet-cell-name {
+  font-weight: 700;
+  font-size: clamp(9px, 1vw, 13px);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sheet-cell-stat {
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: clamp(7px, 0.85vw, 11px);
+  color: #5f6368;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.sheet-cell-tag {
+  font-size: clamp(6px, 0.7vw, 9px);
+  letter-spacing: .06em;
+  color: #80868b;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Prize / discard cells are tiny — name only */
+.prize-slot .sheet-cell,
+.opp-discard .sheet-cell { padding: 2px 4px; }
+.prize-slot .sheet-cell-stat,
+.prize-slot .sheet-cell-tag,
+.opp-discard .sheet-cell-stat,
+.opp-discard .sheet-cell-tag { display: none; }
+
+/* ── Energy → colored letter chip ── */
+.sheet-energy {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700;
+  font-family: 'Menlo', 'Consolas', monospace;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.25);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ── Board chrome as a spreadsheet ── */
+body.skin-sheet #game-board,
+body.skin-sheet #field,
+body.skin-sheet #field-body { background: var(--bg); }
+
+/* Slots = white cells with crisp gridlines, no rounded corners */
+body.skin-sheet .zone-slot,
+body.skin-sheet .opp-active-slot,
+body.skin-sheet .opp-bench-slot,
+body.skin-sheet .opp-discard,
+body.skin-sheet .opp-deck-slot,
+body.skin-sheet .prize-slot {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.6);
+}
+body.skin-sheet .zone-slot.occupied,
+body.skin-sheet .opp-active-slot,
+body.skin-sheet .opp-bench-slot:not(.empty) { padding: 0; }
+body.skin-sheet .zone-slot img,
+body.skin-sheet .opp-active-slot img,
+body.skin-sheet .opp-bench-slot img,
+body.skin-sheet .prize-slot img { border-radius: 0; }
+
+/* Zone labels → horizontal row-header cells (grey gutter on the left) */
+body.skin-sheet .active-label,
+body.skin-sheet .bench-label,
+body.skin-sheet .opp-label,
+body.skin-sheet .active-row > .active-label {
+  writing-mode: horizontal-tb;
+  transform: none;
+  align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+  background: #f1f3f4;
+  border: 1px solid var(--border);
+  color: #5f6368;
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 0;
+  padding: 0 6px;
+  min-width: 58px;
+  flex: 0 0 58px;
+}
+
+/* Top bar → formula bar */
+body.skin-sheet #top-bar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--border2);
+  box-shadow: inset 0 -1px 0 #fff, 0 1px 0 #c6cbd1;
+}
+body.skin-sheet .top-bar-logo::before { content: '▦ '; }
+body.skin-sheet .top-bar-logo::after  { content: '.xlsx'; opacity: .6; }
+body.skin-sheet .top-bar-btn { border-radius: 2px; }
+
+/* Midline → a "row 0 / freeze line" */
+body.skin-sheet #midline {
+  background: #f1f3f4;
+  border-top: 1px solid var(--border2);
+  border-bottom: 2px solid var(--accent);
+}
+
+/* Damage counters → red cells (accounting "negative" red) */
+body.skin-sheet .dmg-dot {
+  border-radius: 1px;
+  background: #d93025 !important;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.7);
+}
+
+/* Hand cards → spreadsheet rows */
+body.skin-sheet .hand-card {
+  width: clamp(78px, 9vw, 120px);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+body.skin-sheet .hand-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.18); }
+body.skin-sheet .hand-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+body.skin-sheet .hand-card-info { background: #ffffff; padding: 4px 5px 5px; }
+body.skin-sheet .hand-card-name { font-size: clamp(8px, 1vw, 12px); font-weight: 700; }
+body.skin-sheet .hand-card-sub  { font-size: clamp(7px, 0.85vw, 10px); }
+body.skin-sheet .hand-card-type-pip { border-radius: 1px; }
+
+/* Picker cards → cells (image hidden above; keep the name + meta) */
+body.skin-sheet .picker-card {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 0;
+}
+body.skin-sheet .picker-card.selected { box-shadow: 0 0 0 2px var(--accent); }
+
+/* Modals / sidebar / panels read better with squared corners on this skin */
+body.skin-sheet .modal-box,
+body.skin-sheet #sidebar,
+body.skin-sheet .setup-player,
+body.skin-sheet #login-box { border-radius: 0; }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   SPREADSHEET LAYOUT — left-justify everything, rows of uniform cells.
+   The board's centered, card-table feel is replaced by left-anchored rows
+   that scroll like a worksheet.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Field becomes a left-aligned, scrollable worksheet (no reserved side gutters) */
+body.skin-sheet #field-body {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 8px 10px;
+  gap: 4px;
+  overflow: auto;
+  background: var(--bg);
+}
+
+/* Drop the grouped "card table" boxes — rows are just runs of cells now */
+body.skin-sheet #opponent-zone {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  width: auto;
+  gap: 4px;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+body.skin-sheet #opp-left,
+body.skin-sheet #opp-right {
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: visible;
+}
+body.skin-sheet .opp-bench { flex: 0 0 auto; gap: 4px; overflow: visible; }
+
+body.skin-sheet #player-zone,
+body.skin-sheet #player-field-col {
+  align-items: flex-start;
+  width: auto;
+  gap: 4px;
+}
+body.skin-sheet #active-row {
+  justify-content: flex-start;
+  width: auto;
+  gap: 4px;
+}
+body.skin-sheet .bench-row {
+  justify-content: flex-start;
+  align-items: center;
+  width: auto;
+  gap: 4px;
+}
+
+/* Prizes + deck/discard: bring them inline (no edge-pinning) as their own rows */
+body.skin-sheet #player-prizes-panel,
+body.skin-sheet #player-aux {
+  position: static;
+  flex-direction: row;
+  align-items: center;
+  top: auto; left: auto; right: auto;
+  padding-top: 0;
+  gap: 4px;
+}
+body.skin-sheet #player-aux .player-aux-row { gap: 4px; }
+/* Prize grids → a single horizontal run of cells */
+body.skin-sheet .prize-grid,
+body.skin-sheet .opp-prizes {
+  grid-template-columns: repeat(6, var(--prize-w));
+  grid-template-rows: var(--prize-h);
+  gap: 3px;
+}
+
+/* Uniform cell sizing — override the hard-coded card dimensions */
+body.skin-sheet .opp-active-slot,
+body.skin-sheet #active-p1 { width: var(--active-w); height: var(--active-h); }
+body.skin-sheet .opp-bench-slot { width: var(--card-w-sm); height: var(--card-h-sm); }
+/* Active cells lose the heavy colored card border + glow → plain gridline cell */
+body.skin-sheet #active-p1,
+body.skin-sheet .opp-active-slot {
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+body.skin-sheet .zone-slot.occupied { border-color: var(--accent); }
+/* Keep face-down cards hatched (the white cell override above would erase it) */
+body.skin-sheet .prize-slot.face-down,
+body.skin-sheet .opp-prize-pip { background: var(--card-back-bg); }
+
+/* Show the player's empty bench slots as blank grid cells (the opponent's stay
+   collapsed so its single-row active sits right next to the OPP header) */
+body.skin-sheet .bench-row .zone-slot:not(.occupied) {
+  width: var(--card-w-sm) !important;
+  min-width: var(--card-w-sm) !important;
+  height: var(--card-h-sm);
+  border: 1px solid var(--border) !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+  opacity: 1 !important;
+}
+body.skin-sheet .bench-row .zone-slot-empty { display: none; }
+
+/* Damage → an inline red negative value next to HP */
+.sheet-cell-dmg {
+  font-family: 'Menlo', 'Consolas', monospace;
+  font-size: clamp(7px, 0.85vw, 11px);
+  font-weight: 700;
+  color: #d93025;
+  flex: 0 0 auto;
+}
+
+/* Energy → a small horizontal run of chips pinned to the cell's bottom-right.
+   (Cancels the normal skin's vertical column + the JS energy-reserve margin.) */
+body.skin-sheet .energy-overlay,
+body.skin-sheet .energy-overlay-bench {
+  position: absolute;
+  left: auto; right: 4px;
+  top: auto; bottom: 3px;
+  transform: none;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-content: center;
+  align-items: center;
+  max-height: none;
+  gap: 2px;
+}
+body.skin-sheet .energy-overlay .sheet-energy,
+body.skin-sheet .energy-overlay-bench .sheet-energy {
+  width: 13px !important;
+  height: 13px !important;
+  font-size: 8px !important;
+}
+body.skin-sheet .zone-slot,
+body.skin-sheet .opp-bench-slot { margin-right: 0 !important; }
+
+/* Midline → a full-width worksheet freeze-line, left-labelled */
+body.skin-sheet #midline {
+  max-width: none;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 1px 4px;
+}
+body.skin-sheet #midline-info { font-family: 'Menlo', 'Consolas', monospace; }
+
+/* Hand → a left-aligned row of cells */
+body.skin-sheet #bottom-bar { align-items: flex-start; }
+body.skin-sheet .hand-label { align-self: flex-start; }
+body.skin-sheet #hand-p1 { justify-content: flex-start; }
 </style>
 </head>
 <body>
@@ -2556,6 +2913,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
       <span id="phase-badge">DRAW</span>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
+      <button class="top-bar-btn" id="skin-toggle-btn" onclick="toggleSkin()" title="Switch to the spreadsheet skin">📊 BUSINESS TIME</button>
     </div>
 
     <!-- Field body -->
@@ -2846,13 +3204,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=1eb9725ba9"></script>
-<script src="game-render.js?v=1eb9725ba9"></script>
-<script src="game-actions.js?v=1eb9725ba9"></script>
-<script src="game-ai.js?v=1eb9725ba9"></script>
+<script src="game-utils.js?v=47dd322364"></script>
+<script src="game-render.js?v=47dd322364"></script>
+<script src="game-actions.js?v=47dd322364"></script>
+<script src="game-ai.js?v=47dd322364"></script>
 
-<script src="pokemon-powers.js?v=1eb9725ba9"></script>
-<script src="trainer-cards.js?v=1eb9725ba9"></script>
-<script src="move-effects.js?v=1eb9725ba9"></script>
-<script src="game-init.js?v=1eb9725ba9"></script>
+<script src="pokemon-powers.js?v=47dd322364"></script>
+<script src="trainer-cards.js?v=47dd322364"></script>
+<script src="move-effects.js?v=47dd322364"></script>
+<script src="game-init.js?v=47dd322364"></script>
 </html>
