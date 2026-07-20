@@ -5179,11 +5179,22 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
       /_pendingSetupSnap/.test(src) && /_setupSnapHandler/.test(src));
     assert('game-init.js: listeners stash snapshot on isWriting instead of bare return',
       /if\s*\(\s*isWriting\s*\)\s*\{\s*_pendingSetupSnap\s*=/.test(src));
-    // The two SETUP-capable listeners (createRoom/joinRoom) must stash, not drop.
-    // The resumeGame listener may still bare-return — it only handles past-SETUP
-    // states, so there's no handshake event to preserve. Allow at most that one.
-    assert('game-init.js: at most the resume listener still bare-drops on isWriting',
-      (src.match(/if\s*\(\s*isWriting\s*\)\s*return\s*;/g) || []).length <= 1);
+    // ALL three listeners (createRoom/joinRoom/resumeGame) must stash, not drop.
+    // resumeGame used to bare-return and skip slot merges on the theory that it
+    // "only handles past-SETUP states" — but a player who reloads DURING setup
+    // resumes from P1's stored state, which can predate the opponent's placement.
+    // That left the opponent's Active null forever and permanently blocked
+    // maybeAutoAdvanceSetup: both players click READY and nothing happens.
+    assert('game-init.js: no listener bare-drops a snapshot on isWriting',
+      (src.match(/if\s*\(\s*isWriting\s*\)\s*return\s*;/g) || []).length === 0);
+
+    // 11b. resumeGame must merge the opponent's setup slot while still in SETUP,
+    //      or a mid-setup reload can never learn the opponent's placement.
+    const resumeM = /function\s+resumeGame\s*\([\s\S]*?\n\}/.exec(src);
+    if (resumeM) {
+      assert('game-init.js: resumeGame merges setup slots during SETUP',
+        /mergeSetupSlot/.test(resumeM[0]));
+    }
 
     // 12. pushGameState must replay the stashed snapshot once the write finishes.
     if (pushM) {
