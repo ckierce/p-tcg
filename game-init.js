@@ -1235,12 +1235,35 @@ function resumeGame(code) {
     // resuming with a 4-card bench (Firebase strips trailing nulls, and the
     // old manual decode forgot to re-pad to 5).
     receiveGameState(s);
-    gameRef.on('value', data => {
-      if (isWriting) return;
-      const d = data.val();
-      if (d && d.state && G.phase !== 'SETUP') {
-        receiveGameState(d.state);
+    // Rejoining DURING setup needs the same slot-merge handling as the original
+    // create/join listeners. The stored `state` snapshot is written by P1 and can
+    // predate the opponent's placement, so on its own it leaves us with a null
+    // opponent Active. Without merging setup_p1/setup_p2 here we'd never learn
+    // about it — and maybeAutoAdvanceSetup's `!G.players[n].active` check would
+    // block forever, the "both players clicked READY and nothing happens" hang.
+    const _handleResumeSnapshot = (data) => {
+      if (!data) return;
+      if (G.phase === 'SETUP') {
+        if (role === 1) {
+          if (data.setup_p2) mergeSetupSlot(2, data.setup_p2);
+        } else {
+          // P1 publishes its placement inside `state`; setup_p1 carries its ready flag.
+          if (data.state?.players?.[1]) mergeSetupSlot(1, data.state.players[1]);
+          if (data.setup_p1) mergeSetupSlot(1, data.setup_p1);
+        }
       }
+      // Accept full state during normal play, and also when the other client has
+      // already advanced past SETUP while we're still sitting in it.
+      if (data.state && (G.phase !== 'SETUP' || data.state.phase !== 'SETUP')) {
+        receiveGameState(data.state);
+      }
+    };
+    gameRef.on('value', snap => {
+      const data = snap.val();
+      // Mirror the create/join listeners: stash a snapshot that lands mid-write
+      // so the SETUP handshake isn't lost to a write collision.
+      if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleResumeSnapshot; return; }
+      _handleResumeSnapshot(data);
     });
     addLog(`P${role} rejoined game ${code}.`, true);
   });
