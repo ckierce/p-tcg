@@ -1621,8 +1621,7 @@ async function performAttack(player, atk) {
         const bHp = parseInt(b.hp) || 0;
         if (bHp > 0 && b.damage >= bHp) {
           addLog(`${b.name} was knocked out by splash damage!`, true);
-          pObj.discard.push(b);
-          pObj.bench[i] = null;
+          koBenchAndPrize(pNum, i);
         }
       }
     }
@@ -1675,8 +1674,7 @@ async function performAttack(player, atk) {
       const tHp = parseInt(target.hp) || 0;
       if (tHp > 0 && target.damage >= tHp) {
         addLog(`${target.name} was knocked out!`, true);
-        G.players[opp].discard.push(target);
-        G.players[opp].bench[oppBench[0].i] = null;
+        koBenchAndPrize(opp, oppBench[0].i);
       }
     } else {
       const picked = await openCardPicker({
@@ -1693,8 +1691,7 @@ async function performAttack(player, atk) {
         const tHp = parseInt(target.hp) || 0;
         if (tHp > 0 && target.damage >= tHp) {
           addLog(`${target.name} was knocked out!`, true);
-          G.players[opp].discard.push(target);
-          G.players[opp].bench[slotIdx] = null;
+          koBenchAndPrize(opp, slotIdx);
         }
       }
     }
@@ -1782,6 +1779,64 @@ async function performAttack(player, atk) {
   }
 }
 
+// ── awardPrizeAndCheckWin ────────────────────────────────────────────────────
+// Give `prizeWinner` one prize card and check the two win conditions (all prizes
+// taken; owner has no Pokémon left). `ownerPlayer` is the player whose Pokémon
+// was knocked out. Returns 'win' if the game ended, else null.
+// Extracted from checkKO so bench KOs award prizes exactly like active KOs do.
+function awardPrizeAndCheckWin(prizeWinner, ownerPlayer, reason) {
+  const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
+  if (prizeIdx !== -1) {
+    const prizeCard = G.players[prizeWinner].prizes[prizeIdx];
+    G.players[prizeWinner].hand.push(prizeCard.card);
+    G.players[prizeWinner].prizes[prizeIdx] = null;
+    const remaining = G.players[prizeWinner].prizes.filter(p => p).length;
+    addLog(`P${prizeWinner} took a prize! (${remaining} remaining)`, true);
+    if (remaining === 0) {
+      addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
+      G.started = false;
+      showWinScreen(prizeWinner, reason || 'ALL 6 PRIZES TAKEN');
+      if (typeof pushGameState === 'function') pushGameState();
+      return 'win';
+    }
+  }
+  // Win by knocking out the owner's last Pokémon (active + bench both empty)
+  const owner = G.players[ownerPlayer];
+  const hasAny = !!owner.active || owner.bench.some(s => s !== null);
+  if (!hasAny) {
+    addLog(`Player ${ownerPlayer} has no Pokémon left — Player ${prizeWinner} wins!`, true);
+    G.started = false;
+    showWinScreen(prizeWinner, 'OPPONENT HAS NO POKÉMON LEFT');
+    if (typeof pushGameState === 'function') pushGameState();
+    return 'win';
+  }
+  return null;
+}
+
+// ── koBenchAndPrize ──────────────────────────────────────────────────────────
+// Knock out a BENCHED Pokémon: discard it (plus its evolution stages and
+// attached energy), clear the slot, and award a prize to the owner's OPPONENT.
+// Per TCG rules the opponent gets a prize for ANY knockout — including a bench
+// Pokémon KO'd by splash, recoil, or the owner's OWN attack (e.g. Blizzard
+// tails, Selfdestruct). Bench KOs never trigger promotion (only the Active
+// does). Returns 'win' if the game ended, else null.
+// Every ad-hoc bench-KO site should route through this instead of doing a bare
+// discard.push + slot = null, which silently skipped the prize.
+function koBenchAndPrize(ownerPlayerNum, benchIdx) {
+  const owner = G.players[ownerPlayerNum];
+  const card = owner.bench[benchIdx];
+  if (!card) return null;
+  owner.discard.push(card);
+  if (card.prevStages && card.prevStages.length) owner.discard.push(...card.prevStages);
+  if (card.attachedEnergy && card.attachedEnergy.length) owner.discard.push(...card.attachedEnergy);
+  owner.bench[benchIdx] = null;
+  while (owner.bench.length < 5) owner.bench.push(null);
+  // Clefairy Doll (and other non-Pokémon bench tokens) award no prize.
+  if (card.isDoll) { addLog(`${card.name} was discarded — no prize awarded.`); return null; }
+  const prizeWinner = ownerPlayerNum === 1 ? 2 : 1;
+  return awardPrizeAndCheckWin(prizeWinner, ownerPlayerNum);
+}
+
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
   // Resolve HP: prefer card.hp, fall back to CARD_DATA lookup, then enrichCard full data
   let hp = parseInt(card.hp) || 0;
@@ -1836,30 +1891,11 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
       return 'ko';
     }
 
-    // Award a prize card to the attacker
-    const prizeIdx = G.players[prizeWinner].prizes.findIndex(p => p);
-    if (prizeIdx !== -1) {
-      const prizeCard = G.players[prizeWinner].prizes[prizeIdx];
-      G.players[prizeWinner].hand.push(prizeCard.card);
-      G.players[prizeWinner].prizes[prizeIdx] = null;
-      const remaining = G.players[prizeWinner].prizes.filter(p => p).length;
-      addLog(`P${prizeWinner} took a prize! (${remaining} remaining)`, true);
-      if (remaining === 0) {
-        addLog(`Player ${prizeWinner} has taken all prizes — they win!`, true);
-        G.started = false;
-        showWinScreen(prizeWinner, 'ALL 6 PRIZES TAKEN');
-        if (typeof pushGameState === 'function') pushGameState();
-        return 'win';
-      }
-    }
-
-    // Win by knocking out opponent's last Pokémon
-    const benchLeft = G.players[owner].bench.filter(s => s !== null);
-    if (benchLeft.length === 0) {
-      addLog(`Player ${owner} has no Pokémon left — Player ${prizeWinner} wins!`, true);
-      G.started = false;
-      showWinScreen(prizeWinner, 'OPPONENT HAS NO POKÉMON LEFT');
-      if (typeof pushGameState === 'function') pushGameState();
+    // Award a prize to the attacker and check win conditions (all prizes taken,
+    // or the KO'd player has no Pokémon left). Shared with bench KOs via
+    // koBenchAndPrize so both paths award prizes identically.
+    if (awardPrizeAndCheckWin(prizeWinner, owner) === 'win') {
+      renderWhenIdle();
       return 'win';
     }
 

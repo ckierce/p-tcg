@@ -105,7 +105,7 @@ const _benchDamage10 = () => ({
     const hp = parseInt(target.s.hp) || 0;
     if (hp > 0 && target.s.damage >= hp) {
       addLog(`${target.s.name} was knocked out!`, true);
-      G.players[opp].discard.push(target.s); G.players[opp].bench[target.i] = null;
+      koBenchAndPrize(opp, target.i);
     }
     renderAll();
   }
@@ -130,7 +130,7 @@ const _benchDamage20 = () => ({
     const hp = parseInt(target.s.hp) || 0;
     if (hp > 0 && target.s.damage >= hp) {
       addLog(`${target.s.name} was knocked out!`, true);
-      G.players[opp].discard.push(target.s); G.players[opp].bench[target.i] = null;
+      koBenchAndPrize(opp, target.i);
     }
     renderAll();
   }
@@ -614,7 +614,7 @@ const MOVE_EFFECTS = {
         const hp = parseInt(c.hp) || 0;
         if (hp > 0 && c.damage >= hp) {
           addLog(`${c.name} knocked out!`, true);
-          G.players[target].discard.push(c); G.players[target].bench[i] = null;
+          koBenchAndPrize(target, i);
         }
       });
       addLog(`${atk.name}: ${heads ? "HEADS — opp" : "TAILS — own"} bench took 10 each!`, true);
@@ -693,7 +693,7 @@ const MOVE_EFFECTS = {
             const hp = parseInt(c.hp) || 0;
             if (hp > 0 && c.damage >= hp) {
               addLog(`${c.name} knocked out!`, true);
-              G.players[pNum].discard.push(c); G.players[pNum].bench[i] = null;
+              koBenchAndPrize(pNum, i);
             }
           }
         });
@@ -773,8 +773,7 @@ const MOVE_EFFECTS = {
       const hp = parseInt(target.hp) || 0;
       if (hp > 0 && target.damage >= hp) {
         addLog(`${target.name} was knocked out!`, true);
-        G.players[opp].discard.push(target);
-        G.players[opp].bench[slotIdx] = null;
+        koBenchAndPrize(opp, slotIdx);
       }
       return null; // null = don't block the main attack
     }
@@ -815,7 +814,7 @@ const MOVE_EFFECTS = {
         c.damage = (c.damage || 0) + 10;
         addLog(`${atk.name}: 10 to own ${c.name}! (${c.damage}/${c.hp})`);
         const hp = parseInt(c.hp) || 0;
-        if (hp > 0 && c.damage >= hp) { addLog(`${c.name} knocked out!`, true); G.players[player].discard.push(c); G.players[player].bench[i] = null; }
+        if (hp > 0 && c.damage >= hp) { addLog(`${c.name} knocked out!`, true); koBenchAndPrize(player, i); }
       });
       renderAll();
     }
@@ -899,7 +898,7 @@ const MOVE_EFFECTS = {
         s.damage = (s.damage || 0) + 10;
         addLog(`${atk.name}: 10 to ${s.name}! (${s.damage}/${s.hp})`);
         const hp = parseInt(s.hp) || 0;
-        if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); G.players[opp].discard.push(s); G.players[opp].bench[i] = null; }
+        if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); koBenchAndPrize(opp, i); }
       });
       renderAll();
     }
@@ -1015,9 +1014,17 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Meditate (Jynx/Mr. Mime): 10 + 10 per damage counter on defender
+  // Meditate: base damage + 10 per damage counter on defender.
+  // TWO different cards share this attack name with different base damage:
+  //   Jynx (Base)      → "Does 20 damage plus 10 more per damage counter" (20+)
+  //   Mr. Mime (Jungle)→ "Does 10 damage plus 10 more per damage counter" (10+)
+  // Reading the base from atk.damage (not a hardcoded 10) makes both correct —
+  // previously Jynx wrongly did Mr. Mime's 10.
   'Meditate': {
-    modifyDamage: ({ oppActive }) => 10 + Math.floor((oppActive?.damage || 0) / 10) * 10
+    modifyDamage: ({ atk, oppActive }) => {
+      const base = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
+      return base + Math.floor((oppActive?.damage || 0) / 10) * 10;
+    }
   },
 
   // Mega Drain (Butterfree): heal half damage dealt
@@ -1405,7 +1412,7 @@ const MOVE_EFFECTS = {
           s.damage = (s.damage || 0) + 20;
           addLog(`${atk.name}: HEADS — 20 to ${s.name}! (${s.damage}/${s.hp})`);
           const hp = parseInt(s.hp) || 0;
-          if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); G.players[opp].discard.push(s); G.players[opp].bench[i] = null; }
+          if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); koBenchAndPrize(opp, i); }
         } else { tails++; addLog(`${atk.name}: TAILS for ${s.name}.`); }
       }
       if (tails > 0 && myActive) {

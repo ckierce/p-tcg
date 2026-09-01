@@ -5222,6 +5222,111 @@ section('REGRESSION: SETUP ready-up flow exists and is wired correctly');
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Meditate base damage (Jynx 20 vs Mr. Mime 10)
+// Jynx (Base) and Mr. Mime (Jungle) share the attack name "Meditate" but have
+// different base damage (20+ vs 10+). The handler used to hardcode 10, so Jynx
+// wrongly did 10. It must now read the base from atk.damage.
+// ══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Meditate reads base damage from the card');
+{
+  const fs = require('fs');
+  const me = fs.readFileSync('./move-effects.js', 'utf8');
+  const block = /'Meditate':\s*\{[\s\S]*?modifyDamage:[\s\S]*?\}\s*,/.exec(me);
+  assert('move-effects.js: Meditate block found', !!block);
+  if (block) {
+    assert('move-effects.js: Meditate derives base from atk.damage (not hardcoded 10)',
+      /atk\.damage/.test(block[0]));
+    assert('move-effects.js: Meditate still adds per-damage-counter bonus',
+      /oppActive[\s\S]*damage[\s\S]*\/\s*10/.test(block[0]));
+  }
+  // Functional check: load MOVE_EFFECTS in a sandbox and exercise the formula.
+  try {
+    const vm = require('vm');
+    const ctx = { console, G: null, addLog: () => {}, Math, parseInt };
+    ctx.globalThis = ctx; vm.createContext(ctx);
+    vm.runInContext(me + ';globalThis.MOVE_EFFECTS=MOVE_EFFECTS;', ctx);
+    const med = ctx.MOVE_EFFECTS['Meditate'].modifyDamage;
+    assertEqual('Meditate: Jynx (20+) vs undamaged defender = 20',
+      med({ atk: { name: 'Meditate', damage: '20+' }, oppActive: { damage: 0 } }), 20);
+    assertEqual('Meditate: Jynx (20+) vs defender w/ 2 counters = 40',
+      med({ atk: { name: 'Meditate', damage: '20+' }, oppActive: { damage: 20 } }), 40);
+    assertEqual('Meditate: Mr. Mime (10+) vs undamaged defender = 10',
+      med({ atk: { name: 'Meditate', damage: '10+' }, oppActive: { damage: 0 } }), 10);
+  } catch (e) {
+    console.log('  (sandbox load of move-effects.js failed — skipping functional Meditate check:', e.message, ')');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: bench KOs award the opponent a prize
+// Bench Pokémon KO'd by splash / recoil / your OWN attack (Blizzard tails,
+// Selfdestruct, etc.) must give the opponent a prize — TCG rules award a prize
+// for ANY knockout. These sites used to do a bare `discard.push + slot = null`
+// with no prize. They must now route through koBenchAndPrize().
+// ══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: bench KOs award a prize (koBenchAndPrize)');
+{
+  const fs = require('fs');
+  const ga = fs.readFileSync('./game-actions.js', 'utf8');
+  const me = fs.readFileSync('./move-effects.js', 'utf8');
+
+  assert('game-actions.js: koBenchAndPrize helper defined',
+    /function\s+koBenchAndPrize\s*\(/.test(ga));
+  assert('game-actions.js: awardPrizeAndCheckWin helper defined',
+    /function\s+awardPrizeAndCheckWin\s*\(/.test(ga));
+  assert('game-actions.js: checkKO delegates prize/win to awardPrizeAndCheckWin',
+    /awardPrizeAndCheckWin\(\s*prizeWinner/.test(ga));
+
+  // No bare bench-KO (discard.push + bench slot = null, no prize) may remain in
+  // either combat file. koBenchAndPrize does both, so those pairs should be gone.
+  const barePair = /discard\.push\([^)]*\);\s*G\.players\[[a-z0-9]+\]\.bench\[[a-z0-9.]+\]\s*=\s*null/gi;
+  assert('game-actions.js: no un-prized bench-KO discard+null pairs remain',
+    (ga.match(barePair) || []).length === 0);
+  assert('move-effects.js: no un-prized bench-KO discard+null pairs remain',
+    (me.match(barePair) || []).length === 0);
+  assert('move-effects.js: bench-KO sites call koBenchAndPrize',
+    /koBenchAndPrize\(/.test(me));
+
+  // Functional check: a self-bench KO gives the opponent a prize; a Clefairy
+  // Doll gives none.
+  try {
+    const vm = require('vm');
+    const ctx = { console, G: null, addLog: () => {}, showWinScreen: () => {}, Math, parseInt };
+    ctx.globalThis = ctx; vm.createContext(ctx);
+    // Pull just the two helpers out of game-actions.js and eval them.
+    const grab = (name) => {
+      const i = ga.indexOf('function ' + name + '(');
+      let depth = 0;
+      for (let k = ga.indexOf('{', i); k < ga.length; k++) {
+        if (ga[k] === '{') depth++;
+        else if (ga[k] === '}' && --depth === 0) return ga.slice(i, k + 1);
+      }
+    };
+    vm.runInContext(grab('awardPrizeAndCheckWin') + '\n' + grab('koBenchAndPrize') +
+      ';globalThis.koBenchAndPrize=koBenchAndPrize;', ctx);
+    ctx.G = { players: {
+      1: { active: { name: 'Me' }, bench: [{ name: 'B', hp: '60', damage: 60 }, null, null, null, null],
+           discard: [], hand: [], prizes: Array.from({ length: 6 }, (_, i) => ({ card: { name: 'x' + i } })) },
+      2: { active: { name: 'Opp' }, bench: [null, null, null, null, null],
+           discard: [], hand: [], prizes: Array.from({ length: 6 }, (_, i) => ({ card: { name: 'y' + i } })) },
+    }};
+    ctx.koBenchAndPrize(1, 0); // P1's OWN bench Pokémon KO'd
+    assertEqual('self-bench KO: opponent (P2) takes a prize (6 -> 5)',
+      ctx.G.players[2].prizes.filter(Boolean).length, 5);
+    assertEqual('self-bench KO: KO\'d card removed from bench', ctx.G.players[1].bench[0], null);
+    assertEqual('self-bench KO: opponent gained the prize card in hand',
+      ctx.G.players[2].hand.length, 1);
+    // Clefairy Doll awards no prize.
+    ctx.G.players[1].bench[1] = { name: 'Clefairy Doll', hp: '10', damage: 10, isDoll: true };
+    ctx.koBenchAndPrize(1, 1);
+    assertEqual('Clefairy Doll bench KO: no prize awarded (still 5)',
+      ctx.G.players[2].prizes.filter(Boolean).length, 5);
+  } catch (e) {
+    console.log('  (sandbox load of bench-KO helpers failed — skipping functional check:', e.message, ')');
+  }
+}
+
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));
