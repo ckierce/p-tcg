@@ -5327,6 +5327,266 @@ section('REGRESSION: bench KOs award a prize (koBenchAndPrize)');
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI v2 — expected-value damage model, fair-play threat model, planner buckets
+//
+// The AI rewrite replaced "max damage, all heads" reasoning with a probability
+// distribution per attack. These tests pin the model and the decisions that
+// depend on it so the classic mistakes (committing PlusPower to a 6% KO,
+// retreating for no reason, trading away the deck's Stage 2, decking out)
+// cannot creep back in.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+section('AI v2: attackProfile / aiDamageDistribution');
+{
+  global.parseStatusEffects = parseStatusEffects;
+  const {
+    attackProfile: _attackProfile,
+    aiDamageDistribution: _aiDamageDistribution,
+    threatSummary: _threatSummary,
+    evaluateAttackerPlan: _evaluateAttackerPlan,
+    aiBuildTurnPlan: _aiBuildTurnPlan2,
+    aiPassScore: _aiPassScore,
+    aiChooseEnergyTarget: _aiChooseEnergyTarget2,
+    aiChooseEnergyPlay: _aiChooseEnergyPlay,
+    aiHoldValue: _aiHoldValue,
+    aiEnergyRemovalTarget: _aiEnergyRemovalTarget,
+    aiChoosePromotion: _aiChoosePromotion,
+    aiCanAffordDraw: _aiCanAffordDraw,
+    AI_SCORE: _AI_SCORE,
+  } = require('./game-ai.js');
+
+  const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+  const mkCard = (o = {}) => ({ name: 'Mon', hp: '70', damage: 0, types: ['Colorless'], attacks: [], attachedEnergy: [], weaknesses: [], resistances: [], ...o });
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: sixPrizes(), ...o });
+
+  // Comet Punch: 4 coins × 20 → binomial
+  const comet = { name: 'Comet Punch', cost: ['Colorless','Colorless','Colorless','Colorless'], damage: '20×', text: 'Flip 4 coins. This attack does 20 damage times the number of heads.' };
+  const kanga = mkCard({ name: 'Kangaskhan', attacks: [comet], attachedEnergy: [C, C, C, C] });
+  const dummy = mkCard({ name: 'Dummy', hp: '60' });
+  const d = _aiDamageDistribution(comet, kanga, dummy, {});
+  assert('Comet Punch expected damage = 40', near(d.expected, 40));
+  assert('Comet Punch max = 80', d.max === 80);
+  assert('Comet Punch P(≥60) = 5/16', near(d.outcomes.filter(o => o.dmg >= 60).reduce((s, o) => s + o.p, 0), 5 / 16));
+
+  // Thunderpunch: 40/30, 10 self on tails
+  const tp = { name: 'Thunderpunch', cost: ['Lightning','Colorless'], damage: '30+', text: 'Flip a coin. If heads, this attack does 30 damage plus 10 more damage; if tails, this attack does 30 damage and Electabuzz does 10 damage to itself.' };
+  const pTp = _attackProfile(tp, mkCard({ attachedEnergy: [L, C] }), dummy, {});
+  assert('Thunderpunch raw outcomes 40/30', pTp.raw.some(o => o.dmg === 40 && near(o.p, 0.5)) && pTp.raw.some(o => o.dmg === 30 && near(o.p, 0.5)));
+  assert('Thunderpunch 50% recoil of 10', pTp.self.length === 1 && pTp.self[0].dmg === 10 && near(pTp.self[0].p, 0.5));
+
+  // "If tails, this attack does nothing" → 50% zero
+  const horn = { name: 'Horn Hazard', cost: ['Grass'], damage: '30', text: 'Flip a coin. If tails, this attack does nothing.' };
+  const dHorn = _aiDamageDistribution(horn, mkCard({ attachedEnergy: [G_] }), dummy, {});
+  assert('Horn Hazard expected = 15', near(dHorn.expected, 15));
+
+  // Selfdestruct: unconditional self-KO + bench splash both sides
+  const sd = { name: 'Selfdestruct', cost: ['Lightning','Lightning','Colorless','Colorless'], damage: '80', text: "Does 20 damage to each Pokémon on each player's Bench. (Don't apply Weakness and Resistance for Benched Pokémon.) Magneton does 80 damage to itself." };
+  const pSd = _attackProfile(sd, mkCard({ hp: '60', attachedEnergy: [L, L, C, C] }), dummy, {});
+  assert('Selfdestruct flagged as self-KO', pSd.selfKO === true);
+  assert('Selfdestruct bench splash 20 to both benches', pSd.benchOpp?.dmg === 20 && pSd.benchSelf?.dmg === 20);
+
+  // Fire Spin energy discard cost
+  const fs_ = { name: 'Fire Spin', cost: ['Fire','Fire','Fire','Fire'], damage: '100', text: 'Discard 2 Energy cards attached to Charizard in order to use this attack.' };
+  assert('Fire Spin discards 2 energy', _attackProfile(fs_, mkCard({ attachedEnergy: [F,F,F,F] }), dummy, {}).discardEnergy === 2);
+
+  // Water Gun: +10 per extra Water beyond cost, capped at +20
+  const wg = { name: 'Water Gun', cost: ['Water'], damage: '10+', text: "Does 10 damage plus 10 more damage for each Water Energy attached to Lapras but not used to pay for this attack's Energy cost. You can't add more than 20 damage in this way." };
+  const dWg = _aiDamageDistribution(wg, mkCard({ attachedEnergy: [W, W, W, W] }), dummy, {});
+  assert('Water Gun with 4 Water = 30 (capped bonus)', dWg.max === 30);
+
+  // PlusPower applies BEFORE weakness (engine + TCG rule)
+  const ember = { name: 'Ember', cost: ['Fire','Colorless'], damage: '30', text: '' };
+  const fireMon = mkCard({ types: ['Fire'], attachedEnergy: [F, C] });
+  const weakToFire = mkCard({ weaknesses: [{ type: 'Fire' }] });
+  assert('PlusPower is doubled by weakness: (30+10)×2 = 80', _aiDamageDistribution(ember, fireMon, weakToFire, { plus: 10 }).max === 80);
+}
+
+section('AI v2: threatSummary (fair play — no hand peeking)');
+{
+  const { threatSummary: _threatSummary } = require('./game-ai.js');
+  const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+  const mkCard = (o = {}) => ({ name: 'Mon', hp: '70', damage: 0, types: ['Colorless'], attacks: [], attachedEnergy: [], weaknesses: [], resistances: [], ...o });
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: sixPrizes(), ...o });
+  const hitmon = mkCard({ name: 'Hitmonchan', types: ['Fighting'], attacks: [
+    { name: 'Jab', cost: ['Fighting'], damage: '20', text: '' },
+    { name: 'Special Punch', cost: ['Fighting','Fighting','Colorless'], damage: '40', text: '' },
+  ], attachedEnergy: [{ name: 'Fighting Energy' }, { name: 'Fighting Energy' }] });
+  const target = mkCard({ hp: '40' });
+
+  const noHand = _threatSummary(mkPlayer({ active: hitmon, hand: [] }), mkPlayer({ active: target }));
+  assert('Empty hand → cannot attach → Jab only (20)', noHand.maxDmg === 20 && noHand.koProb === 0);
+  const withHand = _threatSummary(mkPlayer({ active: hitmon, hand: [{ name: 'Whatever' }] }), mkPlayer({ active: target }));
+  assert('Any card in hand → may attach one energy → Special Punch (40) KOs the 40 HP target', withHand.maxDmg === 40 && near(withHand.koProb, 1));
+
+  // Coin-flip attacker: KO probability, not worst case
+  const flipper = mkCard({ name: 'Flipper', attacks: [{ name: 'Horn Hazard', cost: ['Grass'], damage: '30', text: 'Flip a coin. If tails, this attack does nothing.' }], attachedEnergy: [{ name: 'Grass Energy' }] });
+  const t30 = _threatSummary(mkPlayer({ active: flipper }), mkPlayer({ active: mkCard({ hp: '30' }) }));
+  assert('50/50 attack vs 30 HP → koProb 0.5, expDmg 15', near(t30.koProb, 0.5) && near(t30.expDmg, 15));
+
+  // Asleep attacker: wake-up flip halves the threat
+  const sleepy = { ...hitmon, special: 'asleep' };
+  const tS = _threatSummary(mkPlayer({ active: sleepy }), mkPlayer({ active: mkCard({ hp: '20' }) }));
+  assert('Asleep attacker → koProb halved (0.5)', near(tS.koProb, 0.5));
+
+  // Bench reachable only when the active can pay its retreat cost
+  const weakActive = mkCard({ name: 'Weak', attacks: [{ name: 'Tackle', cost: ['Colorless'], damage: '10', text: '' }], attachedEnergy: [{ name: 'Grass Energy' }], convertedRetreatCost: 2 });
+  const benchBeast = mkCard({ name: 'Beast', attacks: [{ name: 'Crush', cost: ['Water'], damage: '60', text: '' }], attachedEnergy: [{ name: 'Water Energy' }] });
+  const tNoReach = _threatSummary(mkPlayer({ active: weakActive, bench: [benchBeast,null,null,null,null] }), mkPlayer({ active: mkCard({ hp: '50' }) }));
+  assert('Unaffordable retreat → bench attacker not counted (max 10)', tNoReach.maxDmg === 10);
+  const tReach = _threatSummary(mkPlayer({ active: { ...weakActive, convertedRetreatCost: 1 }, bench: [benchBeast,null,null,null,null] }), mkPlayer({ active: mkCard({ hp: '50' }) }));
+  assert('Affordable retreat → bench attacker counted (60)', tReach.maxDmg === 60);
+}
+
+section('AI v2: planner uses expected value and probability, not all-heads');
+{
+  const { evaluateAttackerPlan: _ev, aiBuildTurnPlan: _plan, aiPassScore: _pass, AI_SCORE: _S } = require('./game-ai.js');
+  const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
+  const mkCard = (o = {}) => ({ name: 'Mon', hp: '70', damage: 0, types: ['Colorless'], attacks: [], attachedEnergy: [], weaknesses: [], resistances: [], ...o });
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: sixPrizes(), ...o });
+  const sure30 = { name: 'Sure', cost: ['Colorless'], damage: '30', text: '' };
+  const comet = { name: 'Comet Punch', cost: ['Colorless','Colorless','Colorless','Colorless'], damage: '20×', text: 'Flip 4 coins. This attack does 20 damage times the number of heads.' };
+  const att = mkCard({ name: 'Att', attacks: [sure30, comet], attachedEnergy: [C, C, C, C] });
+
+  // vs 60 HP: only Comet Punch can KO (5/16) → it is chosen
+  {
+    const p2 = mkPlayer({ active: att }), p1 = mkPlayer({ active: mkCard({ hp: '60' }) });
+    global.G.players = { 1: p1, 2: p2 }; global.G.energyPlayedThisTurn = false; global.G.evolvedThisTurn = [];
+    const plan = _ev(att, p2, p1, null);
+    assertEqual('vs 60 HP: Comet Punch (5/16 KO) beats a sure 30', plan?.attack?.name, 'Comet Punch');
+    assert('vs 60 HP: koProb reported as 5/16', near(plan.koProb, 5 / 16));
+    assert('vs 60 HP: willKO is false (KO not likely)', plan.willKO === false);
+  }
+  // vs 30 HP: the sure 30 KOs for certain and beats the 11/16 coin flip
+  {
+    const p2 = mkPlayer({ active: att }), p1 = mkPlayer({ active: mkCard({ hp: '30' }) });
+    global.G.players = { 1: p1, 2: p2 };
+    const plan = _ev(att, p2, p1, null);
+    assertEqual('vs 30 HP: guaranteed KO preferred over coin-flip KO', plan?.attack?.name, 'Sure');
+    assert('vs 30 HP: willKO true', plan.willKO === true);
+  }
+  // PlusPower is not wasted when it cannot change the KO
+  {
+    const p2 = mkPlayer({ active: mkCard({ attacks: [sure30], attachedEnergy: [C] }), hand: [{ supertype: 'Trainer', name: 'PlusPower' }] });
+    const p1 = mkPlayer({ active: mkCard({ hp: '80' }) });
+    global.G.players = { 1: p1, 2: p2 };
+    const plan = _ev(p2.active, p2, p1, null);
+    assertEqual('PlusPower kept when 30+10 still does not KO an 80 HP target', plan?.plusPowerCount, 0);
+  }
+  // Selfdestruct for nothing is worse than passing
+  {
+    const sd = { name: 'Selfdestruct', cost: ['Lightning','Colorless'], damage: '40', text: "Does 10 damage to each Pokémon on each player's Bench. Magnemite does 40 damage to itself." };
+    const mag = mkCard({ name: 'Magnemite', hp: '40', attacks: [sd], attachedEnergy: [L, C] });
+    const p2 = mkPlayer({ active: mag }), p1 = mkPlayer({ active: mkCard({ hp: '100', attacks: [{ name: 'Poke', cost: ['Colorless'], damage: '10', text: '' }], attachedEnergy: [C] }) });
+    global.G.players = { 1: p1, 2: p2 };
+    const plan = _ev(mag, p2, p1, null);
+    assert('Selfdestruct (self-KO, no KO) scores below passing', plan === null || plan.score < _pass(p2, p1));
+  }
+  // No pointless retreat: a safe Squirtle that can attack stays in front of an
+  // un-energised Wartortle (the "shuffle the bigger Pokémon forward" bug).
+  {
+    const squirtle = mkCard({ name: 'Squirtle', hp: '40', types: ['Water'], attacks: [{ name: 'Bubble', cost: ['Water'], damage: '10', text: 'Flip a coin. If heads, the Defending Pokémon is now Paralyzed.' }], attachedEnergy: [W], convertedRetreatCost: 1 });
+    const wartortle = mkCard({ name: 'Wartortle', hp: '70', types: ['Water'], attacks: [{ name: 'Bite', cost: ['Water','Colorless','Colorless'], damage: '40', text: '' }], attachedEnergy: [] });
+    const scyther = mkCard({ name: 'Scyther', types: ['Grass'], attacks: [{ name: 'Slash', cost: ['Colorless','Colorless','Colorless'], damage: '30', text: '' }], attachedEnergy: [{ name: 'Fighting Energy' }] });
+    const p2 = mkPlayer({ active: squirtle, bench: [wartortle,null,null,null,null] });
+    const p1 = mkPlayer({ active: scyther, hand: [{ name: 'x' }] });
+    global.G.players = { 1: p1, 2: p2 }; global.G.evolvedThisTurn = [];
+    const plan = _plan(p2, p1);
+    assert('Safe attacker stays active — no retreat/switch preStep', plan !== null && plan.preStep === null);
+    assertEqual('…and it attacks with Bubble', plan?.attack?.name, 'Bubble');
+  }
+  // But a doomed Pokémon does retreat into a survivor
+  {
+    const dying = mkCard({ name: 'Dying', hp: '40', damage: 30, attacks: [{ name: 'Tackle', cost: ['Colorless'], damage: '10', text: '' }], attachedEnergy: [C], convertedRetreatCost: 1 });
+    const tank = mkCard({ name: 'Tank', hp: '100', attacks: [{ name: 'Slam', cost: ['Colorless','Colorless'], damage: '30', text: '' }], attachedEnergy: [C, C] });
+    const hitter = mkCard({ name: 'Hitter', attacks: [{ name: 'Hit', cost: ['Colorless'], damage: '20', text: '' }], attachedEnergy: [C] });
+    const p2 = mkPlayer({ active: dying, bench: [tank,null,null,null,null] });
+    const p1 = mkPlayer({ active: hitter });
+    global.G.players = { 1: p1, 2: p2 }; global.G.evolvedThisTurn = [];
+    const plan = _plan(p2, p1);
+    assertEqual('Doomed active retreats into the tank', plan?.preStep?.kind, 'retreat');
+  }
+}
+
+section('AI v2: energy, hold values, energy removal, promotion, deck budget');
+{
+  const { aiChooseEnergyTarget: _tgt, aiChooseEnergyPlay: _play, aiHoldValue: _hold, aiEnergyRemovalTarget: _er, aiChoosePromotion: _promo, aiCanAffordDraw: _draw } = require('./game-ai.js');
+  const mkCard = (o = {}) => ({ name: 'Mon', hp: '70', damage: 0, types: ['Colorless'], attacks: [], attachedEnergy: [], weaknesses: [], resistances: [], ...o });
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: sixPrizes(), ...o });
+
+  // Active Blastoise two Water away from Hydro Pump beats a bench Wartortle with nothing
+  {
+    const blastoise = mkCard({ name: 'Blastoise', hp: '100', types: ['Water'], attacks: [{ name: 'Hydro Pump', cost: ['Water','Water','Water'], damage: '40+', text: 'Does 40 damage plus 10 more damage for each Water Energy attached to Blastoise but not used to pay for this attack\'s Energy cost. You can\'t add more than 20 damage in this way.' }], attachedEnergy: [W] });
+    const wartortle = mkCard({ name: 'Wartortle', types: ['Water'], attacks: [{ name: 'Withdraw', cost: ['Water','Colorless'], damage: '', text: 'Flip a coin. If heads, prevent all damage done to Wartortle during your opponent\'s next turn.' }, { name: 'Bite', cost: ['Water','Colorless','Colorless'], damage: '40', text: '' }], attachedEnergy: [] });
+    const t = _tgt({ active: blastoise, bench: [wartortle,null,null,null,null] }, 'Water Energy');
+    assertEqual('Water goes to the active Blastoise (building the attacker in front)', t?.zone, 'active');
+  }
+  // Pick the RIGHT energy card from hand: Water for a Water attacker, not the Fire card that happens to be first
+  {
+    const lapras = mkCard({ name: 'Lapras', types: ['Water'], attacks: [{ name: 'Water Gun', cost: ['Water'], damage: '10+', text: '' }, { name: 'Confuse Ray', cost: ['Water','Water'], damage: '10', text: 'Flip a coin. If heads, the Defending Pokémon is now Confused.' }], attachedEnergy: [W] });
+    const p2 = mkPlayer({ active: lapras, hand: [{ supertype: 'Energy', name: 'Fire Energy' }, { supertype: 'Energy', name: 'Water Energy' }] });
+    const pick = _play(p2, mkPlayer({ active: mkCard() }));
+    assertEqual('Chooses the Water Energy from hand, not the first energy card', pick?.name, 'Water Energy');
+  }
+  // DCE is not dumped on a Pokémon with only typed costs
+  {
+    const hitmon = mkCard({ name: 'Hitmonchan', types: ['Fighting'], attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }], attachedEnergy: [] });
+    const p2 = mkPlayer({ active: hitmon, hand: [{ supertype: 'Energy', name: 'Double Colorless Energy' }, { supertype: 'Energy', name: 'Fighting Energy' }] });
+    const pick = _play(p2, mkPlayer({ active: mkCard() }));
+    assertEqual('Fighting Energy chosen over DCE for a typed-cost attacker', pick?.name, 'Fighting Energy');
+  }
+  // Hold value: Blastoise in hand with Squirtle in play is precious
+  {
+    const squirtle = mkCard({ name: 'Squirtle', types: ['Water'] });
+    const blastoise = { name: 'Blastoise', supertype: 'Pokémon', subtypes: ['Stage 2'], evolvesFrom: 'Wartortle', hp: '100', attacks: [] };
+    const wartortleCard = { name: 'Wartortle', supertype: 'Pokémon', subtypes: ['Stage 1'], evolvesFrom: 'Squirtle', hp: '70', attacks: [] };
+    const p2 = mkPlayer({ active: squirtle, deck: [{ name: 'Pokémon Breeder', supertype: 'Trainer' }, wartortleCard] });
+    assert('Stage 2 whose Basic is in play holds value ≥ 40 (never Trader fodder)', _hold(blastoise, p2, mkPlayer()) >= 40);
+    const dupBasic = { ...squirtle, supertype: 'Pokémon', subtypes: ['Basic'] };
+    const full = mkPlayer({ active: squirtle, bench: [squirtle, squirtle, squirtle, squirtle, squirtle] });
+    assert('A Basic with no bench room is cheap', _hold(dupBasic, full, mkPlayer()) < 20);
+  }
+  // Energy Removal: strip the energy that disables their attack, not a bench energy
+  {
+    const hitmon = mkCard({ name: 'Hitmonchan', types: ['Fighting'], attacks: [{ name: 'Jab', cost: ['Fighting'], damage: '20', text: '' }], attachedEnergy: [{ name: 'Fighting Energy' }] });
+    const benchMon = mkCard({ name: 'Bench', attacks: [{ name: 'Big', cost: ['Colorless','Colorless','Colorless'], damage: '50', text: '' }], attachedEnergy: [C] });
+    const p1 = mkPlayer({ active: hitmon, bench: [benchMon,null,null,null,null] });
+    const p2 = mkPlayer({ active: mkCard({ hp: '60' }) });
+    global.G.players = { 1: p1, 2: p2 };
+    const pick = _er(p1, p2, 1);
+    assertEqual('Energy Removal targets the active attacker\'s only energy', pick?.card?.name, 'Hitmonchan');
+  }
+  // Promotion: the Pokémon that can KO next turn beats a fatter one that cannot attack
+  {
+    const fat = mkCard({ name: 'Fat', hp: '120', attacks: [{ name: 'Slam', cost: ['Colorless','Colorless','Colorless','Colorless'], damage: '80', text: '' }], attachedEnergy: [] });
+    const killer = mkCard({ name: 'Killer', hp: '50', types: ['Fire'], attacks: [{ name: 'Burn', cost: ['Fire'], damage: '40', text: '' }], attachedEnergy: [F] });
+    const oppActive = mkCard({ hp: '40', attacks: [{ name: 'Poke', cost: ['Colorless'], damage: '10', text: '' }], attachedEnergy: [C] });
+    const p2 = mkPlayer({ bench: [fat, killer, null, null, null] });
+    const p1 = mkPlayer({ active: oppActive });
+    global.G.players = { 1: p1, 2: p2 }; global.G.evolvedThisTurn = [];
+    assertEqual('Promotes the bench Pokémon that KOs next turn', _promo(p2, p1), 1);
+  }
+  // Deck budget
+  {
+    assert('Deck 40, 6 prizes: Oak affordable', _draw(7, mkPlayer({ deck: new Array(40).fill({}) })) === true);
+    assert('Deck 12, 6 prizes: Oak NOT affordable (would deck out)', _draw(7, mkPlayer({ deck: new Array(12).fill({}) })) === false);
+    assert('Deck 9, 1 prize: Bill affordable (game nearly over)', _draw(2, mkPlayer({ deck: new Array(9).fill({}), prizes: onePrize() })) === true);
+  }
+}
+
+section('AI v2: hooks cover the end-of-turn safety promotion');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync('./game-ai.js', 'utf8');
+  const hook = src.match(/endTurn = function\(\) \{[\s\S]{0,700}?\};/);
+  assert('endTurn hook found', !!hook);
+  assert('endTurn hook promotes the AI when the engine parks the game in PROMOTE for it',
+    !!hook && /G\.phase === 'PROMOTE'[\s\S]{0,300}G\.pendingPromotion === aiPlayerNum[\s\S]{0,80}aiDoPromotion/.test(hook[0]));
+  assert('AI is player-parametric (aiPlayerNum) — no hard-coded G.players[2] in turn logic',
+    !/G\.players\[2\]\.(active|bench|hand)/.test(src.replace(/function checkVsCpuReady[\s\S]*?\n}\n/, '').replace(/async function startVsCpuGame[\s\S]*?\n}\n/, '')));
+}
+
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));
