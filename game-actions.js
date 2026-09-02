@@ -1534,6 +1534,8 @@ async function performAttack(player, atk) {
       showBlockedFlash(player, myActive?.name || '?', atk.name, 'BLOCKED — attack failed');
       renderAll(); endTurn(); return;
     }
+    // Bench damage in preAttack (Blizzard, Thunderstorm, ...) can end the game.
+    if (!G.started) { renderWhenIdle(); return; }
   }
 
   // ── Base damage + coin-flip resolution ──────────────────────────────────────
@@ -1638,7 +1640,8 @@ async function performAttack(player, atk) {
   // Unconditional self-damage (Selfdestruct/Explosion — not coin-gated)
   const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
   const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
-  let attackerSelfKOd = false;
+  let attackerSelfKOd = !!atk._selfKOdInPre; // Thunderstorm recoil resolved in preAttack
+  atk._selfKOdInPre = false;
   if (selfDmgTextMatch && !isCoinGatedRecoil && myActive) {
     let selfDmg = parseInt(selfDmgTextMatch[1]);
     if (myActive.defender && selfDmg > 0) {

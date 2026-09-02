@@ -5587,7 +5587,82 @@ section('AI v2: hooks cover the end-of-turn safety promotion');
     !/G\.players\[2\]\.(active|bench|hand)/.test(src.replace(/function checkVsCpuReady[\s\S]*?\n}\n/, '').replace(/async function startVsCpuGame[\s\S]*?\n}\n/, '')));
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: bench damage still resolves when the main hit KOs the defender
+//
+// Craig's bug: "Blizzard doesn't do bench damage if it knocks out the opposing
+// Pokémon — the coin flip is not triggered." performAttack returns early on a
+// KO (promotion flow), which skipped every postAttack bench effect. Those
+// effects now run in preAttack. Uses the headless engine from ai-sim.js.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender');
+{
+  try {
+    const { loadEngine } = require('./ai-sim.js');
+    const cards = JSON.parse(require('fs').readFileSync('./cards.json', 'utf8'));
+    // Deterministic "heads" coin so Blizzard hits the OPPONENT's bench.
+    const eng = loadEngine({ oldRef: null, rng: () => 0.25 });
+    const { run, H } = eng;
+    run("flipCoin = function(){ return Promise.resolve(true); };");
+    const mk = (name, extra) => H.enrich({ ...cards.find(c => c.name === name), uid: 't-' + name + Math.random(), damage: 0, attachedEnergy: [], ...extra });
+    const freshG = () => {
+      run(`G = { started:true, turn:1, phase:'MAIN', turnNum:3, energyPlayedThisTurn:false, evolvedThisTurn:[],
+        players:{ 1:{active:null,bench:[null,null,null,null,null],hand:[],discard:[],deck:[{}],prizes:[{card:{}},{card:{}},{card:{}}]},
+                  2:{active:null,bench:[null,null,null,null,null],hand:[],discard:[],deck:[{}],prizes:[{card:{}},{card:{}},{card:{}}]} }, log:[] }; myRole = null;`);
+      return H.G;
+    };
+    const settle = () => new Promise(r => setTimeout(r, 30));
+
+    (async () => {
+      // Blizzard (50) KOs a 30 HP Magikarp; heads → 10 to each opposing bench Pokémon.
+      let G = freshG();
+      const articuno = mk('Articuno', { attachedEnergy: [W, W, W, W] });
+      G.players[1].active = articuno;
+      G.players[2].active = mk('Magikarp');
+      const benchA = mk('Squirtle'), benchB = mk('Rattata');
+      G.players[2].bench[0] = benchA; G.players[2].bench[1] = benchB;
+      await run('performAttack')(1, articuno.attacks.find(a => a.name === 'Blizzard'));
+      await settle();
+      assert('Blizzard KO: defender was knocked out (promotion pending)', G.phase === 'PROMOTE' && G.pendingPromotion === 2);
+      assertEqual('Blizzard KO: bench Squirtle still took 10', benchA.damage, 10);
+      assertEqual('Blizzard KO: bench Rattata still took 10', benchB.damage, 10);
+
+      // Spark (20) KOs a 10-HP-left Pikachu-target; chosen bench Pokémon still takes 10.
+      G = freshG();
+      const pikachu = mk('Pikachu', { attachedEnergy: [L, L] }); // Jungle Pikachu: Spark [LL]
+      const sparkMon = pikachu.attacks.some(a => a.name === 'Spark') ? pikachu : H.enrich({ ...cards.find(c => c.id === 'base2-60'), uid: 'pk2', damage: 0, attachedEnergy: [L, L] });
+      G.players[1].active = sparkMon;
+      G.players[2].active = mk('Magikarp', { damage: 20 }); // 10 HP left
+      const benchC = mk('Squirtle');
+      G.players[2].bench[0] = benchC;
+      await run('performAttack')(1, sparkMon.attacks.find(a => a.name === 'Spark'));
+      await settle();
+      assertEqual('Spark KO: bench Pokémon still took 10', benchC.damage, 10);
+
+      // Bench damage that ends the game does not leave the attack half-resolved.
+      G = freshG();
+      G.players[2].prizes = [{ card: {} }];
+      const art2 = mk('Articuno', { attachedEnergy: [W, W, W, W] });
+      G.players[1].active = art2;
+      G.players[2].active = mk('Chansey');
+      G.players[2].bench[0] = mk('Magikarp', { damage: 20 }); // dies to the 10 splash → last prize
+      G.players[1].prizes = [{ card: {} }];
+      await run('performAttack')(1, art2.attacks.find(a => a.name === 'Blizzard'));
+      await settle();
+      assert('Blizzard bench KO on the last prize ends the game for P1', G.started === false && G.winner === 1);
+      eng.stop();
+      __finish();
+    })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });
+  } catch (e) {
+    console.log('  (headless engine unavailable — skipping:', e.message, ')');
+    __finish();
+  }
+}
+
+function __finish() {
 console.log(`\n${'═'.repeat(64)}`);
 console.log(`  ${passed} passed   ${failed} failed`);
 console.log('═'.repeat(64));
 if (failed > 0) process.exit(1);
+}

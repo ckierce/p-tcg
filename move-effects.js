@@ -86,55 +86,44 @@ const _agilityFlip = () => ({
   }
 });
 
-// Choose 1 opp bench → 10 damage to it (Spark/Dark Mind style)
-const _benchDamage10 = () => ({
-  postAttack: async ({ opp, atk }) => {
-    const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (!bench.length) return;
-    let target = bench[0];
-    if (bench.length > 1) {
-      const picked = await openCardPicker({
-        title: `${atk.name} — Bench Damage`,
-        subtitle: `Choose 1 of opponent's Benched Pokémon for 10 damage`,
-        cards: bench.map(x => x.s), maxSelect: 1
-      });
-      if (picked && picked.length) target = bench[picked[0]];
-    }
-    target.s.damage = (target.s.damage || 0) + 10;
-    addLog(`${atk.name}: 10 damage to ${target.s.name}! (${target.s.damage}/${target.s.hp})`, true);
-    const hp = parseInt(target.s.hp) || 0;
-    if (hp > 0 && target.s.damage >= hp) {
-      addLog(`${target.s.name} was knocked out!`, true);
-      koBenchAndPrize(opp, target.i);
-    }
-    renderAll();
+// Deal `dmg` to the Pokémon in bench slot `i` of player `pNum` (KO → prize).
+function _hitBench(pNum, i, dmg, label) {
+  const c = G.players[pNum].bench[i];
+  if (!c) return;
+  c.damage = (c.damage || 0) + dmg;
+  addLog(`${label}: ${dmg} damage to P${pNum}'s ${c.name}! (${c.damage}/${c.hp} HP)`);
+  const hp = parseInt(c.hp) || 0;
+  if (hp > 0 && c.damage >= hp) {
+    addLog(`${c.name} was knocked out!`, true);
+    koBenchAndPrize(pNum, i);
   }
-});
+}
 
-// Choose 1 opp bench → 20 damage to it (Stretch Kick style)
-const _benchDamage20 = () => ({
-  postAttack: async ({ opp, atk }) => {
+// Bench damage lives in preAttack (not postAttack) so it still resolves when
+// the main hit Knocks Out the Defending Pokémon — performAttack returns early
+// on a KO to run the promotion flow, which used to swallow Blizzard's flip,
+// Spark's splash, etc. TCG rule: bench damage happens regardless of the KO.
+// Choose 1 opp bench → N damage to it (Spark / Stretch Kick style)
+const _benchDamageN = (n) => ({
+  preAttack: async ({ opp, atk }) => {
     const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (!bench.length) { addLog(`${atk.name}: no opponent bench to target.`); return; }
+    if (!bench.length) { addLog(`${atk.name}: no opponent bench to target.`); return null; }
     let target = bench[0];
     if (bench.length > 1) {
       const picked = await openCardPicker({
         title: `${atk.name} — Bench Damage`,
-        subtitle: `Choose 1 of opponent's Benched Pokémon for 20 damage`,
+        subtitle: `Choose 1 of opponent's Benched Pokémon for ${n} damage`,
         cards: bench.map(x => x.s), maxSelect: 1
       });
       if (picked && picked.length) target = bench[picked[0]];
     }
-    target.s.damage = (target.s.damage || 0) + 20;
-    addLog(`${atk.name}: 20 damage to ${target.s.name}! (${target.s.damage}/${target.s.hp})`, true);
-    const hp = parseInt(target.s.hp) || 0;
-    if (hp > 0 && target.s.damage >= hp) {
-      addLog(`${target.s.name} was knocked out!`, true);
-      koBenchAndPrize(opp, target.i);
-    }
+    _hitBench(opp, target.i, n, atk.name);
     renderAll();
+    return null;
   }
 });
+const _benchDamage10 = () => _benchDamageN(10);
+const _benchDamage20 = () => _benchDamageN(20);
 
 // Drain: heal self by (fraction × dmgDealt) rounded up to nearest 10
 const _drain = (fraction) => ({
@@ -602,23 +591,18 @@ const MOVE_EFFECTS = {
   'Tongue Wrap': _statusOppFlip('paralyzed'),
   'Wrap':        _statusOppFlip('paralyzed'),
 
-  // Blizzard (Articuno): flip — heads=10 to opp bench, tails=10 to own bench
+  // Blizzard (Articuno): flip — heads=10 to opp bench, tails=10 to own bench.
+  // Resolved in preAttack so the splash still happens when Blizzard KOs.
   'Blizzard': {
-    postAttack: async ({ player, opp, atk }) => {
+    preAttack: async ({ player, opp, atk }) => {
       const heads = await flipCoin(`${atk.name}: Heads=10 to opp bench | Tails=10 to your bench`);
       const target = heads ? opp : player;
-      G.players[target].bench.forEach((c, i) => {
-        if (!c) return;
-        c.damage = (c.damage || 0) + 10;
-        addLog(`${atk.name}: 10 damage to P${target}'s ${c.name}! (${c.damage}/${c.hp})`);
-        const hp = parseInt(c.hp) || 0;
-        if (hp > 0 && c.damage >= hp) {
-          addLog(`${c.name} knocked out!`, true);
-          koBenchAndPrize(target, i);
-        }
-      });
+      const slots = G.players[target].bench.map((c, i) => c ? i : -1).filter(i => i !== -1);
+      if (!slots.length) { addLog(`${atk.name}: ${heads ? 'HEADS' : 'TAILS'} — no Benched Pokémon to hit.`); return null; }
+      for (const i of slots) _hitBench(target, i, 10, atk.name);
       addLog(`${atk.name}: ${heads ? "HEADS — opp" : "TAILS — own"} bench took 10 each!`, true);
       renderAll();
+      return null;
     }
   },
 
@@ -676,29 +660,21 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Chain Lightning (Electrode): 10 to all bench of same type as defender
+  // Chain Lightning (Electrode): 10 to all bench of same type as defender (preAttack — see above)
   'Chain Lightning': {
-    postAttack: async ({ oppActive, atk }) => {
+    preAttack: async ({ oppActive, atk }) => {
       const defTypes = (oppActive?.types || []);
       if (!defTypes.length || defTypes.some(t => /colorless/i.test(t))) {
-        addLog(`${atk.name}: Defending Pokémon is Colorless — no splash.`); return;
+        addLog(`${atk.name}: Defending Pokémon is Colorless — no splash.`); return null;
       }
       const matchType = defTypes[0];
       for (const pNum of [1, 2]) {
         G.players[pNum].bench.forEach((c, i) => {
-          if (!c) return;
-          if ((c.types || []).some(t => t.toLowerCase() === matchType.toLowerCase())) {
-            c.damage = (c.damage || 0) + 10;
-            addLog(`${atk.name}: 10 to P${pNum}'s ${c.name} (${matchType})!`);
-            const hp = parseInt(c.hp) || 0;
-            if (hp > 0 && c.damage >= hp) {
-              addLog(`${c.name} knocked out!`, true);
-              koBenchAndPrize(pNum, i);
-            }
-          }
+          if (c && (c.types || []).some(t => t.toLowerCase() === matchType.toLowerCase())) _hitBench(pNum, i, 10, atk.name);
         });
       }
       renderAll();
+      return null;
     }
   },
 
@@ -806,17 +782,12 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Earthquake (Dugtrio): 10 to each of own bench
+  // Earthquake (Dugtrio): 10 to each of own bench (preAttack — see above)
   'Earthquake': {
-    postAttack: async ({ player, atk }) => {
-      G.players[player].bench.forEach((c, i) => {
-        if (!c) return;
-        c.damage = (c.damage || 0) + 10;
-        addLog(`${atk.name}: 10 to own ${c.name}! (${c.damage}/${c.hp})`);
-        const hp = parseInt(c.hp) || 0;
-        if (hp > 0 && c.damage >= hp) { addLog(`${c.name} knocked out!`, true); koBenchAndPrize(player, i); }
-      });
+    preAttack: async ({ player, atk }) => {
+      G.players[player].bench.forEach((c, i) => { if (c) _hitBench(player, i, 10, atk.name); });
       renderAll();
+      return null;
     }
   },
 
@@ -884,23 +855,19 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Gigashock (Raichu): 10 to up to 3 opp bench
+  // Gigashock (Raichu): 10 to up to 3 opp bench (preAttack — see above)
   'Gigashock': {
-    postAttack: async ({ opp, atk }) => {
+    preAttack: async ({ opp, atk }) => {
       const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-      if (!bench.length) { addLog(`${atk.name}: no bench to target.`); return; }
+      if (!bench.length) { addLog(`${atk.name}: no bench to target.`); return null; }
       let targets = bench;
       if (bench.length > 3) {
         const picked = await openCardPicker({ title: `${atk.name}`, subtitle: 'Choose up to 3 Benched Pokémon (10 each)', cards: bench.map(x => x.s), maxSelect: 3 });
         if (picked && picked.length) targets = picked.map(pi => bench[pi]);
       }
-      targets.forEach(({ s, i }) => {
-        s.damage = (s.damage || 0) + 10;
-        addLog(`${atk.name}: 10 to ${s.name}! (${s.damage}/${s.hp})`);
-        const hp = parseInt(s.hp) || 0;
-        if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); koBenchAndPrize(opp, i); }
-      });
+      targets.forEach(({ i }) => _hitBench(opp, i, 10, atk.name));
       renderAll();
+      return null;
     }
   },
 
@@ -1394,11 +1361,14 @@ const MOVE_EFFECTS = {
     }
   },
 
-  // Thunderstorm (Zapdos): flip per opp bench — heads=20 to it, tails=10 to self
+  // Thunderstorm (Zapdos): flip per opp bench — heads=20 to it, tails=10 to self.
+  // preAttack so the bench hits land even when the 40 KOs the Defending Pokémon.
+  // Recoil that KOs Zapdos is flagged for performAttack (atk._selfKOdInPre) so
+  // the normal "also knocked out by recoil" flow handles the promotion.
   'Thunderstorm': {
-    postAttack: async ({ player, opp, myActive, atk }) => {
+    preAttack: async ({ player, opp, myActive, atk }) => {
       const bench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-      if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return; }
+      if (!bench.length) { addLog(`${atk.name}: opponent has no bench.`); return null; }
       let tails = 0;
       const total = bench.length;
       for (let fi = 0; fi < bench.length; fi++) {
@@ -1408,25 +1378,18 @@ const MOVE_EFFECTS = {
           { persistent: fi < total - 1, flipNum: fi + 1, totalFlips: total }
         );
         if (fi === total - 1) closeCoinOverlay();
-        if (heads) {
-          s.damage = (s.damage || 0) + 20;
-          addLog(`${atk.name}: HEADS — 20 to ${s.name}! (${s.damage}/${s.hp})`);
-          const hp = parseInt(s.hp) || 0;
-          if (hp > 0 && s.damage >= hp) { addLog(`${s.name} knocked out!`, true); koBenchAndPrize(opp, i); }
-        } else { tails++; addLog(`${atk.name}: TAILS for ${s.name}.`); }
+        if (heads) _hitBench(opp, i, 20, atk.name);
+        else { tails++; addLog(`${atk.name}: TAILS for ${s.name}.`); }
       }
       if (tails > 0 && myActive) {
         const selfDmg = tails * 10;
         myActive.damage = (myActive.damage || 0) + selfDmg;
         addLog(`${atk.name}: ${tails} tails — ${myActive.name} takes ${selfDmg} recoil!`, true);
         const hp = parseInt(myActive.hp) || 0;
-        if (hp > 0 && myActive.damage >= hp) {
-          addLog(`${myActive.name} KO'd by recoil!`, true);
-          G.players[player].discard.push(myActive); G.players[player].active = null;
-          if (!G.players[player].bench.filter(s => s !== null).length) { G.started = false; showWinScreen(opp, "ZAPDOS KO'D ITSELF"); if (typeof pushGameState === 'function') pushGameState(); renderAll(); return true; }
-        }
+        if (hp > 0 && myActive.damage >= hp) atk._selfKOdInPre = true;
       }
       renderAll();
+      return null;
     }
   },
 
