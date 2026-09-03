@@ -335,52 +335,62 @@ const TRAINER_EFFECTS = {
 
   // ── Super Energy Removal ──────────────────────────────────────────────────
   // Discard 1 of your own energy to remove up to 2 from an opponent's Pokémon.
+  //
+  // Every choice (which of your Pokémon pays, which energy, which opposing
+  // Pokémon is hit, which of its energy) is made BEFORE the card is consumed
+  // or any energy moves, so cancelling at any step leaves the game untouched.
+  // The opponent-target picker is always shown — even with a single candidate —
+  // so the player can see (and confirm) who is being hit. Previously the picker
+  // was skipped when only one opposing Pokémon had energy and the code then
+  // defaulted to the Active, which silently did nothing when the only
+  // energy was on the Bench.
   'Super Energy Removal': async ({ player, opp, p, oppP, consume }) => {
-    const oppHasEnergy = [oppP.active, ...oppP.bench].some(c => c?.attachedEnergy?.length);
-    if (!oppHasEnergy) { showToast("Opponent has no energy!", true); return; }
+    const oppTargets = [
+      ...(oppP.active?.attachedEnergy?.length ? [oppP.active] : []),
+      ...oppP.bench.filter(b => b?.attachedEnergy?.length),
+    ];
+    if (!oppTargets.length) { showToast("Opponent has no energy!", true); return; }
     const myPokemonWithEnergy = [p.active, ...p.bench].filter(c => c?.attachedEnergy?.length);
     if (!myPokemonWithEnergy.length) { showToast("Must discard 1 of your energy first!", true); return; }
-    // Step 1: choose which of your own Pokémon to discard cost energy from
+    const cancel = () => { addLog('Super Energy Removal cancelled.'); renderAll(); };
+
+    // Step 1: which of your own Pokémon pays the cost
     let costPokemon = myPokemonWithEnergy[0];
     if (myPokemonWithEnergy.length > 1) {
       const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: 'Choose YOUR Pokémon to discard 1 energy from', cards: myPokemonWithEnergy, maxSelect: 1 });
-      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      if (!picked?.length) return cancel();
       costPokemon = myPokemonWithEnergy[picked[0]];
     }
-    // Step 1b: choose which energy from that Pokémon
+    // Step 1b: which energy on that Pokémon
     let myCostIdx = 0;
     if (costPokemon.attachedEnergy.length > 1) {
       const picked = await openCardPicker({ title: 'Super Energy Removal — Your Cost', subtitle: `Discard 1 energy from your ${costPokemon.name}`, cards: costPokemon.attachedEnergy, maxSelect: 1 });
-      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
+      if (!picked?.length) return cancel();
       myCostIdx = picked[0];
     }
+    // Step 2: which opposing Pokémon is hit (always asked)
+    const targetPicked = await openCardPicker({ title: 'Super Energy Removal — Target', subtitle: "Choose opponent's Pokémon to remove energy from", cards: oppTargets, maxSelect: 1 });
+    if (!targetPicked?.length) return cancel();
+    const targetCard = oppTargets[targetPicked[0]];
+    // Step 3: which of its energy (up to 2). No choice when it has 2 or fewer.
+    let targetIdxs;
+    if (targetCard.attachedEnergy.length <= 2) {
+      targetIdxs = targetCard.attachedEnergy.map((_, i) => i);
+    } else {
+      const picked = await openCardPicker({ title: 'Super Energy Removal — Discard Energy', subtitle: `Choose up to 2 energy from ${targetCard.name}`, cards: targetCard.attachedEnergy, maxSelect: 2 });
+      if (!picked?.length) return cancel();
+      targetIdxs = picked;
+    }
+
+    // All choices made — now pay the cost and apply the effect.
     consume();
     const myRemoved = costPokemon.attachedEnergy.splice(myCostIdx, 1)[0];
     p.discard.push(myRemoved);
     addLog(`P${player} discarded ${myRemoved.name} from ${costPokemon.name} as cost.`);
-    // Step 2: choose opponent's target
-    const oppTargets = [
-      ...(oppP.active?.attachedEnergy?.length ? [{ label: `Active: ${oppP.active.name}`, zone: 'active', idx: null }] : []),
-      ...oppP.bench.map((b, i) => b?.attachedEnergy?.length ? { label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i } : null).filter(Boolean)
-    ];
-    let targetCard = oppP.active;
-    if (oppTargets.length > 1) {
-      const picked = await openCardPicker({ title: 'Super Energy Removal — Target', subtitle: "Choose opponent's Pokémon", cards: oppTargets.map(e => { const c = e.zone === 'active' ? oppP.active : oppP.bench[e.idx]; return { ...c, _entry: e }; }), maxSelect: 1 });
-      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
-      const entry = oppTargets[picked[0]];
-      targetCard = entry.zone === 'active' ? oppP.active : oppP.bench[entry.idx];
-    }
-    // Step 3: remove up to 2 energies
-    let removed = [];
-    if (targetCard.attachedEnergy.length <= 2) {
-      removed = targetCard.attachedEnergy.splice(0);
-    } else {
-      const picked = await openCardPicker({ title: 'Super Energy Removal — Discard Energy', subtitle: `Choose up to 2 energy from ${targetCard.name}`, cards: targetCard.attachedEnergy, maxSelect: 2 });
-      if (!picked?.length) { addLog('Super Energy Removal cancelled.'); renderAll(); return; }
-      picked.sort((a,b)=>b-a).forEach(i => removed.push(...targetCard.attachedEnergy.splice(i, 1)));
-    }
+    const removed = [];
+    [...targetIdxs].sort((a, b) => b - a).forEach(i => removed.push(...targetCard.attachedEnergy.splice(i, 1)));
     oppP.discard.push(...removed);
-    addLog(`P${player} used Super Energy Removal — discarded ${removed.length} energy from ${targetCard.name}.`, true);
+    addLog(`P${player} used Super Energy Removal — discarded ${removed.map(e => e.name).join(' + ')} from ${targetCard.name}.`, true);
     renderAll();
   },
 

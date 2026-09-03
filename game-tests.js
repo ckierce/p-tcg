@@ -19,7 +19,7 @@ global.hasEnergyBurn = (card) => _energyBurn;
 // ─── Import functions under test from the single source of truth ──────────────
 const {
   RULES, GAME_STATE_DEFAULTS,
-  energyValue, canAffordAttack, parseStatusEffects,
+  energyValue, validateRetreatPayment, canAffordAttack, parseStatusEffects,
   padBench, isLegalRetreatStatus, invisibleWallBlocks,
   isValidDeckSize, countCopies,
   applyPlusPowerValue, computeDamageAfterWR,
@@ -5507,6 +5507,105 @@ section('AI v2: planner uses expected value and probability, not all-heads');
     const plan = _plan(p2, p1);
     assertEqual('Doomed active retreats into the tank', plan?.preStep?.kind, 'retreat');
   }
+}
+
+section('REGRESSION: Retreat cost — DCE may over-pay, surplus cards rejected');
+{
+  const dce  = { name: 'Double Colorless Energy', supertype: 'Energy' };
+  const fire = { name: 'Fire Energy', supertype: 'Energy' };
+  const water = { name: 'Water Energy', supertype: 'Energy' };
+
+  // The reported bug: cost 1, DCE + Fire attached, player picks the DCE.
+  assertEqual('cost 1: DCE alone is a legal payment (over-pay allowed)', validateRetreatPayment([dce], 1), null);
+  assertEqual('cost 1: Fire alone is a legal payment', validateRetreatPayment([fire], 1), null);
+  assert('cost 1: DCE + Fire rejected — Fire is surplus', validateRetreatPayment([dce, fire], 1) !== null);
+  assert('cost 1: nothing selected rejected', validateRetreatPayment([], 1) !== null);
+
+  assertEqual('cost 2: DCE alone legal', validateRetreatPayment([dce], 2), null);
+  assertEqual('cost 2: Fire + Water legal', validateRetreatPayment([fire, water], 2), null);
+  assert('cost 2: DCE + Fire rejected — one card is surplus', validateRetreatPayment([dce, fire], 2) !== null);
+  assert('cost 2: Fire alone rejected — not enough', validateRetreatPayment([fire], 2) !== null);
+
+  assertEqual('cost 3: DCE + Fire legal (neither card droppable)', validateRetreatPayment([dce, fire], 3), null);
+  assert('cost 3: DCE + Fire + Water rejected', validateRetreatPayment([dce, fire, water], 3) !== null);
+
+  // executeRetreat must route through the validator rather than a strict equality check.
+  const src = require('fs').readFileSync(__dirname + '/game-actions.js', 'utf8');
+  const start = src.indexOf('async function executeRetreat');
+  const block = src.slice(start, start + 5000);
+  assert('executeRetreat uses validateRetreatPayment', /validateRetreatPayment\(toDiscard,\s*retreatCost\)/.test(block));
+  assert('executeRetreat no longer rejects "too much" energy outright', !/chosenValue > retreatCost/.test(block));
+}
+
+section('REGRESSION: Super Energy Removal — always lets the player pick the target');
+{
+  // Load trainer-cards.js in a sandbox with scripted pickers so the handler
+  // runs headlessly. Each picker call pops the next scripted answer.
+  const vm = require('vm');
+  const src = require('fs').readFileSync(__dirname + '/trainer-cards.js', 'utf8');
+  const mkE = (name) => ({ name, supertype: 'Energy' });
+  const mkMon = (name, energy = []) => ({ name, supertype: 'Pokémon', attachedEnergy: energy.map(mkE), damage: 0 });
+  const run = async (setup, answers) => {
+    const pickerCalls = [];
+    const ctx = {
+      G: { turn: 1 }, vsComputer: false, console,
+      addLog() {}, showToast() {}, renderAll() {}, showTrainerFlash() {},
+      openCardPicker: async (opts) => { pickerCalls.push(opts); return answers.shift(); },
+    };
+    vm.createContext(ctx);
+    const effects = vm.runInContext(src + '\n;TRAINER_EFFECTS', ctx);
+    const { p, oppP } = setup;
+    const card = { name: 'Super Energy Removal', supertype: 'Trainer' };
+    p.hand = [card];
+    const consume = () => { p.hand.splice(0, 1); p.discard.push(card); };
+    await effects['Super Energy Removal']({ player: 1, opp: 2, p, oppP, card, handIdx: 0, consume });
+    return { pickerCalls, p, oppP };
+  };
+  const mkP = (active, bench = []) => ({ active, bench: [...bench, null, null, null, null, null].slice(0, 5), hand: [], discard: [] });
+
+  (async () => {
+    // Case 1: only a BENCH Pokémon has energy. Old code skipped the picker and
+    // targeted the Active, removing nothing.
+    {
+      const p = mkP(mkMon('Hitmonchan', ['Fighting Energy']));
+      const oppP = mkP(mkMon('Chansey'), [mkMon('Magmar', ['Fire Energy', 'Fire Energy'])]);
+      const r = await run({ p, oppP }, [[0]]);
+      const targetPick = r.pickerCalls.find(c => /Target/.test(c.title));
+      assert('target picker is shown even with one candidate', !!targetPick);
+      assertEqual('target picker lists the bench Magmar', targetPick?.cards.map(c => c.name), ['Magmar']);
+      assertEqual('both Fire energy stripped from bench Magmar', oppP.bench[0].attachedEnergy.length, 0);
+      assertEqual('opponent discard holds the 2 removed energy', oppP.discard.map(e => e.name), ['Fire Energy', 'Fire Energy']);
+      assertEqual('own cost energy discarded', p.active.attachedEnergy.length, 0);
+      assertEqual('SER card consumed', p.hand.length, 0);
+    }
+    // Case 2: Active and Bench both have energy — player picks the bench one.
+    {
+      const p = mkP(mkMon('Hitmonchan', ['Fighting Energy']));
+      const oppP = mkP(mkMon('Chansey', ['Double Colorless Energy']), [mkMon('Magmar', ['Fire Energy'])]);
+      const r = await run({ p, oppP }, [[1]]);
+      const targetPick = r.pickerCalls.find(c => /Target/.test(c.title));
+      assertEqual('target picker offers Active then Bench', targetPick?.cards.map(c => c.name), ['Chansey', 'Magmar']);
+      assertEqual('picking index 1 hits Magmar', oppP.bench[0].attachedEnergy.length, 0);
+      assertEqual('Chansey untouched', oppP.active.attachedEnergy.length, 1);
+    }
+    // Case 3: cancelling at the target step leaves everything untouched —
+    // the cost must not be paid before the target is chosen.
+    {
+      const p = mkP(mkMon('Hitmonchan', ['Fighting Energy']));
+      const oppP = mkP(mkMon('Chansey', ['Double Colorless Energy']));
+      await run({ p, oppP }, [null]);
+      assertEqual('cancel: own energy still attached', p.active.attachedEnergy.length, 1);
+      assertEqual('cancel: SER still in hand', p.hand.length, 1);
+      assertEqual('cancel: opponent energy untouched', oppP.active.attachedEnergy.length, 1);
+    }
+    // Case 4: target has 3 energy — player chooses which 2.
+    {
+      const p = mkP(mkMon('Hitmonchan', ['Fighting Energy']));
+      const oppP = mkP(mkMon('Charizard', ['Fire Energy', 'Water Energy', 'Grass Energy']));
+      await run({ p, oppP }, [[0], [0, 2]]);
+      assertEqual('3-energy target: chosen Fire + Grass removed, Water remains', oppP.active.attachedEnergy.map(e => e.name), ['Water Energy']);
+    }
+  })().catch(e => { console.error('  ✗  FAIL: SER sandbox threw:', e.message); failed++; });
 }
 
 section('AI v2: energy, hold values, energy removal, promotion, deck budget');

@@ -175,6 +175,29 @@ function energyValue(attachedEnergy) {
     sum + (/double colorless/i.test(e.name || '') ? 2 : 1), 0);
 }
 
+// ── validateRetreatPayment ────────────────────────────────────────────────────
+// Checks whether the energy cards a player picked are a legal way to pay a
+// retreat cost. Returns null when legal, otherwise a short reason string.
+//
+// The chosen cards' total value must cover the cost. Over-paying with a card
+// is allowed — Double Colorless Energy (value 2) can pay a cost of 1 and the
+// extra is simply lost. What is NOT allowed is a surplus card: if dropping any
+// one chosen card would still cover the cost, that card wasn't needed and the
+// selection is rejected. (Previously any total above the cost was rejected,
+// which made DCE unusable for a cost-1 retreat when a basic was also attached.)
+function validateRetreatPayment(chosen, cost) {
+  const cards = chosen || [];
+  const total = energyValue(cards);
+  if (total < cost) return `Not enough energy selected (${total} of ${cost} needed).`;
+  for (let i = 0; i < cards.length; i++) {
+    const without = cards.filter((_, j) => j !== i);
+    if (energyValue(without) >= cost) {
+      return `${cards[i].name || 'That energy'} isn't needed — select only the energy required for the cost.`;
+    }
+  }
+  return null;
+}
+
 // ── canAffordAttack ───────────────────────────────────────────────────────────
 // Returns true if `attachedEnergy` satisfies the energy `cost` array.
 // Handles: typed energy, Colorless wildcards, Double Colorless Energy,
@@ -614,7 +637,7 @@ function transitionPhase(phase, extras) {
 if (typeof module !== 'undefined') {
   module.exports = {
     RULES, GAME_STATE_DEFAULTS,
-    energyValue, canAffordAttack, parseStatusEffects,
+    energyValue, validateRetreatPayment, canAffordAttack, parseStatusEffects,
     padBench, isLegalRetreatStatus, invisibleWallBlocks,
     isValidDeckSize, countCopies,
     applyPlusPowerValue, computeDamageAfterWR,

@@ -588,14 +588,11 @@ async function executeRetreat(player, benchIdx) {
       }
 
       toDiscard = picked.map(i => attached[i]);
-      const chosenValue = energyValue(toDiscard);
-      if (chosenValue < retreatCost) {
-        showToast(`Not enough energy selected (${chosenValue} of ${retreatCost} needed). Retreat cancelled.`, true);
-        G.pendingAction = null; clearHighlights();
-        return;
-      }
-      if (chosenValue > retreatCost) {
-        showToast(`Too much energy selected (${chosenValue} of ${retreatCost} needed). Retreat cancelled.`, true);
+      // Over-paying with a single card (DCE for a cost of 1) is legal; a
+      // surplus card that isn't needed is not. See validateRetreatPayment.
+      const problem = validateRetreatPayment(toDiscard, retreatCost);
+      if (problem) {
+        showToast(`${problem} Retreat cancelled.`, true);
         G.pendingAction = null; clearHighlights();
         return;
       }
