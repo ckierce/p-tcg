@@ -5772,6 +5772,57 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       await run('doCurse')(1, gengarA);
       await settle();
       assertEqual('Curse: a used Gengar cannot Curse again this turn', oppActive.damage, 10);
+
+      // ── REGRESSION: Smokescreen is bound to the Defending Pokémon and lasts ONE turn ──
+      // Every path that benches a Pokémon must drop the flag, and end-of-turn
+      // expiry must sweep the Bench too — otherwise a smokescreened Pokémon
+      // parked on the Bench (Step In / Teleport / Whirlwind) carries the flag
+      // back into a later turn.
+      const F = { name: 'Fire Energy', supertype: 'Energy' }, Fi = { name: 'Fighting Energy', supertype: 'Energy' };
+      const mkBy = (name, atkOrPower, extra) => H.enrich({ ...cards.find(c => c.name === name && ((c.attacks || []).some(a => a.name === atkOrPower) || (c.abilities || []).some(a => a.name === atkOrPower))), uid: 't-' + name + Math.random(), damage: 0, attachedEnergy: [], ...extra });
+      run("flipCoin = function(){ return Promise.resolve(true); };");
+      // Step In: the benched Pokémon loses Smokescreen at once; the new Active never had it.
+      G = freshG();
+      const magmar = mkBy('Magmar', 'Smokescreen', { attachedEnergy: [F, F] });
+      const victim = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi, Fi] });
+      const dragonite = mkBy('Dragonite', 'Step In');
+      G.players[1].active = magmar; G.players[2].active = victim; G.players[2].bench[0] = dragonite;
+      await run('performAttack')(1, magmar.attacks.find(a => a.name === 'Smokescreen'));
+      await settle();
+      assert('Smokescreen: defender is flagged', victim.smokescreened === true);
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      assert('Smokescreen: flag survives the attacker ending their turn', victim.smokescreened === true && G.turn === 2);
+      run('doStepIn')(2, 0);
+      assert('Step In: Dragonite is now Active', G.players[2].active === dragonite);
+      assert('Step In: benched defender loses Smokescreen immediately', victim.smokescreened === false);
+      assert('Step In: incoming Dragonite is not smokescreened', !dragonite.smokescreened);
+
+      // End-of-turn sweep: a flagged Pokémon sitting on the Bench still expires with its owner's turn.
+      G = freshG();
+      const benchMon = mkBy('Hitmonchan', 'Jab');
+      benchMon.smokescreened = true; benchMon.disabledAttack = 'Jab'; benchMon.cantRetreat = true; benchMon.attackReduction = 10;
+      G.turn = 2;
+      G.players[1].active = mkBy('Magmar', 'Smokescreen'); G.players[2].active = mkBy('Hitmonchan', 'Jab'); G.players[2].bench[1] = benchMon;
+      run('endTurn')(); await settle();
+      assert('End of turn: bench Pokémon\'s Smokescreen expired', benchMon.smokescreened === false);
+      assert('End of turn: bench Pokémon\'s Amnesia / Leer / Growl flags expired', benchMon.disabledAttack === null && benchMon.cantRetreat === false && benchMon.attackReduction === 0);
+
+      // Teleport (self-switch attack) clears the outgoing card's active-only effects.
+      G = freshG();
+      const exeggutor = mkBy('Exeggutor', 'Teleport', { attachedEnergy: [{ name: 'Psychic Energy', supertype: 'Energy' }] });
+      exeggutor.disabledAttack = 'Big Eggsplosion';
+      const benchEgg = mkBy('Hitmonchan', 'Jab');
+      G.players[1].active = exeggutor; G.players[1].bench[0] = benchEgg; G.players[2].active = mkBy('Hitmonchan', 'Jab');
+      await run('performAttack')(1, exeggutor.attacks.find(a => a.name === 'Teleport'));
+      await settle();
+      assert('Teleport: bench Pokémon became Active', G.players[1].active === benchEgg);
+      assert('Teleport: outgoing Exeggutor dropped its active-only flags', exeggutor.disabledAttack === null);
+
+      // forceOpponentSwitch is stubbed in the headless engine, so pin the real source instead.
+      const meSrc = require('fs').readFileSync(__dirname + '/move-effects.js', 'utf8');
+      const fosStart = meSrc.indexOf('async function forceOpponentSwitch');
+      const fosBlock = meSrc.slice(fosStart, meSrc.indexOf('oppP.active = entry.s', fosStart));
+      assert('forceOpponentSwitch (Whirlwind etc.) clears active-only effects on the benched card', /clearActiveOnlyEffects\(old\)/.test(fosBlock));
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });

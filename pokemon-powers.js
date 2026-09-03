@@ -537,6 +537,9 @@ function doStepIn(player, benchIdx) {
   const dragonite = p.bench[benchIdx];
   if (!isPowerActive(dragonite, 'Step In')) { showToast('Step In: Dragonite not on bench!', true); return; }
   const old = p.active;
+  // Benched via Step In → same cleanup as retreat / Switch: attack effects on
+  // the card (Smokescreen, Leer, Amnesia…) end and Special Conditions are cured.
+  if (old) { clearAllStatus(old); clearActiveOnlyEffects(old); }
   p.active = dragonite;
   p.bench[benchIdx] = old;
   G.stepInThisTurn = true;

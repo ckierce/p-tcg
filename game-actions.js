@@ -2018,12 +2018,18 @@ function _finishEndTurn(prev) {
     nextActive.defenderReduction = 0;
   }
   const lastActive = G.players[prev].active;
-  if (lastActive) {
-    lastActive.cantRetreat = false;
-    lastActive.attackReduction = 0;
-    lastActive.disabledAttack = null;
-    lastActive.defenderReduction = 0;
-    lastActive.smokescreened = false;
+  if (lastActive) lastActive.defenderReduction = 0;
+  // Opponent-placed flags (Smokescreen, Leer, Growl, Amnesia…) last only
+  // "during your opponent's next turn", so they expire for EVERY Pokémon
+  // `prev` owns — not just whichever one is Active at this moment. A flagged
+  // Pokémon that moved to the Bench mid-turn (Step In, Teleport, Whirlwind…)
+  // must not carry the flag back into a later turn.
+  for (const c of [G.players[prev].active, ...(G.players[prev].bench || [])]) {
+    if (!c) continue;
+    c.cantRetreat = false;
+    c.attackReduction = 0;
+    c.disabledAttack = null;
+    c.smokescreened = false;
   }
   G.plusPowerActive = 0;
   G.pendingAction = null;

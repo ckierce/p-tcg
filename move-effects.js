@@ -302,6 +302,9 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
         : (old.status ? [old.status] : []);
       if (conds.length) addLog(`${old.name}'s ${conds.join(' and ')} cleared on being benched.`);
       if (typeof clearAllStatus === 'function') clearAllStatus(old);
+      // Attack effects bound to being Active (Smokescreen, Swords Dance, …)
+      // end when the Pokémon is benched — same as retreat / Switch / Gust.
+      if (typeof clearActiveOnlyEffects === 'function') clearActiveOnlyEffects(old);
     }
     oppP.active = entry.s; oppP.bench[idx] = old;
     // Defensive pad — bench should always be exactly 5 slots
@@ -1344,7 +1347,11 @@ const MOVE_EFFECTS = {
         const picked = await openCardPicker({ title: `${atk.name}`, subtitle: 'Choose a bench Pokémon to switch to Active', cards: bench.map(x => x.s), maxSelect: 1 });
         if (picked && picked.length) target = bench[picked[0]];
       }
-      const old = myP.active; myP.active = target.s; myP.bench[target.i] = old;
+      const old = myP.active;
+      // Leaving the Active spot ends attack effects on the card (Smokescreen,
+      // Leer, Amnesia…) and cures Special Conditions, as with any bench swap.
+      if (old) { clearAllStatus(old); clearActiveOnlyEffects(old); }
+      myP.active = target.s; myP.bench[target.i] = old;
       addLog(`${atk.name}: switched ${old?.name} with ${target.s.name}.`, true);
       renderAll();
     }
