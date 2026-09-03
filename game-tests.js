@@ -5651,6 +5651,28 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       await run('performAttack')(1, art2.attacks.find(a => a.name === 'Blizzard'));
       await settle();
       assert('Blizzard bench KO on the last prize ends the game for P1', G.started === false && G.winner === 1);
+
+      // ── REGRESSION: Curse is once per turn PER GENGAR, not per player ──
+      G = freshG();
+      const gengarA = mk('Gengar'), gengarB = mk('Gengar');
+      G.players[1].active = gengarA; G.players[1].bench[0] = gengarB;
+      const oppActive = mk('Chansey', { damage: 10 });
+      const oppBench = mk('Chansey');
+      G.players[2].active = oppActive; G.players[2].bench[0] = oppBench;
+      const curseOffered = (zone, idx, card) => run('getFieldActionExtras')(1, zone, idx, card).some(a => /Curse/.test(a.label));
+      assert('Curse: both Gengars offer Curse at turn start', curseOffered('active', null, gengarA) && curseOffered('bench', 0, gengarB));
+      await run('doCurse')(1, gengarA);
+      await settle();
+      assertEqual('Curse: first Gengar moved the counter to the bench', oppBench.damage, 10);
+      assert('Curse: first Gengar no longer offers Curse', !curseOffered('active', null, gengarA));
+      assert('Curse: second Gengar still offers Curse', curseOffered('bench', 0, gengarB));
+      await run('doCurse')(1, gengarB);
+      await settle();
+      assertEqual('Curse: second Gengar moved the counter back to the active', oppActive.damage, 10);
+      assert('Curse: second Gengar no longer offers Curse', !curseOffered('bench', 0, gengarB));
+      await run('doCurse')(1, gengarA);
+      await settle();
+      assertEqual('Curse: a used Gengar cannot Curse again this turn', oppActive.damage, 10);
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });

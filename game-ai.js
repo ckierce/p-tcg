@@ -2521,8 +2521,10 @@ async function aiUsePowers(delayMs) {
   }
 
   // Gengar — Curse: finish a 10-HP Pokémon, or make this turn's KO possible.
-  const gengar = aiAllInPlay(p2).find(c => isPowerActive(c, 'Curse'));
-  if (gengar && !G.cursedThisTurn && p1.active) {
+  // Each Gengar in play gets its own use per turn.
+  const gengars = aiAllInPlay(p2).filter(c => isPowerActive(c, 'Curse') && !(G.cursedThisTurn || []).includes(c.uid));
+  for (const gengar of gengars) {
+    if (!p1.active) break;
     const oppAll = aiAllInPlay(p1);
     const sources = oppAll.filter(c => (c.damage || 0) >= 10);
     if (oppAll.length >= 2 && sources.length) {
@@ -2548,7 +2550,8 @@ async function aiUsePowers(delayMs) {
       }
       if (move) {
         move.src.damage -= 10; move.dst.damage = (move.dst.damage || 0) + 10;
-        G.cursedThisTurn = true;
+        if (!Array.isArray(G.cursedThisTurn)) G.cursedThisTurn = [];
+        G.cursedThisTurn.push(gengar.uid);
         aiLog(`used Curse — moved 1 damage counter from ${move.src.name} to ${move.dst.name}.`, true);
         if (aiHpLeft(move.dst) <= 0) {
           if (move.dst === p1.active) checkKO(aiPlayerNum, aiOppNum(), move.dst, false);

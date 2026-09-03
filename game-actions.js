@@ -1988,7 +1988,7 @@ function _finishEndTurn(prev) {
   transitionPhase('DRAW');
   G.pendingLass = null;
   G.energyPlayedThisTurn = false;
-  G.cursedThisTurn = false;
+  G.cursedThisTurn = [];
   G.healedThisTurn = false;
   G.shiftedThisTurn = false;
   G.stepInThisTurn = false;

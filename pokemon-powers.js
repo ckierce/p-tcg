@@ -328,11 +328,14 @@ async function doEnergyTrans(player) {
 
 // Gengar — Curse
 // Once per turn: move 1 damage counter from 1 opponent Pokémon to another opponent Pokémon.
-async function doCurse(player) {
+// Each Gengar in play gets its own use per turn; G.cursedThisTurn holds the uids that have used it.
+async function doCurse(player, gengarCard) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Curse!", true); return; }
   const p = G.players[player];
-  const gengar = [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse'));
+  const used = G.cursedThisTurn || [];
+  const gengar = gengarCard || [p.active, ...p.bench].find(c => isPowerActive(c, 'Curse') && !used.includes(c.uid));
   if (!gengar) { showToast('Gengar not in play!', true); return; }
+  if (used.includes(gengar.uid)) { showToast('This Gengar already used Curse this turn!', true); return; }
 
   const oppNum = player === 1 ? 2 : 1;
   const opp = G.players[oppNum];
@@ -373,7 +376,8 @@ async function doCurse(player) {
   src.damage = (src.damage || 0) - 10;
   dst.damage = (dst.damage || 0) + 10;
   addLog(`P${player} used Curse — moved 1 damage counter from ${src.name} to ${dst.name}.`, true);
-  G.cursedThisTurn = true;
+  if (!Array.isArray(G.cursedThisTurn)) G.cursedThisTurn = [];
+  G.cursedThisTurn.push(gengar.uid);
   checkKO(player, oppNum, dst, false);
   renderAll();
 }
@@ -674,9 +678,9 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
     actions.push({ label: '🌿 Energy Trans (Venusaur)', fn: () => { closeActionMenu(); doEnergyTrans(player); } });
   }
 
-  // Gengar — Curse: show ONLY on Gengar's own card, once per turn
-  if (!G.cursedThisTurn && isPowerActive(card, 'Curse')) {
-    actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player); } });
+  // Gengar — Curse: show ONLY on Gengar's own card, once per turn per Gengar
+  if (isPowerActive(card, 'Curse') && !(G.cursedThisTurn || []).includes(card.uid)) {
+    actions.push({ label: '👻 Curse (Gengar)', fn: () => { closeActionMenu(); doCurse(player, card); } });
   }
 
   // Clefable — Metronome: only when active (must be the attacker)
