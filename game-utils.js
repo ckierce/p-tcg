@@ -76,6 +76,7 @@ const GAME_STATE_DEFAULTS = {
   leekSlapUsed:         false,
   pounceActive:         false,
   pounceReduction:      0,
+  lightScreen:          false,
   swordsDanceActive:    false,
   swordsDanceJustSet:   false,
   attackReduction:      0,
@@ -502,6 +503,7 @@ function clearActiveOnlyEffects(card) {
   card.destinyBond = false;
   card.pounceActive = false;
   card.pounceReduction = 0;
+  card.lightScreen = false;
   card.disabledAttack = null;
   card.attackReduction = 0;
 }
@@ -615,6 +617,35 @@ function buildEvolutionStackUnder(underlyingCard) {
   ];
 }
 
+// ── devolveTopStage ───────────────────────────────────────────────────────────
+// Mew (Promo) Devolution Beam: remove the HIGHEST Stage Evolution card from an
+// evolved Pokémon and hand it back to its owner. The card underneath (the last
+// entry of `prevStages`, i.e. the inverse of buildEvolutionStackUnder) becomes
+// the Pokémon in play again, keeping the damage counters and attached Energy
+// exactly as evolution carried them up, with every Special Condition and
+// attack effect cleared — "just as if you had evolved it".
+//
+// Pure: returns { restored, evoCard } or null when there is nothing underneath
+// (a Basic, or an evolution whose stack was lost). The caller places
+// `restored` in the slot, pushes `evoCard` to the owner's hand, and runs the KO
+// check — damage that meets the lower stage's HP knocks it out.
+function devolveTopStage(card) {
+  if (!card) return null;
+  const stack = card.prevStages || [];
+  if (!stack.length) return null;
+  const under = stack[stack.length - 1];
+  const restored = { ...under };
+  for (const [k, def] of Object.entries(GAME_STATE_DEFAULTS)) restored[k] = def;
+  restored.damage = card.damage || 0;
+  restored.attachedEnergy = card.attachedEnergy || [];
+  restored.prevStages = stack.length > 1 ? stack.slice(0, -1) : undefined;
+  const evoCard = { ...card };
+  for (const [k, def] of Object.entries(GAME_STATE_DEFAULTS)) evoCard[k] = def;
+  evoCard.attachedEnergy = [];
+  evoCard.prevStages = undefined;
+  return { restored, evoCard };
+}
+
 // ── transitionPhase ───────────────────────────────────────────────────────────
 // Sets G.phase to the given phase. Optionally merges additional top-level state
 // (e.g. pendingPromotion) into G. Calls updatePhase() so the DOM phase pill
@@ -646,7 +677,7 @@ if (typeof module !== 'undefined') {
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
     clearActiveOnlyEffects,
     transitionPhase,
-    buildEvolutionStackUnder,
+    buildEvolutionStackUnder, devolveTopStage,
     GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
     statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
     activeStatuses, statusFieldsFromLegacy,

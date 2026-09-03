@@ -125,6 +125,17 @@ const _benchDamageN = (n) => ({
 const _benchDamage10 = () => _benchDamageN(10);
 const _benchDamage20 = () => _benchDamageN(20);
 
+// Pounce-style: incoming damage from the Defending Pokémon is reduced by 10
+// next turn (after W/R). Consumed via `pounceActive` in applyDamageModifiers;
+// benching either Pokémon ends it (clearActiveOnlyEffects / endTurnEffectsCleanup).
+const _reduceIncomingBy10 = () => ({
+  postAttack: async ({ myActive, atk }) => {
+    if (!myActive) return;
+    myActive.pounceActive = true;
+    addLog(`${atk.name}: incoming attack next turn does 10 less damage!`, true);
+  }
+});
+
 // Drain: heal self by (fraction × dmgDealt) rounded up to nearest 10
 const _drain = (fraction) => ({
   postAttack: async ({ myActive, dmgDealt, atk }) => {
@@ -403,6 +414,139 @@ function prophecyModal(player, targetPlayer, numCards) {
 // THE DISPATCH TABLE  (one entry per attack name, exactly as in cards.json)
 // ─────────────────────────────────────────────────────────────────────────────
 const MOVE_EFFECTS = {
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // WIZARDS BLACK STAR PROMOS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Devolution Beam (Mew Promo): choose an evolved Pokémon on EITHER side and
+  // return its highest Stage Evolution card to its owner's hand. The lower stage
+  // comes back with the same damage + Energy and no conditions/effects (helper:
+  // devolveTopStage in game-utils.js). If its damage now meets the lower stage's
+  // HP it is Knocked Out and the other player takes a prize.
+  // Not flagged targetsDefender — the player may target their own Pokémon; the
+  // opponent's protected Active is simply removed from the choices.
+  'Devolution Beam': {
+    postAttack: async ({ player, opp, atk }) => {
+      const candidates = [];
+      for (const pNum of [opp, player]) {
+        const P = G.players[pNum];
+        if (P.active?.prevStages?.length) candidates.push({ pNum, zone: 'active', idx: null, card: P.active });
+        P.bench.forEach((b, i) => { if (b?.prevStages?.length) candidates.push({ pNum, zone: 'bench', idx: i, card: b }); });
+      }
+      const eligible = candidates.filter(c => !(atk._defenderEffectsBlocked && c.pNum === opp && c.zone === 'active'));
+      if (!eligible.length) { addLog(`${atk.name}: no evolved Pokémon to devolve.`); return; }
+      let pick = eligible[0];
+      if (eligible.length > 1) {
+        const picked = await openCardPicker({
+          title: `${atk.name} — Devolve`,
+          subtitle: "Choose an evolved Pokémon (yours or your opponent's) — its top Evolution card returns to hand",
+          cards: eligible.map(c => ({ name: `${c.pNum === player ? 'Your' : "Opp's"} ${c.card.name}`, images: c.card.images })),
+          maxSelect: 1
+        });
+        if (!picked) {
+          // No damage, no cost paid — backing out leaves the turn unused (see Amnesia).
+          addLog(`${atk.name}: cancelled — turn not used.`);
+          if (typeof showToast === 'function') showToast(`${atk.name} cancelled.`);
+          return true;
+        }
+        if (picked.length) pick = eligible[picked[0]];
+      }
+      const owner = G.players[pick.pNum];
+      const res = devolveTopStage(pick.card);
+      if (!res) { addLog(`${atk.name}: ${pick.card.name} has no Evolution card to remove.`); return; }
+      const { restored, evoCard } = res;
+      if (pick.zone === 'active') owner.active = restored; else owner.bench[pick.idx] = restored;
+      owner.hand.push(evoCard);
+      addLog(`${atk.name}: ${evoCard.name} returned to P${pick.pNum}'s hand — ${restored.name} is back in play (${restored.damage}/${restored.hp} HP).`, true);
+      if (typeof showActionFlash === 'function') showActionFlash(player, 'DEVOLVED', evoCard.name, `→ ${restored.name}`);
+      // Damage already on it may exceed the lower stage's HP → Knocked Out.
+      const hp = parseInt(restored.hp) || 0;
+      if (hp > 0 && (restored.damage || 0) >= hp) {
+        if (pick.zone === 'active') {
+          const ko = checkKO(player, opp, restored, pick.pNum === player);
+          if (ko === 'win' || ko === 'promote') { renderAll(); return true; } // endTurn fires from the promotion flow
+        } else if (koBenchAndPrize(pick.pNum, pick.idx) === 'win') {
+          renderAll(); return true;
+        }
+      }
+      renderAll();
+    }
+  },
+
+  // Energy Absorption (Mewtwo Promo): attach up to 2 Energy cards from your
+  // discard pile to Mewtwo. Self-effect — never blocked by Agility/Barrier.
+  'Energy Absorption': {
+    postAttack: async ({ player, myActive, atk }) => {
+      if (!myActive) return;
+      const myP = G.players[player];
+      const energy = myP.discard.filter(c => c.supertype === 'Energy');
+      if (!energy.length) { addLog(`${atk.name}: no Energy cards in the discard pile.`); return; }
+      const aiAutoPick = (typeof vsComputer !== 'undefined' && vsComputer && typeof aiPlayerNum !== 'undefined' && G.turn === aiPlayerNum);
+      let picked;
+      if (aiAutoPick || energy.length <= 2) {
+        // Psychic first — that's what Mewtwo's attacks cost.
+        picked = energy.map((c, i) => i)
+          .sort((a, b) => (/psychic/i.test(energy[b].name) ? 1 : 0) - (/psychic/i.test(energy[a].name) ? 1 : 0))
+          .slice(0, 2);
+      } else {
+        picked = await openCardPicker({ title: atk.name, subtitle: `Choose up to 2 Energy cards to attach to ${myActive.name}`, cards: energy, maxSelect: 2 }) || [];
+      }
+      if (!Array.isArray(myActive.attachedEnergy)) myActive.attachedEnergy = [];
+      const attached = [];
+      for (const i of picked) {
+        const di = myP.discard.indexOf(energy[i]);
+        if (di !== -1) attached.push(...myP.discard.splice(di, 1));
+      }
+      myActive.attachedEnergy.push(...attached);
+      addLog(`${atk.name}: attached ${attached.length ? attached.map(c => c.name).join(', ') : 'nothing'} to ${myActive.name} from the discard pile.`, true);
+      renderAll();
+    }
+  },
+
+  // Fly (Flying Pikachu Promo): ONE flip decides everything — heads = 30 damage
+  // AND full protection (Agility-style) during the opponent's next turn; tails =
+  // nothing at all (not even damage). modifyDamage owns the flip so the generic
+  // coin parser is skipped, and sets the protection on heads BEFORE damage so a
+  // KO on the defender (which ends performAttack early) can't skip it. The
+  // postAttack entry exists only so applyPostAttackTextEffects' generic
+  // "prevent all effects of attacks" parser doesn't flip a second coin.
+  'Fly': {
+    modifyDamage: async ({ myActive, atk, dmg }) => {
+      const heads = await flipCoin(`${atk.name}: Heads = ${dmg} damage + ${myActive?.name || 'Flying Pikachu'} protected next turn | Tails = nothing`);
+      atk._coinFlipHandled = true;
+      if (!heads) { addLog(`${atk.name}: TAILS — the attack does nothing (not even damage).`, true); return 0; }
+      if (myActive) {
+        myActive.defender = true; myActive.defenderFull = true; myActive.defenderFullEffects = true;
+        addLog(`${atk.name}: HEADS — ${dmg} damage, and ${myActive.name} is protected from all effects of attacks (including damage) next turn!`, true);
+      }
+      return dmg;
+    },
+    postAttack: async () => {}
+  },
+
+  // Growl (Pikachu Promo): same text as Persian's Pounce — incoming damage −10 next turn.
+  'Growl': _reduceIncomingBy10(),
+
+  // Light Screen (Electabuzz Promo): attacks on Electabuzz do half damage (after
+  // W/R, rounded down to nearest 10) during the opponent's next turn. Consumed in
+  // applyDamageModifiers; expires with the other defender flags in endTurn.
+  'Light Screen': {
+    postAttack: async ({ myActive, atk }) => {
+      if (!myActive) return;
+      myActive.lightScreen = true;
+      addLog(`${atk.name}: attacks on ${myActive.name} do half damage next turn (rounded down to the nearest 10)!`, true);
+    }
+  },
+
+  // Psywave (Mew Promo): 10 × Energy CARDS attached to the defender (DCE counts once).
+  'Psywave': {
+    modifyDamage: ({ oppActive }) => (oppActive?.attachedEnergy || []).length * 10
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BASE / JUNGLE / FOSSIL (alphabetical)
+  // ═══════════════════════════════════════════════════════════════════════════
 
   // Absorb (Kabutops): drain half damage dealt
   'Absorb': _drain(0.5),
@@ -1154,13 +1298,7 @@ const MOVE_EFFECTS = {
   },
 
   // Pounce (Persian): incoming attack next turn does 10 less damage
-  'Pounce': {
-    postAttack: async ({ myActive, atk }) => {
-      if (!myActive) return;
-      myActive.pounceActive = true;
-      addLog(`${atk.name}: incoming attack next turn does 10 less damage!`, true);
-    }
-  },
+  'Pounce': _reduceIncomingBy10(),
 
   // Prophecy (Hypno): look at top 3 of either deck, rearrange
   'Prophecy': {
@@ -1535,11 +1673,12 @@ function endTurnEffectsCleanup(prevPlayer, newPlayer) {
   // Tail Wag / Leer immunity: clears after one attack turn
   const prevOppActive = G.players[prevPlayer].active;
   if (prevOppActive?.immuneToAttack) prevOppActive.immuneToAttack = false;
-  // Pounce: clears after one turn
-  for (const pNum of [1, 2]) {
-    const a = G.players[pNum].active;
-    if (a?.pounceActive) { a.pounceActive = false; a.pounceReduction = 0; }
-  }
+  // Pounce / Growl: protects DURING the opponent's turn and expires when that
+  // turn ends — at which point the flag-holder is `newPlayer` (the same rule the
+  // defender* flags follow in endTurn). Clearing BOTH sides here used to wipe the
+  // flag at the end of the user's own turn, before it could ever apply.
+  const nextActive = G.players[newPlayer].active;
+  if (nextActive?.pounceActive) { nextActive.pounceActive = false; nextActive.pounceReduction = 0; }
   // Headache: unblocks the new player at the start of their turn
   if (G.players[newPlayer].trainerBlocked) {
     G.players[newPlayer].trainerBlocked = false;

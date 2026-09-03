@@ -28,7 +28,7 @@ const {
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
   clearActiveOnlyEffects,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
-  buildEvolutionStackUnder,
+  buildEvolutionStackUnder, devolveTopStage,
   // Multi-status helpers (added when status went from single-string to 3 slots)
   statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
   activeStatuses, statusFieldsFromLegacy,
@@ -4707,10 +4707,13 @@ section('REGRESSION: Self-effects (Fetch et al.) do NOT have targetsDefender');
       'Leech Seed', 'Petal Dance', 'Rampage', 'Tantrum',
       'Harden', 'Minimize', 'Pounce', 'Snivel', 'Swords Dance', 'Destiny Bond',
       'Barrier', 'Teleport', 'Earthquake',
+      // Wizards Black Star Promos
+      'Energy Absorption', 'Fly', 'Growl', 'Light Screen',
     ];
 
     for (const name of selfOnlyAttacks) {
-      const startRe = new RegExp(`'${name.replace(/[^\w]/g, '\\$&')}':\\s*\\{`);
+      // Entries may be inline objects (`'X': {`) or factory calls (`'X': _foo()`).
+      const startRe = new RegExp(`'${name.replace(/[^\w]/g, '\\$&')}':\\s*(?:\\{|_\\w+\\()`);
       const startIdx = src.search(startRe);
       if (startIdx === -1) continue; // optional — not all of these may exist
       const after = src.slice(startIdx);
@@ -5688,6 +5691,36 @@ section('AI v2: hooks cover the end-of-turn safety promotion');
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Wizards Black Star Promos — Mew's Devolution Beam helper (pure) + Light Screen flag
+// ═══════════════════════════════════════════════════════════════════════════════
+section('PROMOS: devolveTopStage (Devolution Beam) is the inverse of buildEvolutionStackUnder');
+{
+  const basic  = { name: 'Squirtle',  hp: '40',  uid: 'sq', damage: 10, attachedEnergy: [W], special: 'asleep' };
+  const stage1 = { name: 'Wartortle', hp: '70',  uid: 'wt', damage: 50, attachedEnergy: [W, W], special: 'confused', pounceActive: true };
+  stage1.prevStages = buildEvolutionStackUnder(basic);
+  const stage2 = { name: 'Blastoise', hp: '100', uid: 'bl', damage: 60, attachedEnergy: [W, W, W], cantRetreat: true, lightScreen: true };
+  stage2.prevStages = buildEvolutionStackUnder(stage1);
+
+  const r = devolveTopStage(stage2);
+  assert('Stage 2 → the Stage 1 underneath is restored', r.restored.name === 'Wartortle' && r.restored.uid === 'wt');
+  assertEqual('restored keeps the damage counters', r.restored.damage, 60);
+  assertEqual('restored keeps the attached Energy', r.restored.attachedEnergy.length, 3);
+  assert('restored has no Special Condition and no attack effects', r.restored.special === null && r.restored.pounceActive === false && r.restored.lightScreen === false);
+  assertEqual('restored still has the Basic underneath', r.restored.prevStages.map(c => c.name), ['Squirtle']);
+  assert('returned Evolution card is clean (no damage / energy / stack / effects)',
+    r.evoCard.name === 'Blastoise' && r.evoCard.damage === 0 && r.evoCard.attachedEnergy.length === 0 && r.evoCard.prevStages === undefined && r.evoCard.cantRetreat === false);
+  assert('input card is not mutated', stage2.damage === 60 && stage2.prevStages.length === 2);
+
+  const r2 = devolveTopStage(r.restored);
+  assert('devolve again → the Basic with no stack left, damage still carried', r2.restored.name === 'Squirtle' && r2.restored.prevStages === undefined && r2.restored.damage === 60);
+  assert('a Basic (or null) cannot be devolved', devolveTopStage(r2.restored) === null && devolveTopStage(null) === null);
+
+  assert('GAME_STATE_DEFAULTS includes lightScreen (Electabuzz Promo)', GAME_STATE_DEFAULTS.lightScreen === false);
+  const c = { lightScreen: true }; clearActiveOnlyEffects(c);
+  assert('clearActiveOnlyEffects clears lightScreen (benching ends it)', c.lightScreen === false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: bench damage still resolves when the main hit KOs the defender
 //
 // Craig's bug: "Blizzard doesn't do bench damage if it knocks out the opposing
@@ -5823,6 +5856,174 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       const fosStart = meSrc.indexOf('async function forceOpponentSwitch');
       const fosBlock = meSrc.slice(fosStart, meSrc.indexOf('oppP.active = entry.s', fosStart));
       assert('forceOpponentSwitch (Whirlwind etc.) clears active-only effects on the benched card', /clearActiveOnlyEffects\(old\)/.test(fosBlock));
+
+      // ═══ Wizards Black Star Promos (Pikachu, Electabuzz, Dragonite, Mew, Mewtwo, Flying/Surfing Pikachu) ═══
+      const Ps = { name: 'Psychic Energy', supertype: 'Energy' }, Li = { name: 'Lightning Energy', supertype: 'Energy' }, Wa = { name: 'Water Energy', supertype: 'Energy' };
+      const mkId = (id, extra) => H.enrich({ ...cards.find(c => c.id === id), uid: 't-' + id + Math.random(), damage: 0, attachedEnergy: [], ...extra });
+      const PROMO_IDS = ['basep-1', 'basep-2', 'basep-5', 'basep-7', 'basep-8', 'basep-14', 'basep-25', 'basep-28'];
+      assert('cards.json: all 8 Wizards Black Star Promos are present', PROMO_IDS.every(id => cards.some(c => c.id === id)));
+      assert('cards.json: promos are distinct from the Base/Jungle/Fossil prints (Mewtwo ×2, Electabuzz ×2, Pikachu ×3, Dragonite ×2)',
+        cards.filter(c => c.name === 'Mewtwo').length === 2 && cards.filter(c => c.name === 'Electabuzz').length === 2 && cards.filter(c => c.name === 'Pikachu').length === 3 && cards.filter(c => c.name === 'Dragonite').length === 2);
+
+      // Psywave (Mew): 10 × Energy CARDS on the defender.
+      G = freshG();
+      const mew = mkId('basep-8', { attachedEnergy: [Ps] });
+      // (Squirtle: no Psychic resistance — Base Chansey/Rattata resist Psychic and would zero this out.)
+      const squirtle3 = mk('Squirtle', { attachedEnergy: [Wa, Wa, { name: 'Double Colorless Energy', supertype: 'Energy' }] });
+      G.players[1].active = mew; G.players[2].active = squirtle3;
+      await run('performAttack')(1, mew.attacks.find(a => a.name === 'Psywave'));
+      await settle();
+      assertEqual('Psywave: 3 Energy cards on the defender → 30 damage (DCE counts once)', squirtle3.damage, 30);
+
+      // Devolution Beam (Mew): the opponent's Wartortle drops back to Squirtle, Wartortle goes to their hand.
+      G = freshG();
+      const mew2 = mkId('basep-8', { attachedEnergy: [Ps, Ps] });
+      const squirtle = mk('Squirtle');
+      const wartortle = mkBy('Wartortle', 'Withdraw', { attachedEnergy: [Wa, Wa], damage: 20 });
+      wartortle.prevStages = run('buildEvolutionStackUnder')(squirtle);
+      wartortle.special = 'asleep'; wartortle.cantRetreat = true;
+      G.players[1].active = mew2; G.players[2].active = wartortle;
+      await run('performAttack')(1, mew2.attacks.find(a => a.name === 'Devolution Beam'));
+      await settle();
+      assert('Devolution Beam: defender is now the Squirtle from underneath', G.players[2].active?.name === 'Squirtle' && G.players[2].active.uid === squirtle.uid);
+      assert('Devolution Beam: damage and Energy stay on the devolved Pokémon', G.players[2].active.damage === 20 && G.players[2].active.attachedEnergy.length === 2);
+      assert('Devolution Beam: Special Conditions / attack effects are gone', G.players[2].active.special === null && G.players[2].active.cantRetreat === false);
+      // (P2's hand may also hold its start-of-turn draw — only the Wartortle matters.)
+      const wtInHand = G.players[2].hand.filter(c => c.name === 'Wartortle');
+      assert('Devolution Beam: Wartortle card returned to its owner\'s hand, clean', wtInHand.length === 1 && wtInHand[0].damage === 0 && wtInHand[0].attachedEnergy.length === 0 && wtInHand[0].prevStages === undefined);
+      assert('Devolution Beam: no Evolution card went to the discard', !G.players[2].discard.some(c => c.name === 'Wartortle'));
+
+      // Devolution Beam KO: 50 damage on Wartortle → Squirtle (40 HP) is Knocked Out, prize to P1.
+      G = freshG();
+      const mew3 = mkId('basep-8', { attachedEnergy: [Ps, Ps] });
+      const wt2 = mkBy('Wartortle', 'Withdraw', { attachedEnergy: [Wa], damage: 50 });
+      wt2.prevStages = run('buildEvolutionStackUnder')(mk('Squirtle'));
+      G.players[1].active = mew3; G.players[2].active = wt2; G.players[2].bench[0] = mk('Chansey');
+      await run('performAttack')(1, mew3.attacks.find(a => a.name === 'Devolution Beam'));
+      await settle();
+      assert('Devolution Beam KO: devolved Squirtle was Knocked Out (P2 must promote)', G.phase === 'PROMOTE' && G.pendingPromotion === 2 && G.players[2].active === null);
+      assertEqual('Devolution Beam KO: P1 took a prize', G.players[1].prizes.filter(Boolean).length, 2);
+      assert('Devolution Beam KO: Squirtle + its Energy in the discard, Wartortle in hand', G.players[2].discard.some(c => c.name === 'Squirtle') && G.players[2].discard.some(c => c.name === 'Water Energy') && G.players[2].hand.some(c => c.name === 'Wartortle'));
+
+      // Energy Absorption (Mewtwo): up to 2 Energy from the discard get attached.
+      G = freshG();
+      const mewtwoP = mkId('basep-14', { attachedEnergy: [Ps] });
+      G.players[1].active = mewtwoP; G.players[2].active = mk('Chansey');
+      G.players[1].discard = [{ ...Ps }, { ...Wa }, { ...Ps }, { name: 'Bill', supertype: 'Trainer' }];
+      await run('performAttack')(1, mewtwoP.attacks.find(a => a.name === 'Energy Absorption'));
+      await settle();
+      assertEqual('Energy Absorption: Mewtwo now has 3 Energy attached (1 + 2 from discard)', mewtwoP.attachedEnergy.length, 3);
+      assert('Energy Absorption: 1 Energy + the Trainer remain in the discard', G.players[1].discard.length === 2 && G.players[1].discard.filter(c => c.supertype === 'Energy').length === 1);
+      assert('Energy Absorption: the promo Mewtwo\'s Psyburn is a plain 40', mewtwoP.attacks.find(a => a.name === 'Psyburn').damage === '40');
+
+      // Light Screen (Electabuzz): incoming damage halved (after Weakness) during the opponent's next turn only.
+      G = freshG();
+      const buzz = mkId('basep-2', { attachedEnergy: [Li] });
+      const chan = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      G.players[1].active = buzz; G.players[2].active = chan;
+      await run('performAttack')(1, buzz.attacks.find(a => a.name === 'Light Screen'));
+      await settle();
+      assert('Light Screen: Electabuzz is flagged', buzz.lightScreen === true);
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      assert('Light Screen: flag survives its owner ending the turn', buzz.lightScreen === true && G.turn === 2);
+      await run('performAttack')(2, chan.attacks.find(a => a.name === 'Jab'));
+      await settle();
+      assertEqual('Light Screen: Jab 20 ×2 Weakness = 40 → halved to 20', buzz.damage, 20);
+      if (G.turn === 2) { run('endTurn')(); await settle(); }
+      assert('Light Screen: expires when the opponent\'s turn ends', buzz.lightScreen === false);
+      const lsProf = run('attackProfile')(buzz.attacks.find(a => a.name === 'Light Screen'), buzz, chan, {});
+      assert('AI: Light Screen is modelled as half-damage protection', lsProf.protect?.kind === 'half' && lsProf.protect.p === 1);
+      assertEqual('AI: aiFinalDamage halves after Weakness under Light Screen (20 → 40 → 20)', run('aiFinalDamage')(20, 0, chan, { ...buzz, lightScreen: true }, false), 20);
+
+      // Growl (Pikachu Promo): Pounce-style −10, NOT the generic −20 Defender flag, and it
+      // must survive the user's own end of turn (REGRESSION: endTurnEffectsCleanup used to
+      // clear pounceActive on BOTH Actives, so Persian's Pounce never protected anyone).
+      G = freshG();
+      const pika = mkId('basep-1', { attachedEnergy: [Li] });
+      const puncher = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      G.players[1].active = pika; G.players[2].active = puncher;
+      await run('performAttack')(1, pika.attacks.find(a => a.name === 'Growl'));
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      assert('Growl: sets the −10 Pounce flag only (no stray −20 Defender flag)', pika.pounceActive === true && pika.defender === false);
+      assert('Growl / Pounce: flag survives the user ending their own turn', pika.pounceActive === true && G.turn === 2);
+      await run('performAttack')(2, puncher.attacks.find(a => a.name === 'Jab'));
+      await settle();
+      assertEqual('Growl: Jab 20 ×2 Weakness = 40 → −10 = 30', pika.damage, 30);
+      if (G.turn === 2) { run('endTurn')(); await settle(); }
+      assert('Growl / Pounce: expires when the opponent\'s turn ends', pika.pounceActive === false);
+      const growlProf = run('attackProfile')(pika.attacks.find(a => a.name === 'Growl'), pika, G.players[2].active, {});
+      assert('AI: Growl is modelled as −10 protection', growlProf.protect?.kind === 'minus10');
+
+      // Fly (Flying Pikachu): heads = 30 + full protection; tails = nothing at all.
+      run("flipCoin = function(){ return Promise.resolve(true); };");
+      G = freshG();
+      const flyer = mkId('basep-25', { attachedEnergy: [Li, Li, Li] });
+      const target = mk('Chansey');
+      G.players[1].active = flyer; G.players[2].active = target;
+      await run('performAttack')(1, flyer.attacks.find(a => a.name === 'Fly'));
+      await settle();
+      assertEqual('Fly HEADS: 30 damage', target.damage, 30);
+      assert('Fly HEADS: Flying Pikachu is fully protected next turn (Agility-style)', flyer.defenderFull === true && flyer.defenderFullEffects === true);
+      run("flipCoin = function(){ return Promise.resolve(false); };");
+      G = freshG();
+      const flyer2 = mkId('basep-25', { attachedEnergy: [Li, Li, Li] });
+      const target2 = mk('Chansey');
+      G.players[1].active = flyer2; G.players[2].active = target2;
+      await run('performAttack')(1, flyer2.attacks.find(a => a.name === 'Fly'));
+      await settle();
+      assert('Fly TAILS: no damage and no protection', target2.damage === 0 && !flyer2.defenderFull && !flyer2.defenderFullEffects);
+      assert('Flying Pikachu: Fighting resistance, no Weakness', (flyer2.resistances || []).some(r => r.type === 'Fighting') && (flyer2.weaknesses || []).length === 0);
+      run("flipCoin = function(){ return Promise.resolve(true); };");
+
+      // Supersonic Flight (Dragonite Promo): "If tails, this attack does nothing" → generic tails-nothing parser.
+      run("flipCoin = function(){ return Promise.resolve(false); };");
+      G = freshG();
+      const dragP = mkId('basep-5', { attachedEnergy: [Li, Li, Li] });
+      const t3 = mk('Chansey');
+      G.players[1].active = dragP; G.players[2].active = t3;
+      await run('performAttack')(1, dragP.attacks.find(a => a.name === 'Supersonic Flight'));
+      await settle();
+      assertEqual('Supersonic Flight TAILS: no damage', t3.damage, 0);
+      run("flipCoin = function(){ return Promise.resolve(true); };");
+
+      // Special Delivery (Dragonite Promo): draw 1, put 1 from hand on top of the deck, once per turn per Dragonite.
+      G = freshG();
+      const courier = mkId('basep-5');
+      const handCard = mk('Bill'), d1 = mk('Chansey'), d2 = mk('Squirtle'), d3 = mk('Rattata');
+      G.players[1].active = courier; G.players[2].active = mk('Chansey');
+      G.players[1].hand = [handCard]; G.players[1].deck = [d1, d2, d3];
+      const offered = () => run('getFieldActionExtras')(1, 'active', null, courier).some(a => /Special Delivery/.test(a.label));
+      assert('Special Delivery: offered on the promo Dragonite', offered());
+      assert('Special Delivery: NOT offered as Step In (that is the Fossil Dragonite)', !run('getFieldActionExtras')(1, 'active', null, courier).some(a => /Step In/.test(a.label)));
+      await run('doSpecialDelivery')(1, courier);
+      await settle();
+      assert('Special Delivery: drew the top card and put one back — hand size unchanged, deck size unchanged', G.players[1].hand.length === 1 && G.players[1].deck.length === 3);
+      assert('Special Delivery: the chosen card (first pick = Bill) is on TOP of the deck, drawn card is in hand', G.players[1].deck[0] === handCard && G.players[1].hand[0] === d1);
+      assert('Special Delivery: cannot be used again this turn', !offered());
+      run('endTurn')(); await settle(); run('endTurn')(); await settle();
+      assert('Special Delivery: available again on a later turn', G.turn === 1 && offered());
+
+      // Jigglypuff (Promo): First Aid heals 10; Double-edge does 40 and 20 recoil (generic text parsers).
+      G = freshG();
+      const puff = mkId('basep-7', { attachedEnergy: [Li, Li, Li], damage: 20 });
+      const puffTarget = mk('Squirtle');
+      G.players[1].active = puff; G.players[2].active = puffTarget;
+      await run('performAttack')(1, puff.attacks.find(a => a.name === 'First Aid'));
+      await settle();
+      assertEqual('Jigglypuff First Aid: removed 1 damage counter', puff.damage, 10);
+      G = freshG();
+      const puff2 = mkId('basep-7', { attachedEnergy: [Li, Li, Li] });
+      const puffTarget2 = mk('Squirtle');
+      G.players[1].active = puff2; G.players[2].active = puffTarget2;
+      await run('performAttack')(1, puff2.attacks.find(a => a.name === 'Double-edge'));
+      await settle();
+      assert('Jigglypuff Double-edge: 40 to the defender (Squirtle KO\'d) and 20 recoil', puffTarget2.damage === 40 && puff2.damage === 20);
+      assert('Jigglypuff: Psychic resistance, Fighting weakness', (puff2.resistances || []).some(r => r.type === 'Psychic') && (puff2.weaknesses || []).some(w => w.type === 'Fighting'));
+
+      // Surfing Pikachu: a Lightning Pokémon whose only attack costs Water Water.
+      const surfer = mkId('basep-28', { attachedEnergy: [Wa, Wa] });
+      assert('Surfing Pikachu: Surf is payable with 2 Water Energy on a Lightning Pokémon', run('canAffordAttack')(surfer.attachedEnergy, surfer.attacks[0].cost, surfer) === true);
+      assert('Surfing Pikachu: Surf is NOT payable with Lightning Energy', run('canAffordAttack')([Li, Li], surfer.attacks[0].cost, surfer) === false);
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });

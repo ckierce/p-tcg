@@ -276,7 +276,7 @@ function maxDamageForAttack(move, energyCount) {
 //   statusOpp:      [{p, status}]        statuses applied to the defender
 //   statusSelf:     [{p, status}]
 //   discardEnergy:  n                    energy discarded from attacker as cost (Infinity = all)
-//   protect:        {p, kind}            'full' | 'threshold30' | 'minus20' | 'minus10' | 'immune'
+//   protect:        {p, kind}            'full' | 'threshold30' | 'minus20' | 'minus10' | 'half' | 'immune'
 //   smokescreen:    bool                 defender must flip to attack next turn
 //   heal:           n | 'all' | {frac}   self heal
 //   draw:           n
@@ -565,6 +565,40 @@ function attackProfile(move, attacker, defender, ctx = {}) {
       prof.raw = [{ p: 1, dmg: 0 }];
       prof.misc += 3;
       break;
+
+    // ── Wizards Black Star Promos ──
+    case 'Psywave':
+      prof.raw = [{ p: 1, dmg: (defender?.attachedEnergy || []).length * 10 }];
+      break;
+    case 'Energy Absorption':
+      prof.raw = [{ p: 1, dmg: 0 }];
+      prof.misc += 14 * Math.min(2, ctx.energyInDiscard || 0);
+      break;
+    case 'Devolution Beam': {
+      // Only worth it against an evolved defender (the engine's picker offers the
+      // opponent's Active first). Devolving under its damage = a KO for free.
+      prof.raw = [{ p: 1, dmg: 0 }];
+      const under = (defender?.prevStages || []).slice(-1)[0];
+      if (under) {
+        const underHp = parseInt(under.hp) || 0;
+        prof.misc += 30;
+        if (underHp && (defender?.damage || 0) >= underHp) prof.misc += 60;
+      }
+      break;
+    }
+    case 'Light Screen':
+      prof.raw = [{ p: 1, dmg: 0 }];
+      prof.protect = { p: 1, kind: 'half' };
+      break;
+    case 'Growl':
+      prof.raw = [{ p: 1, dmg: 0 }];
+      prof.protect = { p: 1, kind: 'minus10' };
+      break;
+    case 'Fly':
+      prof.raw = [{ p: 0.5, dmg: base }, { p: 0.5, dmg: 0 }];
+      prof.protect = { p: 0.5, kind: 'full' };
+      coinHandled = true;
+      break;
     default:
       break;
   }
@@ -701,6 +735,7 @@ function aiFinalDamage(raw, plus, attacker, defender, skipWR, opts = {}) {
   if (typeof isPowerActive === 'function' && defender && isPowerActive(defender, 'Kabuto Armor')) {
     dmg = Math.floor(dmg / 20) * 10;
   }
+  if (defender?.lightScreen && dmg > 0) dmg = Math.floor(dmg / 20) * 10;
   if (defender?.defenderFull) return 0;
   if (defender?.defenderThreshold && dmg <= defender.defenderThreshold) return 0;
   if (typeof hasInvisibleWall === 'function' && defender && hasInvisibleWall(defender) && dmg >= 30) return 0;
@@ -720,7 +755,7 @@ function aiProfileCacheKey(move, attacker, defender, ctx) {
     ctx.energyCount, attacker?.damage || 0, attacker?.hp, attacker?.swordsDanceActive ? 1 : 0,
     attacker?.leekSlapUsed ? 1 : 0, waterAttached,
     defender?.damage || 0, defender?.hp, (defender?.attachedEnergy || []).length,
-    (defender?.weaknesses || []).length,
+    (defender?.weaknesses || []).length, (defender?.prevStages || []).length,
     ctx.ownBenchCount, ctx.oppBenchCount, ctx.nidokings, ctx.lastAttackDamage,
     ctx.oppAsleep ? 1 : 0, ctx.energyInDiscard, ctx.trainersInDiscard ? 1 : 0,
     ctx.canBench ? 1 : 0, ctx.searchTargetInDeck ? 1 : 0,
@@ -1127,6 +1162,7 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
               else if (prof.protect.kind === 'threshold30') defenderMods.defenderThreshold = 30;
               else if (prof.protect.kind === 'minus20') defenderMods.defender = true;
               else if (prof.protect.kind === 'minus10') { defenderMods.pounceActive = true; defenderMods.pounceReduction = 10; }
+              else if (prof.protect.kind === 'half') defenderMods.lightScreen = true;
             }
             let surv;
             if (koProb > 0) {
@@ -2573,6 +2609,18 @@ async function aiUsePowers(delayMs) {
         aiLog(`used Shift — ${active.name} is now ${weak} type!`, true);
         renderAll(); await aiDelay(delayMs * 0.3);
       }
+    }
+  }
+
+  // Dragonite (Promo) — Special Delivery: a free filter every turn (draw, then
+  // put back the card we value least). Deck size is unchanged — no deck-out risk.
+  if (typeof doSpecialDelivery === 'function') {
+    const couriers = aiAllInPlay(p2).filter(c => isPowerActive(c, 'Special Delivery') && !(G.specialDeliveryThisTurn || []).includes(c.uid));
+    for (const d of couriers) {
+      if (!(p2.deck || []).length) break;
+      await doSpecialDelivery(aiPlayerNum, d);
+      aiLog(`used Special Delivery (${d.name}).`);
+      renderAll(); await aiDelay(delayMs * 0.3);
     }
   }
 

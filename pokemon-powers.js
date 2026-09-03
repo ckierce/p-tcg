@@ -28,6 +28,7 @@
 //     doBuzzap(player, benchIdx)   — Electrode: sacrifice for 2 Lightning energy
 //     doMetronome(player)          — Clefable: copy opponent's attack
 //     dittoAttacks(player)         — Ditto Transform: returns opp's attacks or null
+//     doSpecialDelivery(player, card) — Dragonite (Promo): draw 1, put 1 from hand on top of deck
 //
 //   Passive powers wired elsewhere in performAttack:
 //     strikesBack already handled inline in performAttack
@@ -664,6 +665,40 @@ async function doHeal(player) {
 // Returns additional actions to show in the action menu for a Pokémon slot.
 // Called from showFieldActionMenu in game-actions.js.
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Special Delivery (Dragonite Promo) ───────────────────────────────────────
+// Once per turn PER Dragonite: draw a card, then put a card from your hand on
+// top of your deck. Deck size is unchanged, so it can never deck you out — it's
+// a free filter. G.specialDeliveryThisTurn holds the uids that have used it.
+async function doSpecialDelivery(player, dragonite) {
+  const p = G.players[player];
+  if ((G.specialDeliveryThisTurn || []).includes(dragonite?.uid)) { showToast('Special Delivery can only be used once per turn!', true); return; }
+  if (!isPowerActive(dragonite, 'Special Delivery')) { showToast("Special Delivery can't be used right now!", true); return; }
+  if (!p.deck.length) { showToast('No cards left in your deck!', true); return; }
+  if (!Array.isArray(G.specialDeliveryThisTurn)) G.specialDeliveryThisTurn = [];
+  G.specialDeliveryThisTurn.push(dragonite.uid);
+
+  drawCard(player, true);
+  addLog(`P${player} used Special Delivery (${dragonite.name}) — drew a card.`, true);
+  showActionFlash(player, 'SPECIAL DELIVERY', dragonite.name, 'draw 1 → put 1 on top of deck');
+  if (!p.hand.length) { renderAll(); return; }
+
+  let idx = 0;
+  const aiTurn = (typeof vsComputer !== 'undefined' && vsComputer && typeof aiPlayerNum !== 'undefined' && G.turn === aiPlayerNum);
+  if (aiTurn && typeof aiHoldValue === 'function') {
+    // AI: send back the card it values least (it draws it again next turn).
+    const opp = G.players[player === 1 ? 2 : 1];
+    idx = p.hand.reduce((best, c, i) => aiHoldValue(c, p, opp) < aiHoldValue(p.hand[best], p, opp) ? i : best, 0);
+  } else if (p.hand.length > 1) {
+    // The draw already happened — the put-back is mandatory, so no Cancel.
+    const picked = await openCardPicker({ title: 'Special Delivery', subtitle: 'Choose a card from your hand to put on top of your deck', cards: p.hand, maxSelect: 1, noCancel: true });
+    if (picked && picked.length) idx = picked[0];
+  }
+  const [card] = p.hand.splice(idx, 1);
+  p.deck.unshift(card);
+  addLog(`P${player} put a card from their hand on top of their deck.`, true);
+  renderAll();
+}
+
 function getFieldActionExtras(player, zone, benchIdx, card) {
   if (G.phase !== 'MAIN' || G.turn !== player) return [];
   if (isMukActive()) return [];
@@ -709,6 +744,11 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
   // Dragonite — Step In: only from bench slot
   if (zone === 'bench' && isPowerActive(card, 'Step In')) {
     actions.push({ label: '🐉 Step In (Dragonite)', fn: () => { closeActionMenu(); doStepIn(player, benchIdx); } });
+  }
+
+  // Dragonite (Promo) — Special Delivery: show on its own card, once per turn per Dragonite
+  if (isPowerActive(card, 'Special Delivery') && !(G.specialDeliveryThisTurn || []).includes(card.uid)) {
+    actions.push({ label: '📦 Special Delivery (Dragonite)', fn: () => { closeActionMenu(); doSpecialDelivery(player, card); } });
   }
 
   // Tentacool — Cowardice: show on Tentacool's own card

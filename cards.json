@@ -21059,5 +21059,624 @@
         "reverseHoloAvg30": 0.3
       }
     }
+  },
+  {
+    "id": "basep-1",
+    "name": "Pikachu",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "16",
+    "hp": "60",
+    "types": [
+      "Lightning"
+    ],
+    "evolvesTo": [
+      "Raichu"
+    ],
+    "attacks": [
+      {
+        "name": "Growl",
+        "cost": [
+          "Colorless"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "",
+        "text": "If the Defending Pokémon attacks Pikachu during your opponent's next turn, any damage done by the attack is reduced by 10 (after applying Weakness and Resistance). (Benching either Pokémon ends this effect.)"
+      },
+      {
+        "name": "Thundershock",
+        "cost": [
+          "Lightning",
+          "Lightning"
+        ],
+        "convertedEnergyCost": 2,
+        "damage": "20",
+        "text": "Flip a coin. If heads, the Defending Pokémon is now Paralyzed."
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Fighting",
+        "value": "×2"
+      }
+    ],
+    "retreatCost": [
+      "Colorless"
+    ],
+    "convertedRetreatCost": 1,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "1",
+    "artist": "Keiji Kinebuchi",
+    "rarity": "Promo",
+    "flavorText": "When several of these Pokémon gather, their electricity could build and cause lightning storms.",
+    "nationalPokedexNumbers": [
+      25
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/1.png",
+      "large": "https://images.pokemontcg.io/basep/1_hires.png"
+    }
+  },
+  {
+    "id": "basep-2",
+    "name": "Electabuzz",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "20",
+    "hp": "60",
+    "types": [
+      "Lightning"
+    ],
+    "evolvesTo": [
+      "Electivire"
+    ],
+    "attacks": [
+      {
+        "name": "Light Screen",
+        "cost": [
+          "Lightning"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "",
+        "text": "Whenever an attack does damage to Electabuzz (after applying Weakness and Resistance) during your opponent's next turn, that attack only does half the damage to Electabuzz (rounded down to the nearest 10). (Any other effects of attacks still happen.)"
+      },
+      {
+        "name": "Quick Attack",
+        "cost": [
+          "Colorless",
+          "Colorless"
+        ],
+        "convertedEnergyCost": 2,
+        "damage": "10+",
+        "text": "Flip a coin. If heads, this attack does 10 damage plus 20 more damage; if tails, this attack does 10 damage."
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Fighting",
+        "value": "×2"
+      }
+    ],
+    "retreatCost": [
+      "Colorless",
+      "Colorless"
+    ],
+    "convertedRetreatCost": 2,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "2",
+    "artist": "Ken Sugimori",
+    "rarity": "Promo",
+    "flavorText": "A wild Pokémon with a short temper. It is able to distinguish colors, and likes the color red.",
+    "nationalPokedexNumbers": [
+      125
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/2.png",
+      "large": "https://images.pokemontcg.io/basep/2_hires.png"
+    }
+  },
+  {
+    "id": "basep-5",
+    "name": "Dragonite",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Stage 2"
+    ],
+    "level": "43",
+    "hp": "90",
+    "types": [
+      "Colorless"
+    ],
+    "evolvesFrom": "Dragonair",
+    "abilities": [
+      {
+        "name": "Special Delivery",
+        "text": "Once during your turn (before your attack), you may draw a card. If you do, choose a card from your hand and put it on top of your deck. This power can't be used if Dragonite is Asleep, Confused, or Paralyzed.",
+        "type": "Pokémon Power"
+      }
+    ],
+    "attacks": [
+      {
+        "name": "Supersonic Flight",
+        "cost": [
+          "Colorless",
+          "Colorless",
+          "Colorless"
+        ],
+        "convertedEnergyCost": 3,
+        "damage": "60",
+        "text": "Flip a coin. If tails, this attack does nothing."
+      }
+    ],
+    "resistances": [
+      {
+        "type": "Fighting",
+        "value": "-30"
+      }
+    ],
+    "retreatCost": [
+      "Colorless",
+      "Colorless"
+    ],
+    "convertedRetreatCost": 2,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "5",
+    "artist": "Toshinao Aoki",
+    "rarity": "Promo",
+    "flavorText": "This Pokémon can fly is spite of its large bulk. It is said to be able to circumnavigate the earth in just 16 hours.",
+    "nationalPokedexNumbers": [
+      149
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/5.png",
+      "large": "https://images.pokemontcg.io/basep/5_hires.png"
+    }
+  },
+  {
+    "id": "basep-8",
+    "name": "Mew",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "23",
+    "hp": "50",
+    "types": [
+      "Psychic"
+    ],
+    "attacks": [
+      {
+        "name": "Psywave",
+        "cost": [
+          "Psychic"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "10×",
+        "text": "Does 10 damage times the number of Energy cards attached to the Defending Pokémon."
+      },
+      {
+        "name": "Devolution Beam",
+        "cost": [
+          "Psychic",
+          "Psychic"
+        ],
+        "convertedEnergyCost": 2,
+        "damage": "",
+        "text": "Choose an evolved Pokémon (your own or your opponent's). Return the highest Stage Evolution card on that Pokémon to its player's hand. That Pokémon is no longer Asleep, Confused, Paralyzed, or Poisoned, or anything else that might be the result of an attack (just as if you had evolved it)."
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Psychic",
+        "value": "×2"
+      }
+    ],
+    "retreatCost": [
+      "Colorless"
+    ],
+    "convertedRetreatCost": 1,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "8",
+    "artist": "Ken Sugimori",
+    "rarity": "Promo",
+    "flavorText": "So rare that it is still said to be a mirage by many experts. Only a few people have seen it worldwide.",
+    "nationalPokedexNumbers": [
+      151
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/8.png",
+      "large": "https://images.pokemontcg.io/basep/8_hires.png"
+    }
+  },
+  {
+    "id": "basep-14",
+    "name": "Mewtwo",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "60",
+    "hp": "70",
+    "types": [
+      "Psychic"
+    ],
+    "attacks": [
+      {
+        "name": "Energy Absorption",
+        "cost": [
+          "Psychic"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "",
+        "text": "Choose up to 2 Energy cards from your discard pile and attach them to Mewtwo."
+      },
+      {
+        "name": "Psyburn",
+        "cost": [
+          "Psychic",
+          "Psychic",
+          "Colorless"
+        ],
+        "convertedEnergyCost": 3,
+        "damage": "40",
+        "text": ""
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Psychic",
+        "value": "×2"
+      }
+    ],
+    "retreatCost": [
+      "Colorless",
+      "Colorless"
+    ],
+    "convertedRetreatCost": 2,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "14",
+    "artist": "Benimaru Itoh",
+    "rarity": "Promo",
+    "flavorText": "Years of genetic experiments resulted in the creation of this never-before-seen violent Pokémon.",
+    "nationalPokedexNumbers": [
+      150
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/14.png",
+      "large": "https://images.pokemontcg.io/basep/14_hires.png"
+    }
+  },
+  {
+    "id": "basep-25",
+    "name": "Flying Pikachu",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "12",
+    "hp": "40",
+    "types": [
+      "Lightning"
+    ],
+    "evolvesTo": [
+      "Raichu"
+    ],
+    "attacks": [
+      {
+        "name": "Thundershock",
+        "cost": [
+          "Lightning"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "10",
+        "text": "Flip a coin. If heads, the Defending Pokémon is now Paralyzed."
+      },
+      {
+        "name": "Fly",
+        "cost": [
+          "Colorless",
+          "Colorless",
+          "Colorless"
+        ],
+        "convertedEnergyCost": 3,
+        "damage": "30",
+        "text": "Flip a coin. If heads, during your opponent's next turn, prevent all effects of attacks, including damage, done to Flying Pikachu; if tails, this attack does nothing (not even damage)."
+      }
+    ],
+    "resistances": [
+      {
+        "type": "Fighting",
+        "value": "-30"
+      }
+    ],
+    "retreatCost": [
+      "Colorless"
+    ],
+    "convertedRetreatCost": 1,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "25",
+    "artist": "Toshinao Aoki",
+    "rarity": "Promo",
+    "flavorText": "By learning how to fly, Pikachu overcame its weakness to Fighting Pokémon.",
+    "nationalPokedexNumbers": [
+      25
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/25.png",
+      "large": "https://images.pokemontcg.io/basep/25_hires.png"
+    }
+  },
+  {
+    "id": "basep-28",
+    "name": "Surfing Pikachu",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "32",
+    "hp": "50",
+    "types": [
+      "Lightning"
+    ],
+    "evolvesTo": [
+      "Raichu"
+    ],
+    "attacks": [
+      {
+        "name": "Surf",
+        "cost": [
+          "Water",
+          "Water"
+        ],
+        "convertedEnergyCost": 2,
+        "damage": "30",
+        "text": ""
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Fighting",
+        "value": "×2"
+      }
+    ],
+    "retreatCost": [
+      "Colorless"
+    ],
+    "convertedRetreatCost": 1,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "28",
+    "artist": "Toshinao Aoki",
+    "rarity": "Promo",
+    "flavorText": "One summer, a group of Pikachus was found riding the waves at the local beach.",
+    "nationalPokedexNumbers": [
+      25
+    ],
+    "legalities": {
+      "unlimited": "Legal",
+      "expanded": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/28.png",
+      "large": "https://images.pokemontcg.io/basep/28_hires.png"
+    }
+  },
+  {
+    "id": "basep-7",
+    "name": "Jigglypuff",
+    "supertype": "Pokémon",
+    "subtypes": [
+      "Basic"
+    ],
+    "level": "12",
+    "hp": "50",
+    "types": [
+      "Colorless"
+    ],
+    "evolvesTo": [
+      "Wigglytuff"
+    ],
+    "attacks": [
+      {
+        "name": "First Aid",
+        "cost": [
+          "Colorless"
+        ],
+        "convertedEnergyCost": 1,
+        "damage": "",
+        "text": "Remove 1 damage counter from Jigglypuff."
+      },
+      {
+        "name": "Double-edge",
+        "cost": [
+          "Colorless",
+          "Colorless",
+          "Colorless"
+        ],
+        "convertedEnergyCost": 3,
+        "damage": "40",
+        "text": "Jigglypuff does 20 damage to itself."
+      }
+    ],
+    "weaknesses": [
+      {
+        "type": "Fighting",
+        "value": "×2"
+      }
+    ],
+    "resistances": [
+      {
+        "type": "Psychic",
+        "value": "-30"
+      }
+    ],
+    "retreatCost": [
+      "Colorless"
+    ],
+    "convertedRetreatCost": 1,
+    "set": {
+      "id": "basep",
+      "name": "Wizards Black Star Promos",
+      "series": "Base",
+      "printedTotal": 53,
+      "total": 53,
+      "legalities": {
+        "unlimited": "Legal"
+      },
+      "ptcgoCode": "PR",
+      "releaseDate": "1999/07/01",
+      "updatedAt": "2020/08/14 09:35:00",
+      "images": {
+        "symbol": "https://images.pokemontcg.io/basep/symbol.png",
+        "logo": "https://images.pokemontcg.io/basep/logo.png"
+      }
+    },
+    "number": "7",
+    "artist": "Keiji Kinebuchi",
+    "rarity": "Promo",
+    "flavorText": "When its huge eyes light up, it sings a mysteriously soothing melody that lulls its enemies to sleep.",
+    "nationalPokedexNumbers": [
+      39
+    ],
+    "legalities": {
+      "unlimited": "Legal"
+    },
+    "images": {
+      "small": "https://images.pokemontcg.io/basep/7.png",
+      "large": "https://images.pokemontcg.io/basep/7_hires.png"
+    }
   }
 ]

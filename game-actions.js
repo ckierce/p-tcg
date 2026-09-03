@@ -1039,6 +1039,15 @@ async function applyDamageModifiers(dmg, atk, player, myActive, oppActive) {
     showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 KABUTO ARMOR (${before}→${dmg})`);
   }
 
+  // Light Screen (Electabuzz Promo): the defender used Light Screen last turn —
+  // halve damage (after W/R), rounded DOWN to nearest 10. Other effects still happen.
+  if (oppActive.lightScreen && dmg > 0) {
+    const before = dmg;
+    dmg = Math.floor(dmg / 20) * 10;
+    addLog(`Light Screen: damage to ${oppActive.name} halved to ${dmg}!`, true);
+    showMoveFlash(player, myActive?.name || '?', atk.name, dmg, oppActive.name, `🛡 LIGHT SCREEN (${before}→${dmg})`);
+  }
+
   // Transparency (Haunter): flip — heads = prevent all effects including damage
   // Per WotC ruling, Transparency mirrors Agility — it only blocks effects
   // "done TO" Haunter. Self-effects on the attacker (Fetch's draw, recoil)
@@ -1239,8 +1248,10 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
   }
 
   // ── "Damage reduced by 10" variant (Sharpen, etc.) ──
-  const reducedBy10Match = (atk.text || '').match(/damage.+reduced by 10.+opponent.s next turn/i)
-    || (atk.text || '').match(/opponent.s next turn.+reduced by 10/i);
+  // Skipped when the dispatch table owns the attack (Pikachu Promo's Growl uses
+  // the Pounce handler) — otherwise this would ALSO set `defender` (−20).
+  const reducedBy10Match = !_hasPostAttackDispatch && ((atk.text || '').match(/damage.+reduced by 10.+opponent.s next turn/i)
+    || (atk.text || '').match(/opponent.s next turn.+reduced by 10/i));
   if (reducedBy10Match && myActive && !minimizeMatch) {
     myActive.defenderThreshold = myActive.defenderThreshold
       ? myActive.defenderThreshold : 0;
@@ -1989,6 +2000,7 @@ function _finishEndTurn(prev) {
   G.healedThisTurn = false;
   G.shiftedThisTurn = false;
   G.stepInThisTurn = false;
+  G.specialDeliveryThisTurn = [];
   G.evolvedThisTurn = [];
 
   // ── Flag expiry at end of turn ──
@@ -2016,6 +2028,7 @@ function _finishEndTurn(prev) {
     nextActive.defenderFullEffects = false;
     nextActive.defenderThreshold = 0;
     nextActive.defenderReduction = 0;
+    nextActive.lightScreen = false;
   }
   const lastActive = G.players[prev].active;
   if (lastActive) lastActive.defenderReduction = 0;
