@@ -170,9 +170,16 @@ function renderField(player) {
     // Render in the top "opponent" zone
     // During SETUP in networked mode: show face-down placeholders so opponent's choices are hidden
     const setupHide = G.phase === 'SETUP' && myRole !== null;
-    // Clairvoyance (Omanyte): opponent's hand is revealed face-up
-    G._clairvoyanceActive = typeof isPowerActive === 'function' &&
-      [G.players[topPlayer].active, ...G.players[topPlayer].bench].some(c => isPowerActive(c, 'Clairvoyance'));
+    // Clairvoyance (Omanyte): "Your opponent plays with his or her hand face
+    // up." If the LOCAL (bottom) player has an active Clairvoyance Omanyte,
+    // the top player's hand is rendered face-up above their bench (see
+    // renderOppHandReveal). isPowerActive already handles the Asleep /
+    // Confused / Paralyzed and Muk (Toxic Gas) suppression clauses. Never
+    // active during SETUP — placements are still hidden then.
+    const bottomPlayer = topPlayer === 1 ? 2 : 1;
+    G._clairvoyanceActive = !setupHide && G.phase !== 'SETUP' && typeof isPowerActive === 'function' &&
+      [G.players[bottomPlayer].active, ...G.players[bottomPlayer].bench].some(c => c && isPowerActive(c, 'Clairvoyance'));
+    renderOppHandReveal(topPlayer);
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
@@ -377,6 +384,31 @@ function renderHands() {
   if (document.getElementById('tab-hand2')?.classList.contains('active')) {
     renderSidebarP2Hand();
   }
+}
+
+// Clairvoyance strip — the opponent's hand face-up above their bench.
+// Shown only while G._clairvoyanceActive (set in renderField for the top
+// zone, which runs after renderHands in renderAll — so this is called from
+// renderField, not renderHands, to avoid a one-frame lag).
+function renderOppHandReveal(topPlayer) {
+  const strip = document.getElementById('opp-hand-reveal');
+  if (!strip) return;
+  if (!G._clairvoyanceActive) {
+    strip.style.display = 'none';
+    strip.innerHTML = '';
+    return;
+  }
+  const hand = G.players[topPlayer]?.hand || [];
+  const esc = (typeof escapeHtml === 'function') ? escapeHtml : (x => x);
+  const cards = hand.length
+    ? hand.map(card => {
+        const large = card.images?.large || card.images?.small || '';
+        return `<div class="opp-hand-reveal-card" title="${esc(card.name || '')}"
+          onclick="event.stopPropagation();showCardDetail('${large}')">${cardFace(card)}</div>`;
+      }).join('')
+    : `<span class="opp-hand-reveal-empty">no cards</span>`;
+  strip.innerHTML = `<span class="opp-hand-reveal-label" title="Omanyte's Clairvoyance: your opponent plays with their hand face up">👁 HAND (${hand.length})</span>${cards}`;
+  strip.style.display = '';
 }
 
 function renderSidebarP2Hand() {
