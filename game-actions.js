@@ -1187,7 +1187,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
   // If the MOVE_EFFECTS dispatch table owns this attack's postAttack, skip
   // text-parsed draw effects — the dispatch entry is authoritative and would
   // otherwise double-fire (e.g. Kangaskhan's Fetch, Meowth's Pay Day).
-  const _hasPostAttackDispatch = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+  const _hasPostAttackDispatch = !!(typeof getMoveEffect === 'function' && getMoveEffect(atk)?.postAttack);
 
   // ── Draw a card: "Draw a card." (Kangaskhan Fetch, etc.) ──
   if (!_hasPostAttackDispatch && /draw a card/i.test(atk.text || '')) {
@@ -1212,7 +1212,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
 
 
   // ── Coin-flip self-protection (Withdraw-style): "Flip a coin. If heads, prevent all damage" ──
-  const _hasSelfProtectPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+  const _hasSelfProtectPostAttack = !!(typeof getMoveEffect === 'function' && getMoveEffect(atk)?.postAttack);
   const selfProtectMatch = !_hasSelfProtectPostAttack && (atk.text || '').match(
     /flip a coin[^.]*\.\s*if heads[^.]*prevent all damage done to/i
   );
@@ -1263,7 +1263,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
 
   // ── Agility-style: "Flip a coin. If heads, prevent all effects of attacks done to [Pokémon]" ──
   // Guard: skip generic flip if MOVE_EFFECTS already handles it via postAttack (e.g. Raichu's Agility)
-  const _hasAgilityPostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack)
+  const _hasAgilityPostAttack = !!(typeof getMoveEffect === 'function' && getMoveEffect(atk)?.postAttack)
     || /^agility$/i.test(atk.name);
   const agilityMatch = !_hasAgilityPostAttack && (atk.text || '').match(/flip a coin\. if heads[^.]*prevent all effects of attacks[^.]*done to/i);
   if (agilityMatch && myActive) {
@@ -1361,7 +1361,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
   // Vileplume's Petal Dance self-Confused) still apply because they are not
   // "done TO" the defender.
   const _handledByDispatch = typeof applyMoveEffects === 'function' &&
-    typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name];
+    typeof getMoveEffect === 'function' && !!getMoveEffect(atk);
   const effects = _handledByDispatch ? [] : parseStatusEffects(atk.text || '');
   for (const eff of effects) {
     const target = eff.self ? myActive : oppActive;
@@ -1550,7 +1550,7 @@ async function performAttack(player, atk) {
   let dmg = parseInt((atk.damage || '0').replace(/[^0-9]/g, '')) || 0;
 
   // "Next attack does double damage" self-buff (e.g. Swords Dance)
-  const _hasDoublePostAttack = !!(typeof MOVE_EFFECTS !== 'undefined' && MOVE_EFFECTS[atk.name]?.postAttack);
+  const _hasDoublePostAttack = !!(typeof getMoveEffect === 'function' && getMoveEffect(atk)?.postAttack);
   const doubleNextMatch = !_hasDoublePostAttack && (
     (atk.text || '').match(/next turn[^.]*does double(?:\s+the)?\s+damage/i)
     || (atk.text || '').match(/does double(?:\s+the)?\s+damage[^.]*next turn/i)
@@ -1561,7 +1561,7 @@ async function performAttack(player, atk) {
     addLog(`${atk.name}: ${myActive.name}'s next attack will do double damage!`, true);
   }
 
-  const _hasModifyDamage = typeof MOVE_EFFECTS !== 'undefined' && !!MOVE_EFFECTS[atk.name]?.modifyDamage;
+  const _hasModifyDamage = typeof getMoveEffect === 'function' && !!getMoveEffect(atk)?.modifyDamage;
   const energyCount = (myActive?.attachedEnergy || []).length;
   const coinDmg = _hasModifyDamage ? null : await resolveCoinFlipDamage(atk, energyCount, myActive, player);
   if (coinDmg !== null) {

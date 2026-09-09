@@ -7,6 +7,17 @@
 //   preAttack(ctx)      — runs BEFORE damage. Return 'block' to cancel attack.
 //   modifyDamage(ctx)   — runs AFTER coin-flip damage, BEFORE W/R. Return new dmg.
 //   postAttack(ctx)     — runs AFTER damage + KO check. Return true to skip endTurn.
+//   allowVanilla        — opt-in: run this handler even when the attack's card
+//                         text is EMPTY. By default `getMoveEffect` refuses to
+//                         attach a handler to a text-less attack, because the
+//                         table is keyed by attack NAME and many names are
+//                         shared across cards with different effects (Victreebel's
+//                         Acid flips for can't-retreat; Tentacool's Acid is a
+//                         plain 10). Only Slash needs this: its text is blank on
+//                         every card but Scyther's Swords Dance boosts it.
+//   requireText         — optional RegExp the attack's text must match for the
+//                         handler to apply. Use when two cards share a name AND
+//                         both have text, but only one has this effect.
 //   targetsDefender     — true if postAttack ONLY does things to the opponent's
 //                         Active Pokémon (status, energy discard, smokescreen,
 //                         disable, etc.). When the defender has Agility/Barrier
@@ -551,9 +562,13 @@ const MOVE_EFFECTS = {
   // Absorb (Kabutops): drain half damage dealt
   'Absorb': _drain(0.5),
 
-  // Acid (Victreebel): flip — heads = can't retreat next turn
+  // Acid (Victreebel): flip — heads = can't retreat next turn.
+  // Tentacool (Fossil) also has an attack named Acid with NO text — the vanilla
+  // guard in getMoveEffect keeps this handler off it; requireText is belt-and-
+  // braces for any future same-named Acid whose text differs.
   'Acid': {
     targetsDefender: true,
+    requireText: /can't retreat/i,
     postAttack: async ({ oppActive, atk }) => {
       if (!oppActive) return;
       const heads = await flipCoin(`${atk.name}: Heads = ${oppActive.name} can't retreat next turn!`);
@@ -727,7 +742,9 @@ const MOVE_EFFECTS = {
   'Body Slam':   _statusOppFlip('paralyzed'),
   'Freeze Dry':  _statusOppFlip('paralyzed'),
   'Ice Beam':    _statusOppFlip('paralyzed'),
-  'Irongrip':    _statusOppFlip('paralyzed'),
+  // Irongrip: Pinsir (Jungle) flips for Paralyzed; Krabby (Fossil) shares the
+  // name but has no text (plain 20) — vanilla guard + requireText keep it clean.
+  'Irongrip':    { ..._statusOppFlip('paralyzed'), requireText: /paralyzed/i },
   'Lick':        _statusOppFlip('paralyzed'),
   'Nasty Goo':   _statusOppFlip('paralyzed'),
   'Psyshock':    _statusOppFlip('paralyzed'),
@@ -1180,7 +1197,7 @@ const MOVE_EFFECTS = {
       const coinDmg = await resolveCoinFlipDamage(chosenAtk, energyCount, myActive, player);
       let dmg = coinDmg !== null ? coinDmg : (parseInt((chosenAtk.damage || '0').replace(/[^0-9]/g,'')) || 0);
       // Apply damage scaling from dispatch table
-      const copyEffect = MOVE_EFFECTS[chosenAtk.name];
+      const copyEffect = getMoveEffect(chosenAtk);
       if (copyEffect?.modifyDamage) dmg = copyEffect.modifyDamage({ player, opp, atk: chosenAtk, dmg, myActive, oppActive }) ?? dmg;
       // Defender protection zeroes the copied damage (Agility/Barrier/Transparency).
       if (dmg > 0 && (oppActive.defenderFull || atk._defenderEffectsBlocked)) {
@@ -1369,8 +1386,12 @@ const MOVE_EFFECTS = {
   // Sing (Clefairy): flip → Asleep
   'Sing': _statusOppFlip('asleep'),
 
-  // Slash (Scyther): boosted to 60 if Swords Dance was used this turn
+  // Slash (Scyther): boosted to 60 if Swords Dance was used this turn.
+  // Slash has blank card text on every printing (Dugtrio, Charmeleon, Scyther,
+  // Parasect, Sandslash), so it must opt in past the vanilla guard. Harmless on
+  // non-Scyther: swordsDanceActive is only ever set by Swords Dance.
   'Slash': {
+    allowVanilla: true,
     modifyDamage: ({ myActive }) => {
       if (myActive?.swordsDanceActive) {
         myActive.swordsDanceActive = false;
@@ -1601,21 +1622,40 @@ const MOVE_EFFECTS = {
 // PUBLIC API — called from the hooks in pokemon-game.html
 // ─────────────────────────────────────────────────────────────────────────────
 
-function preAttackChecks(player, atk, myActive, oppActive) {
+// Resolve the dispatch entry for an attack, or null if none applies.
+// MOVE_EFFECTS is keyed by attack NAME, and names are reused across cards with
+// different effects (Tentacool's Acid vs Victreebel's Acid, Krabby's Irongrip
+// vs Pinsir's). So a name hit is only accepted when the attack's own text
+// supports it:
+//   • blank text  → no handler (unless the entry sets allowVanilla)
+//   • requireText → text must match that RegExp
+// Every lookup (this file and game-actions.js) MUST go through here; never
+// index MOVE_EFFECTS[atk.name] directly.
+function getMoveEffect(atk) {
+  if (!atk?.name) return null;
   const effect = MOVE_EFFECTS[atk.name];
+  if (!effect) return null;
+  const text = (atk.text || '').trim();
+  if (!text && !effect.allowVanilla) return null;
+  if (effect.requireText && !effect.requireText.test(text)) return null;
+  return effect;
+}
+
+function preAttackChecks(player, atk, myActive, oppActive) {
+  const effect = getMoveEffect(atk);
   if (!effect?.preAttack) return null;
   return effect.preAttack({ player, opp: player === 1 ? 2 : 1, atk, myActive, oppActive });
 }
 
 async function preDamageModify(player, atk, dmg, myActive, oppActive) {
-  const effect = MOVE_EFFECTS[atk.name];
+  const effect = getMoveEffect(atk);
   if (!effect?.modifyDamage) return dmg;
   const result = await effect.modifyDamage({ player, opp: player === 1 ? 2 : 1, atk, dmg, myActive, oppActive });
   return (result !== null && result !== undefined) ? result : dmg;
 }
 
 async function applyMoveEffects(player, atk, dmgDealt, myActive, oppActive) {
-  const effect = MOVE_EFFECTS[atk.name];
+  const effect = getMoveEffect(atk);
   if (!effect?.postAttack) return;
   // Defender protection (Agility/Barrier heads, Transparency heads) blocks
   // effects "done TO" the defender's Active. If this handler is declared

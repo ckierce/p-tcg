@@ -5261,6 +5261,67 @@ section('REGRESSION: Meditate reads base damage from the card');
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: name-keyed dispatch must not leak effects onto same-named
+// vanilla attacks. Tentacool's Acid (Fossil, no text, 10 dmg) was picking up
+// Victreebel's Acid (flip → can't retreat); Krabby's Irongrip (no text) was
+// picking up Pinsir's (flip → Paralyzed). getMoveEffect() now refuses a name
+// hit when the attack's text is blank (unless allowVanilla) or fails
+// requireText. Slash opts in via allowVanilla because Scyther's Swords Dance
+// boosts it despite blank text on every printing.
+// ══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: getMoveEffect refuses same-named vanilla attacks');
+{
+  const fs = require('fs');
+  const me = fs.readFileSync('./move-effects.js', 'utf8');
+  const ga = fs.readFileSync('./game-actions.js', 'utf8');
+  assert('game-actions.js: no direct MOVE_EFFECTS[atk.name] lookups (must use getMoveEffect)',
+    !/MOVE_EFFECTS\[atk\.name\]/.test(ga.replace(/\/\/.*$/gm, '')));
+  assert('move-effects.js: public API uses getMoveEffect, not MOVE_EFFECTS[atk.name]',
+    (me.replace(/\/\/.*$/gm, '').match(/MOVE_EFFECTS\[atk\.name\]/g) || []).length === 1);  // only inside getMoveEffect itself
+  try {
+    const vm = require('vm');
+    const ctx = { console, G: null, addLog: () => {}, Math, parseInt };
+    ctx.globalThis = ctx; vm.createContext(ctx);
+    vm.runInContext(me + ';globalThis.MOVE_EFFECTS=MOVE_EFFECTS;globalThis.getMoveEffect=getMoveEffect;', ctx);
+    const get = ctx.getMoveEffect;
+    // Load the real card data so the test tracks cards.json, not a hand-typed copy.
+    const cards = JSON.parse(fs.readFileSync('./cards.json', 'utf8'));
+    const list = Array.isArray(cards) ? cards : (cards.cards || []);
+    const atkOf = (cardName, atkName) => {
+      const c = list.find(x => x.name === cardName);
+      return c && (c.attacks || []).find(a => a.name === atkName);
+    };
+    const tentAcid = atkOf('Tentacool', 'Acid'), vicAcid = atkOf('Victreebel', 'Acid');
+    const krabGrip = atkOf('Krabby', 'Irongrip'), pinGrip = atkOf('Pinsir', 'Irongrip');
+    const scySlash = atkOf('Scyther', 'Slash'), dugSlash = atkOf('Dugtrio', 'Slash');
+    assert('cards.json: Tentacool/Victreebel/Krabby/Pinsir/Scyther/Dugtrio attacks found',
+      !!(tentAcid && vicAcid && krabGrip && pinGrip && scySlash && dugSlash));
+    assertEqual('Tentacool Acid (blank text) → no handler', get(tentAcid), null);
+    assert('Victreebel Acid → can\'t-retreat handler', !!get(vicAcid)?.postAttack);
+    assertEqual('Krabby Irongrip (blank text) → no handler', get(krabGrip), null);
+    assert('Pinsir Irongrip → paralyze handler', !!get(pinGrip)?.postAttack);
+    assert('Scyther Slash (blank text, allowVanilla) → Swords Dance handler', !!get(scySlash)?.modifyDamage);
+    assert('Dugtrio Slash → same handler (harmless without Swords Dance)', !!get(dugSlash)?.modifyDamage);
+    assertEqual('Unknown attack name → null', get({ name: 'Nope', text: 'x' }), null);
+    assertEqual('requireText mismatch → null', get({ name: 'Acid', text: 'The Defending Pokémon is now Poisoned.' }), null);
+
+    // Sweep: every card attack whose text is blank and whose name is in the
+    // table must resolve to null, except entries that explicitly allowVanilla.
+    let leaks = [];
+    for (const c of list) for (const a of (c.attacks || [])) {
+      if ((a.text || '').trim()) continue;
+      const e = get(a);
+      if (e && !e.allowVanilla) leaks.push(`${c.name}/${a.name}`);
+    }
+    assert('sweep: no blank-text attack inherits a same-named handler' + (leaks.length ? ` (${leaks.join(', ')})` : ''),
+      leaks.length === 0);
+  } catch (e) {
+    console.log('  (sandbox load failed — skipping functional getMoveEffect check:', e.message, ')');
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: bench KOs award the opponent a prize
 // Bench Pokémon KO'd by splash / recoil / your OWN attack (Blizzard tails,
