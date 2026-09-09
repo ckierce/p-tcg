@@ -5323,6 +5323,35 @@ section('REGRESSION: getMoveEffect refuses same-named vanilla attacks');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Clairvoyance (Omanyte) — "Your opponent plays with his or her
+// hand face up." The flag used to be computed from the TOP (opponent) player's
+// board and was never consumed by any renderer, so the power had no visible
+// effect. It must be computed from the BOTTOM (local) player's board and drive
+// the #opp-hand-reveal strip above the opponent's bench.
+// ══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Clairvoyance reveals opponent hand above their bench');
+{
+  const fs = require('fs');
+  const gr = fs.readFileSync('./game-render.js', 'utf8');
+  const html = fs.readFileSync('./pokemon-game.html', 'utf8');
+  const block = /G\._clairvoyanceActive\s*=[\s\S]*?;/.exec(gr);
+  assert('game-render.js: _clairvoyanceActive assignment found', !!block);
+  if (block) {
+    assert('game-render.js: Clairvoyance checks the LOCAL (bottom) player\'s board, not the opponent\'s',
+      /G\.players\[bottomPlayer\]/.test(block[0]) && !/G\.players\[topPlayer\]/.test(block[0]));
+    assert('game-render.js: Clairvoyance is never active during SETUP', /SETUP/.test(block[0]));
+  }
+  assert('game-render.js: renderOppHandReveal exists and is invoked from renderField',
+    /function renderOppHandReveal/.test(gr) && /renderOppHandReveal\(topPlayer\)/.test(gr));
+  assert('game-render.js: reveal strip hides when Clairvoyance is inactive',
+    /if \(!G\._clairvoyanceActive\)[\s\S]{0,80}display = 'none'/.test(gr));
+  assert('pokemon-game.html: #opp-hand-reveal lives inside #opp-left (above the bench)',
+    /id="opp-left">[\s\S]{0,200}id="opp-hand-reveal"[\s\S]{0,400}class="opp-bench"/.test(html));
+  assert('pokemon-game.html: .opp-hand-reveal is ordered before the bench row',
+    /\.opp-hand-reveal \{[\s\S]*?order:\s*-1/.test(html));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: bench KOs award the opponent a prize
 // Bench Pokémon KO'd by splash / recoil / your OWN attack (Blizzard tails,
 // Selfdestruct, etc.) must give the opponent a prize — TCG rules award a prize

@@ -363,12 +363,53 @@ h1, h2, h3 { font-family: var(--font-title); }
 #opp-left {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;   /* lets the Clairvoyance strip take its own row above the bench */
   gap: 8px;
   flex: 1;
   justify-content: flex-start;
   overflow: hidden; /* contain bench overflow — bench itself scrolls */
   min-width: 0;
 }
+
+/* Clairvoyance (Omanyte) — opponent's hand face-up, full-width row above bench */
+.opp-hand-reveal {
+  flex-basis: 100%;
+  order: -1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border: 1px dashed rgba(180,100,220,.7);
+  border-radius: 4px;
+  background: rgba(180,100,220,.08);
+  overflow-x: auto;
+  min-width: 0;
+}
+.opp-hand-reveal::-webkit-scrollbar { display: none; }
+.opp-hand-reveal-label {
+  font-size: 9px;
+  color: rgb(200,140,240);
+  white-space: nowrap;
+  letter-spacing: .5px;
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.opp-hand-reveal-empty { font-size: 8px; color: var(--muted); }
+.opp-hand-reveal-card {
+  width: 38px;
+  height: 53px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  cursor: zoom-in;
+  position: relative;
+}
+.opp-hand-reveal-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.opp-hand-reveal-card:hover { border-color: var(--accent); }
+/* Spreadsheet skin: cells are text, so give them room for the card name */
+body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 
 /* Right group: prizes + deck/disc + hand — pushed right */
 #opp-right {
@@ -2195,6 +2236,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   .opp-label { display: none; }
   .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
   .opp-bench-slot { width: 40px; height: 56px; }
+  .opp-hand-reveal { justify-content: flex-start; }
+  .opp-hand-reveal-card { width: 30px; height: 42px; }
 
   /* Active — full player-active size, bottom area */
   .opp-active-slot {
@@ -2924,6 +2967,8 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
 
         <!-- Left: label + bench -->
         <div id="opp-left">
+          <!-- Clairvoyance (Omanyte): opponent's hand face-up, above their bench -->
+          <div class="opp-hand-reveal" id="opp-hand-reveal" style="display:none"></div>
           <span class="opp-label" id="opp-label">OPP</span>
           <div class="opp-bench">
             <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
