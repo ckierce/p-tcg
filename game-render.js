@@ -161,7 +161,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:6px">DISCARD</span>`;
+      discardEl.innerHTML = `<span style="font-size:8px">DISCARD</span>`;
     }
     // Bottom hand label color
     const label1 = document.getElementById('hand-label-p1');
@@ -186,7 +186,7 @@ function renderField(player) {
       if (setupHide) {
         activeEl.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
           <div style="font-size:18px">🂠</div>
-          <div style="font-size:6px;color:var(--muted)">PLACED</div>
+          <div style="font-size:8px;color:var(--muted)">PLACED</div>
         </div>`;
       } else {
         const card = p.active;
@@ -249,7 +249,7 @@ function renderField(player) {
           // Push next bench card right to avoid overlap
           const oppEnergyCount = (card.attachedEnergy || []).length;
           if (oppEnergyCount > 0) {
-            const iconsPerCol = Math.max(1, Math.floor(oppBenchH / oppIconPlusgap));
+            const iconsPerCol = Math.max(1, Math.floor((oppBenchH + 3) / oppIconPlusgap));
             const cols = Math.ceil(oppEnergyCount / iconsPerCol);
             slotEl.style.marginRight = (cols * oppIconPlusgap + 2) + 'px';
           } else {
@@ -269,7 +269,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:6px">DISC</span>`;
+      discardEl.innerHTML = `<span style="font-size:8px">DISC</span>`;
     }
   }
 }
@@ -322,7 +322,7 @@ function renderSlotP1(el, card) {
   if (!isActive) {
     const energyCount = (card.attachedEnergy || []).reduce((s,e) => s + (/double colorless/i.test(e.name||'')?2:1), 0);
     if (energyCount > 0) {
-      const iconsPerCol = Math.max(1, Math.floor(slotH / iconPlusgap));
+      const iconsPerCol = Math.max(1, Math.floor((slotH + 3) / iconPlusgap));
       const cols = Math.ceil(energyCount / iconsPerCol);
       el.style.marginRight = (cols * iconPlusgap + 2) + 'px';
     } else {
