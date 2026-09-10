@@ -565,13 +565,13 @@ function updateTurnBadge() {
     if (G.phase === 'PROMOTE' && G.pendingPromotion) {
       const promoter = G.pendingPromotion;
       badge.className = `turn-badge p${promoter}`;
-      badge.textContent = myRole === null ? `P${promoter} PROMOTE` : (promoter === myRole ? 'YOUR TURN' : 'OPP TURN');
+      badge.textContent = myRole === null ? `P${promoter} PROMOTE` : (promoter === myRole ? 'YOUR TURN' : `${oppDisplayName()}'S TURN`);
     } else if (myRole === null) {
       badge.textContent = `P${G.turn} TURN`;
       badge.className = `turn-badge p${G.turn}`;
     } else {
       const isMyTurnNow = G.turn === myRole;
-      badge.textContent = isMyTurnNow ? 'YOUR TURN' : 'OPP TURN';
+      badge.textContent = isMyTurnNow ? 'YOUR TURN' : `${oppDisplayName()}'S TURN`;
       badge.className = `turn-badge p${G.turn}`;
     }
   }
@@ -749,6 +749,11 @@ document.getElementById('card-picker-modal').addEventListener('click', e => {
 let toastTimer;
 function showToast(msg, isErr = false, type = '') {
   const t = document.getElementById('toast');
+  // Anchor above the hand bar (which varies in height) so it never covers the
+  // cards / captions the player is about to click.
+  const bar = document.getElementById('bottom-bar');
+  const barVisible = bar && bar.offsetParent !== null && document.getElementById('game-board')?.offsetParent !== null;
+  t.style.bottom = barVisible ? (bar.offsetHeight + 12) + 'px' : '';
   t.textContent = msg;
   t.className = 'toast show' + (isErr ? ' err' : type ? ` ${type}` : '');
   clearTimeout(toastTimer);
