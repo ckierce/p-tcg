@@ -220,7 +220,7 @@ function renderField(player) {
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `${cardFace(card)}
-          <div class="energy-overlay" style="max-height:168px">${energyPips}</div>${dmg}${hpChip(card)}${status}${badges}`;
+          <div class="energy-overlay" style="max-height:168px">${energyPips}</div>${dmg}${status}${badges}`;
       }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
@@ -258,7 +258,7 @@ function renderField(player) {
           const benchEnergyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', oppIconSize), energyIcon('Colorless Energy', oppIconSize)] : [energyIcon(e.name, oppIconSize)]).join('');
           const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `${cardFace(card)}
-            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${hpChip(card)}${status}${badges}`;
+            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
           slotEl.classList.remove('empty');
           // Push next bench card right to avoid overlap
           const oppEnergyCount = (card.attachedEnergy || []).length;
@@ -330,7 +330,7 @@ function renderSlotP1(el, card) {
   const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', iconSize), energyIcon('Colorless Energy', iconSize)] : [energyIcon(e.name, iconSize)]).join('');
   const energyStyle = `max-height:${slotH}px;max-width:none`;
   el.innerHTML = `${cardFace(card)}
-    <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${hpChip(card)}${status}${badges}`;
+    <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
 
   // Reserve right margin for energy columns so the next bench card is pushed right
   if (!isActive) {
@@ -819,18 +819,6 @@ function energyIcon(energyName, size = 16) {
   return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="15" fill="${c}" stroke="rgba(0,0,0,.4)" stroke-width="1.5"/><text x="16" y="21" text-anchor="middle" font-size="14" fill="white" font-family="sans-serif" font-weight="bold">${key[0].toUpperCase()}</text></svg>`;
 }
 
-
-// Returns HTML for a "current / max HP" chip on a Pokémon in play. Green above
-// half, amber at or below half, red at or below a fifth (or 20 HP or less).
-function hpChip(card) {
-  if (!card) return '';
-  if (CURRENT_SKIN === 'sheet') return ''; // sheet cells print HP inline
-  const max = parseInt(card.hp, 10);
-  if (!max) return '';
-  const cur = Math.max(0, max - (card.damage || 0));
-  const cls = (cur <= 20 || cur <= max * 0.2) ? ' hp-low' : (cur <= max * 0.5) ? ' hp-mid' : '';
-  return `<div class="hp-chip${cls}" title="${cur} of ${max} HP">${cur}/${max}</div>`;
-}
 
 // Returns HTML for damage counter dots — one black dot per 10 damage
 function damageCounters(damage, isActive = false) {
