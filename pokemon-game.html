@@ -831,19 +831,22 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   z-index: 4;
   pointer-events: none;
 }
+/* Tabletop damage counters: small glossy tokens, one per 10 damage, sitting on
+   the card the way the real acrylic jewels do. HP is read off the card art. */
 .dmg-dot {
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: #111;
+  background: radial-gradient(circle at 35% 30%, #6a6a6a 0, #1a1a1a 45%, #000 100%);
   border: 1.5px solid rgba(255,255,255,.55);
-  box-shadow: 0 1px 3px rgba(0,0,0,.8);
+  box-shadow: 0 1px 3px rgba(0,0,0,.8), inset 0 -1px 1px rgba(255,255,255,.12);
   flex-shrink: 0;
 }
 /* Larger dots on active Pokémon cards */
 .damage-counters.active-dmg .dmg-dot {
-  width: 22px;
-  height: 22px;
+  /* Scale with the active card so a row of counters never outgrows it */
+  width: clamp(10px, calc(var(--active-w) * 0.12), 22px);
+  height: clamp(10px, calc(var(--active-w) * 0.12), 22px);
   border-width: 2.5px;
   box-shadow: 0 2px 6px rgba(0,0,0,.9);
 }
@@ -2277,6 +2280,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     height: clamp(50px, 12.5vw, 72px);
   }
   #deck-count-p1 { font-size: 12px; }
+  /* "DISCARD" does not fit across a 36–52px slot; run it up the slot instead */
+  .discard-placeholder {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    font-size: 9px;
+    letter-spacing: 1px;
+  }
 
   /* ── Opponent zone: same three-column mirror as desktop, tighter ── */
   #opponent-zone { padding: 4px; gap: 4px; }
@@ -2483,6 +2494,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     gap: 3px;
   }
   #midline-info { font-size: 10px; padding: 1px 8px; }
+  .discard-placeholder { font-size: 0; writing-mode: horizontal-tb; transform: none; }
+  .discard-placeholder::before { content: "🗑"; font-size: 13px; line-height: 1; }
   #midline { padding: 0; }
   #midline-info { font-size: 11px; }
   #player-zone, #player-field-col, .bench-row { gap: 4px; }
@@ -2886,30 +2899,6 @@ body.skin-sheet #midline-info { font-family: 'Menlo', 'Consolas', monospace; }
 body.skin-sheet #bottom-bar { align-items: flex-start; }
 body.skin-sheet .hand-label { align-self: flex-start; }
 body.skin-sheet #hand-p1 { justify-content: flex-start; }
-/* ── HP CHIP — current / max HP on every Pokémon in play ──────────────────
-   Damage dots stay for the tabletop feel; the chip is the at-a-glance read. */
-.hp-chip {
-  position: absolute;
-  top: 3px; left: 3px;
-  z-index: 5;
-  pointer-events: none;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 3px 5px;
-  border-radius: 3px;
-  background: rgba(0,0,0,.78);
-  color: #fff;
-  letter-spacing: .3px;
-  font-variant-numeric: tabular-nums;
-  box-shadow: 0 1px 3px rgba(0,0,0,.6);
-}
-.hp-chip.hp-mid { color: #ffd166; }
-.hp-chip.hp-low { color: #ff6b6b; }
-#active-p1 .hp-chip, .opp-active-slot .hp-chip { font-size: 13px; padding: 4px 7px; }
-.opp-bench-slot .hp-chip { font-size: 10px; padding: 2px 4px; }
-body.skin-sheet .hp-chip { display: none; } /* sheet cells print HP inline */
-
 /* ── KEYBOARD FOCUS ───────────────────────────────────────── */
 :focus { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
