@@ -1,0 +1,34 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   theme.css — shared design tokens + base accessibility rules for BOTH pages
+   (pokemon-game.html and deck-builder.html). Page-specific tokens (card sizes,
+   radii) stay in each page; anything about colour, type or focus lives here so
+   the two pages cannot drift apart again.
+   Contrast (WCAG, against --bg): text 10.7:1 · muted 6.0:1 · accent 7.6:1 ·
+   p1 5.0:1 · p2 / danger 4.5:1.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --bg:         #1a3a2a;
+  --surface:    #1e4a32;
+  --surface2:   #245c3c;
+  --border:     #2d7a50;
+  --border2:    #3a9660;
+  --text:       #e8f0e0;
+  --muted:      #8fbf9f;
+  --accent:     #e8c84a;
+  --p1color:    #6aa6f8;
+  --p2color:    #f87171;
+  --danger:     #f87171;
+  --ok:         #48bb78;
+  --warn:       #ed8936;
+  --font:       'Gill Sans', 'Gill Sans MT', Calibri, sans-serif;
+  --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
+}
+
+/* Keyboard focus: one accent ring everywhere, only for keyboard users */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Respect the OS "reduce motion" setting */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

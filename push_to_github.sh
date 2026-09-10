@@ -96,7 +96,9 @@ VER=$(cat $JS_BUNDLE | shasum | cut -c1-10)
 if [[ -n "$VER" ]]; then
   # Add-or-replace ?v=<hash> on each script-tagged local .js src.
   sed -i '' -E "s#(<script src=\"[a-z0-9_-]+\.js)(\?v=[0-9a-f]+)?\"#\1?v=$VER\"#" pokemon-game.html
-  echo "→ Stamped asset version v=$VER into pokemon-game.html"
+  # The shared stylesheet is cache-busted the same way, on both pages.
+  sed -i '' -E "s#(href=\"theme\.css)(\?v=[0-9a-f]+)?\"#\1?v=$VER\"#" pokemon-game.html deck-builder.html
+  echo "→ Stamped asset version v=$VER into pokemon-game.html + deck-builder.html"
 fi
 
 # ── 6. Stage everything and show what's about to ship ─────────────────────────
