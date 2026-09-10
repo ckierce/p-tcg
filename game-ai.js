@@ -1489,7 +1489,27 @@ function aiBuildTurnPlan(p2, p1, opts = {}) {
 function aiDelayMs() {
   return aiDifficulty === 'easy' ? 1400 : aiDifficulty === 'hard' ? 600 : 1000;
 }
-const aiDelay = ms => new Promise(r => setTimeout(r, ms));
+// Wait at least `ms`, then ALSO wait until every queued / visible flash has
+// finished. The flash queue plays strictly one panel at a time, so if the AI
+// only used a fixed delay the board would run several seconds ahead of the
+// narration ("30 damage" already on the card while the screen still says
+// "attaches Fire Energy"). Capped so a wedged overlay can never stall the AI.
+// Headless (ai-sim / tests): no document, queue always empty → resolves at once.
+const aiDelay = ms => new Promise(r => setTimeout(r, ms)).then(_aiWaitForFlashes);
+function _aiWaitForFlashes() {
+  return new Promise(resolve => {
+    const deadline = Date.now() + 12000;
+    const check = () => {
+      const busy =
+        (typeof _flashBusy !== 'undefined' && _flashBusy) ||
+        (typeof _flashQueue !== 'undefined' && _flashQueue.length > 0) ||
+        (typeof _visibleFlashRemaining === 'function' && _visibleFlashRemaining() > 0);
+      if (!busy || Date.now() > deadline) return resolve();
+      setTimeout(check, 120);
+    };
+    check();
+  });
+}
 
 function aiLog(msg, important = false) { addLog(`${AI_LOG_PREFIX} ${msg}`, important); }
 
@@ -3107,8 +3127,11 @@ window.addEventListener('load', () => {
   }
   {
     const _origLoad = loadDeck;
-    loadDeck = async function(fKey, deckName) {
-      await _origLoad(fKey, deckName);
+    // Forward EVERY argument: loadDeck(fKey, deckName, forPlayer) — dropping
+    // the third one re-introduced the RANDOM-button race this wrapper sits in
+    // front of (see loadRandomDeck in game-init.js).
+    loadDeck = async function(...args) {
+      await _origLoad(...args);
       if (document.getElementById('vs-computer-panel')?.style.display !== 'none') checkVsCpuReady();
     };
   }

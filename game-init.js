@@ -346,15 +346,18 @@ async function loadRandomDeck(player) {
       return;
     }
     const pick = all[Math.floor(Math.random() * all.length)];
-    await loadDeck(pick.fKey, pick.deckName);
+    await loadDeck(pick.fKey, pick.deckName, player);
   } catch (e) {
     showToast('Error picking random deck', true);
     console.error('loadRandomDeck error:', e);
   }
 }
 
-async function loadDeck(fKey, deckName) {
-  const p = loadingForPlayer;
+async function loadDeck(fKey, deckName, forPlayer = loadingForPlayer) {
+  // `forPlayer` is captured by the caller BEFORE any await: loadRandomDeck used
+  // to read the shared `loadingForPlayer` global after its Firebase fetch, so
+  // clicking P1 RANDOM then P2 RANDOM back to back loaded both decks into P2.
+  const p = forPlayer;
   if (!p) { showToast('Select a player first', true); return; }
   const key = deckName.replace(/[.#$[\]]/g, '_');
   closeLoadModal();
@@ -527,6 +530,7 @@ async function doneSetup() {
   G._setupAdvancing = false;
   G._doneSetupRunning = false;
   document.getElementById('end-turn-btn').textContent = 'END TURN';
+  setMidline(''); // drop the "place your Active" prompt now that play has started
 
   // Opening draw — must happen on the firstPlayer's OWN client in networked
   // play. If P1 (the host) drew for P2 here, P1's view of P2's hand is stale
@@ -1699,6 +1703,7 @@ function receiveGameState(state) {
   if (G.phase !== 'SETUP') {
     const endBtn = document.getElementById('end-turn-btn');
     if (endBtn) endBtn.textContent = 'END TURN';
+    if (wasSetup && typeof setMidline === 'function') setMidline('');
   }
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
@@ -1883,9 +1888,17 @@ function applyRoleVisibility() {
       endBtn.style.opacity = canAct ? '' : '0.4';
       endBtn.style.pointerEvents = canAct ? '' : 'none';
       endBtn.disabled = !canAct; // real disabled state: skipped by Tab, announced by screen readers
-      if (isAiTurn) {
+      const myPromote = G.phase === 'PROMOTE' && G.pendingPromotion === myRole;
+      if (myPromote) {
+        // Your knockout on the opponent's turn: the bench is the control now,
+        // not this button — say so instead of "AI THINKING..." / "END TURN".
+        endBtn.textContent = 'CHOOSE A POKÉMON';
+        endBtn.style.opacity = '0.7';
+        endBtn.style.pointerEvents = 'none';
+        endBtn.disabled = true;
+      } else if (isAiTurn) {
         endBtn.textContent = 'AI THINKING...';
-      } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING FOR P2' || endBtn.textContent === "I'M READY" || endBtn.textContent === 'STARTING...' || endBtn.textContent === 'BOTH READY' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
+      } else if (!endBtn.textContent || ['WAITING FOR P1', 'WAITING FOR P2', "I'M READY", 'STARTING...', 'BOTH READY', 'WAITING...', 'AI THINKING...', 'CHOOSE A POKÉMON'].includes(endBtn.textContent)) {
         endBtn.textContent = 'END TURN';
       }
     }
