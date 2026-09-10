@@ -1187,14 +1187,14 @@ function showResumePanel() {
   showPanel('resume-panel');
   setResumeRole(1);
   const list = document.getElementById('resume-game-list');
-  list.innerHTML = '<div style="font-size:9px;color:var(--muted)">Loading games...</div>';
+  list.innerHTML = '<div style="font-size:11px;color:var(--muted)">Loading games...</div>';
   db.ref('games').once('value', snap => {
     const games = snap.val();
-    if (!games) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
+    if (!games) { list.innerHTML = '<div style="font-size:11px;color:var(--muted)">No active games found.</div>'; return; }
     const active = Object.entries(games)
       .filter(([, d]) => d.state && d.state.started)
       .sort(([, a], [, b]) => (b.created || 0) - (a.created || 0));
-    if (!active.length) { list.innerHTML = '<div style="font-size:9px;color:var(--muted)">No active games found.</div>'; return; }
+    if (!active.length) { list.innerHTML = '<div style="font-size:11px;color:var(--muted)">No active games found.</div>'; return; }
     list.innerHTML = active.map(([code, d]) => {
       const s = d.state;
       const turnLabel = s.phase === 'PROMOTE' ? `P${s.pendingPromotion} PROMOTING` : `P${s.turn} TURN`;
@@ -1206,12 +1206,12 @@ function showResumePanel() {
       return `<div onclick="resumeGame('${code}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;cursor:pointer;text-align:left;transition:border-color .1s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${code}</span>
-          <span style="font-size:8px;color:var(--muted)">${age}m ago</span>
+          <span style="font-size:10px;color:var(--muted)">${age}m ago</span>
         </div>
-        <div style="font-size:9px;color:var(--text2);margin-top:4px">
+        <div style="font-size:11px;color:var(--text2);margin-top:4px">
           🔵 ${d.p1DeckName||'?'} &nbsp;vs&nbsp; 🔴 ${d.p2DeckName||'?'}
         </div>
-        <div style="font-size:8px;color:var(--muted);margin-top:3px">
+        <div style="font-size:10px;color:var(--muted);margin-top:3px">
           ${turnLabel} &nbsp;·&nbsp; P1 prizes: ${p1rem} left &nbsp;·&nbsp; P2 prizes: ${p2rem} left
         </div>
       </div>`;
@@ -1851,6 +1851,7 @@ function applyRoleVisibility() {
       // doneSetup (vsComputer/single-player).
       endBtn.style.opacity = '';
       endBtn.style.pointerEvents = '';
+      endBtn.disabled = false;
       const myReady    = !!setupReady[myRole];
       const oppRole    = myRole === 1 ? 2 : 1;
       const oppReady   = !!setupReady[oppRole];
@@ -1881,6 +1882,7 @@ function applyRoleVisibility() {
                      (G.phase === 'PROMOTE' && G.pendingPromotion === myRole));
       endBtn.style.opacity = canAct ? '' : '0.4';
       endBtn.style.pointerEvents = canAct ? '' : 'none';
+      endBtn.disabled = !canAct; // real disabled state: skipped by Tab, announced by screen readers
       if (isAiTurn) {
         endBtn.textContent = 'AI THINKING...';
       } else if (!endBtn.textContent || endBtn.textContent === 'WAITING FOR P1' || endBtn.textContent === 'WAITING FOR P2' || endBtn.textContent === "I'M READY" || endBtn.textContent === 'STARTING...' || endBtn.textContent === 'BOTH READY' || endBtn.textContent === 'WAITING...' || endBtn.textContent === 'AI THINKING...') {
