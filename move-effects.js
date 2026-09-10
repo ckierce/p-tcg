@@ -140,10 +140,12 @@ const _benchDamage20 = () => _benchDamageN(20);
 // next turn (after W/R). Consumed via `pounceActive` in applyDamageModifiers;
 // benching either Pokémon ends it (clearActiveOnlyEffects / endTurnEffectsCleanup).
 const _reduceIncomingBy10 = () => ({
-  postAttack: async ({ myActive, atk }) => {
+  postAttack: async ({ myActive, oppActive, atk }) => {
     if (!myActive) return;
     myActive.pounceActive = true;
-    addLog(`${atk.name}: incoming attack next turn does 10 less damage!`, true);
+    myActive.pounceReduction = 10;
+    myActive.pounceFrom = oppActive?.uid || null;
+    addLog(`${atk.name}: ${oppActive?.name || 'the Defending Pokémon'}'s attack next turn does 10 less damage!`, true);
   }
 });
 
@@ -195,14 +197,19 @@ const _smokescreen = () => ({
   }
 });
 
-// Tail Wag / Leer: flip — heads = defending Pokémon can't attack this Pokémon next turn
+// Tail Wag / Leer: flip — heads = defending Pokémon can't attack this Pokémon next turn.
+// "(Benching either Pokémon ends this effect.)" — remember the defender's uid so
+// only THAT Pokémon is blocked (see isImmuneToAttackFrom in game-utils.js); the
+// user leaving Active clears the flag via clearActiveOnlyEffects. The flag
+// expires in endTurnEffectsCleanup at the end of the OPPONENT's turn.
 const _tailWag = () => ({
-  postAttack: async ({ myActive, atk }) => {
+  postAttack: async ({ myActive, oppActive, atk }) => {
     if (!myActive) return;
     const heads = await flipCoin(`${atk.name}: Heads = opponent can't attack ${myActive.name} next turn!`);
     if (heads) {
       myActive.immuneToAttack = true;
-      addLog(`${atk.name}: HEADS — opponent can't attack ${myActive.name} next turn!`, true);
+      myActive.immuneToAttackFrom = oppActive?.uid || null;
+      addLog(`${atk.name}: HEADS — ${oppActive?.name || 'the Defending Pokémon'} can't attack ${myActive.name} next turn!`, true);
     } else {
       addLog(`${atk.name}: TAILS — no effect.`);
     }
@@ -1417,10 +1424,11 @@ const MOVE_EFFECTS = {
 
   // Snivel (Cubone): reduce incoming damage by 20 next turn
   'Snivel': {
-    postAttack: async ({ myActive, atk }) => {
+    postAttack: async ({ myActive, oppActive, atk }) => {
       if (!myActive) return;
       myActive.pounceActive = true; myActive.pounceReduction = 20;
-      addLog(`${atk.name}: incoming attack next turn does 20 less damage!`, true);
+      myActive.pounceFrom = oppActive?.uid || null;
+      addLog(`${atk.name}: ${oppActive?.name || 'the Defending Pokémon'}'s attack next turn does 20 less damage!`, true);
     }
   },
 
@@ -1709,20 +1717,37 @@ function clearLastAttack(playerWhoseActiveChanged) {
   G.lastAttackOnPlayer[playerWhoseActiveChanged] = null;
 }
 
+// Called from _finishEndTurn AFTER the turn has flipped:
+//   prevPlayer = whose turn just ENDED, newPlayer = whose turn is STARTING.
+//
+// Two shapes of "next turn" flag, and they expire on OPPOSITE sides:
+//   • Self-buffs set during the user's own turn that protect DURING the
+//     opponent's turn (Tail Wag/Leer immunity, Pounce/Growl reduction, and
+//     the defender* flags in endTurn): they must survive the first boundary
+//     (user → opponent) and expire at the second (opponent → user), when the
+//     flag-holder is `newPlayer`.
+//   • Debuffs placed ON the opponent during the user's turn (Headache's
+//     Trainer block, and cantRetreat/disabledAttack/smokescreened in endTurn):
+//     they last through the victim's upcoming turn and expire when THAT turn
+//     ends — when the victim is `prevPlayer`.
+// Clearing on the wrong side wipes the flag before it can ever apply — that
+// was the Tail Wag/Leer bug (cleared on prevPlayer = the user, at the end of
+// the user's own turn) and the Headache bug (cleared on newPlayer = the
+// victim, at the START of the turn it was meant to block).
 function endTurnEffectsCleanup(prevPlayer, newPlayer) {
-  // Tail Wag / Leer immunity: clears after one attack turn
-  const prevOppActive = G.players[prevPlayer].active;
-  if (prevOppActive?.immuneToAttack) prevOppActive.immuneToAttack = false;
-  // Pounce / Growl: protects DURING the opponent's turn and expires when that
-  // turn ends — at which point the flag-holder is `newPlayer` (the same rule the
-  // defender* flags follow in endTurn). Clearing BOTH sides here used to wipe the
-  // flag at the end of the user's own turn, before it could ever apply.
   const nextActive = G.players[newPlayer].active;
-  if (nextActive?.pounceActive) { nextActive.pounceActive = false; nextActive.pounceReduction = 0; }
-  // Headache: unblocks the new player at the start of their turn
-  if (G.players[newPlayer].trainerBlocked) {
-    G.players[newPlayer].trainerBlocked = false;
-    addLog(`P${newPlayer} can play Trainer cards again.`);
+  // Tail Wag / Leer immunity: the user's turn is starting again → expired.
+  if (nextActive?.immuneToAttack) {
+    nextActive.immuneToAttack = false;
+    nextActive.immuneToAttackFrom = null;
+    addLog(`${nextActive.name} can be attacked again.`);
+  }
+  // Pounce / Growl: same shape.
+  if (nextActive?.pounceActive) { nextActive.pounceActive = false; nextActive.pounceReduction = 0; nextActive.pounceFrom = null; }
+  // Headache: the blocked player's turn just ended → unblock them.
+  if (G.players[prevPlayer].trainerBlocked) {
+    G.players[prevPlayer].trainerBlocked = false;
+    addLog(`P${prevPlayer} can play Trainer cards again.`);
   }
 }
 

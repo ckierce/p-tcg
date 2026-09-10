@@ -26,7 +26,7 @@ const {
   coerceCardArrays, mergeGameStateDefaults,
   computeBetweenTurnDamage,
   parseDiscardEnergyCost, eligibleEnergyForDiscard,
-  clearActiveOnlyEffects,
+  clearActiveOnlyEffects, isImmuneToAttackFrom, pounceReductionFor,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   buildEvolutionStackUnder, devolveTopStage,
   // Multi-status helpers (added when status went from single-string to 3 slots)
@@ -5329,6 +5329,97 @@ section('REGRESSION: getMoveEffect refuses same-named vanilla attacks');
 // effect. It must be computed from the BOTTOM (local) player's board and drive
 // the #opp-hand-reveal strip above the opponent's bench.
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: Tail Wag / Leer immunity and Headache expired on the WRONG side
+// of the turn boundary, so neither ever took effect.
+//   • endTurnEffectsCleanup cleared immuneToAttack on prevPlayer's Active —
+//     i.e. the Tail Wag user, at the end of its OWN turn. Must survive until
+//     the opponent's turn ends (flag-holder is newPlayer at that boundary).
+//   • Headache's trainerBlocked was cleared on newPlayer at the START of the
+//     turn it was meant to block. Must clear on prevPlayer (victim's turn over).
+// Also: "(Benching either Pokémon ends this effect.)" — the flag remembers the
+// defender's uid; a different Pokémon that comes up may attack.
+// ══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: Tail Wag / Leer immunity + Headache expire on the correct turn');
+{
+  assert('GAME_STATE_DEFAULTS has immuneToAttackFrom (round-trips through Firebase)',
+    'immuneToAttackFrom' in GAME_STATE_DEFAULTS && GAME_STATE_DEFAULTS.immuneToAttackFrom === null);
+
+  // Helper semantics
+  const eevee = { name: 'Eevee', uid: 'ee1', immuneToAttack: true, immuneToAttackFrom: 'rat1' };
+  const rattata = { name: 'Rattata', uid: 'rat1' };
+  const pidgey = { name: 'Pidgey', uid: 'pg1' };
+  assert('immune: original defender is blocked', isImmuneToAttackFrom(eevee, rattata) === true);
+  assert('immune: a different Pokémon (defender was benched) may attack', isImmuneToAttackFrom(eevee, pidgey) === false);
+  assert('immune: no flag → not immune', isImmuneToAttackFrom({ name: 'Eevee', uid: 'ee1' }, rattata) === false);
+  assert('immune: legacy flag without uid blocks everyone',
+    isImmuneToAttackFrom({ immuneToAttack: true }, pidgey) === true);
+  assert('immune: null defender → false', isImmuneToAttackFrom(null, rattata) === false);
+  {
+    const c = { immuneToAttack: true, immuneToAttackFrom: 'x' };
+    clearActiveOnlyEffects(c);
+    assert('clearActiveOnlyEffects (user benched) clears immuneToAttack + From',
+      c.immuneToAttack === false && c.immuneToAttackFrom === null);
+  }
+
+  // Turn-boundary timing — drive the real endTurnEffectsCleanup in a sandbox.
+  try {
+    const vm = require('vm');
+    const fs = require('fs');
+    const me = fs.readFileSync('./move-effects.js', 'utf8');
+    const mkG = () => ({ players: {
+      1: { active: { name: 'Eevee', uid: 'ee1', immuneToAttack: true, immuneToAttackFrom: 'rat1', pounceActive: true, pounceReduction: 10, pounceFrom: 'rat1' }, bench: [], trainerBlocked: false },
+      2: { active: { name: 'Rattata', uid: 'rat1' }, bench: [], trainerBlocked: true },
+    } });
+    const ctx = { console, G: mkG(), addLog: () => {}, Math, parseInt };
+    ctx.globalThis = ctx; vm.createContext(ctx);
+    vm.runInContext(me + ';globalThis.endTurnEffectsCleanup=endTurnEffectsCleanup;', ctx);
+    const cleanup = ctx.endTurnEffectsCleanup;
+
+    // P1 used Tail Wag (heads) and Psyduck's Headache-equivalent on P2 this turn.
+    // Boundary 1: P1's turn ends, P2's begins.
+    cleanup(1, 2);
+    let G = ctx.G;
+    assert('boundary P1→P2: Eevee is STILL immune during P2\'s turn', G.players[1].active.immuneToAttack === true);
+    assert('boundary P1→P2: Eevee keeps immuneToAttackFrom', G.players[1].active.immuneToAttackFrom === 'rat1');
+    assert('boundary P1→P2: Pounce reduction still active during P2\'s turn', G.players[1].active.pounceActive === true);
+    assert('boundary P1→P2: P2 is STILL Trainer-blocked during their turn', G.players[2].trainerBlocked === true);
+    // Boundary 2: P2's turn ends, P1's begins.
+    cleanup(2, 1);
+    assert('boundary P2→P1: Eevee immunity expired', G.players[1].active.immuneToAttack === false);
+    assert('boundary P2→P1: immuneToAttackFrom cleared', G.players[1].active.immuneToAttackFrom === null);
+    assert('boundary P2→P1: Pounce expired', G.players[1].active.pounceActive === false && G.players[1].active.pounceFrom === null);
+    assert('boundary P2→P1: P2 Trainer block lifted', G.players[2].trainerBlocked === false);
+  } catch (e) {
+    console.log('  (sandbox load failed — skipping endTurnEffectsCleanup timing check:', e.message, ')');
+  }
+
+  // Pounce / Growl / Snivel — same "(Benching either Pokémon ends this effect.)"
+  // clause, and Snivel's −20 used to be hard-coded to −10 in applyDamageModifiers.
+  assert('GAME_STATE_DEFAULTS has pounceFrom', 'pounceFrom' in GAME_STATE_DEFAULTS && GAME_STATE_DEFAULTS.pounceFrom === null);
+  const persian = { name: 'Persian', uid: 'per1', pounceActive: true, pounceReduction: 10, pounceFrom: 'rat1' };
+  const cubone  = { name: 'Cubone',  uid: 'cub1', pounceActive: true, pounceReduction: 20, pounceFrom: 'rat1' };
+  assertEqual('Pounce: −10 vs the original defender', pounceReductionFor(persian, rattata), 10);
+  assertEqual('Pounce: 0 vs a different attacker (defender was benched)', pounceReductionFor(persian, pidgey), 0);
+  assertEqual('Snivel: −20 vs the original defender (not −10)', pounceReductionFor(cubone, rattata), 20);
+  assertEqual('Pounce: no flag → 0', pounceReductionFor({ name: 'Persian' }, rattata), 0);
+  assertEqual('Pounce: legacy flag without uid applies to everyone', pounceReductionFor({ pounceActive: true }, pidgey), 10);
+  {
+    const c = { pounceActive: true, pounceReduction: 20, pounceFrom: 'x' };
+    clearActiveOnlyEffects(c);
+    assert('clearActiveOnlyEffects clears pounceFrom', c.pounceActive === false && c.pounceFrom === null);
+  }
+  assert('game-actions.js: applyDamageModifiers uses pounceReductionFor (honors Snivel −20)',
+    /pounceReductionFor\(oppActive, myActive\)/.test(require('fs').readFileSync('./game-actions.js', 'utf8')));
+
+  // Source guards: performAttack and the AI planner must use the uid-aware helper.
+  const ga = require('fs').readFileSync('./game-actions.js', 'utf8');
+  const ai = require('fs').readFileSync('./game-ai.js', 'utf8');
+  assert('game-actions.js: performAttack immunity check uses isImmuneToAttackFrom', /isImmuneToAttackFrom\(oppActive, myActive\)/.test(ga));
+  assert('game-actions.js: attack menu greys out attacks blocked by Tail Wag/Leer', /isImmuneTarget/.test(ga));
+  assert('game-ai.js: planner skips attacks blocked by Tail Wag/Leer', /isImmuneToAttackFrom\(targetCard, attacker\)/.test(ai));
+}
+
 section('REGRESSION: Clairvoyance reveals opponent hand above their bench');
 {
   const fs = require('fs');
@@ -6043,6 +6134,66 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       assert('Growl / Pounce: expires when the opponent\'s turn ends', pika.pounceActive === false);
       const growlProf = run('attackProfile')(pika.attacks.find(a => a.name === 'Growl'), pika, G.players[2].active, {});
       assert('AI: Growl is modelled as −10 protection', growlProf.protect?.kind === 'minus10');
+
+      // ── REGRESSION (end-to-end): Tail Wag / Leer, Snivel, Headache ──
+      // Tail Wag (Eevee): heads → the Defending Pokémon can't attack Eevee next turn.
+      // Used to be cleared at the end of Eevee's OWN turn, so it never applied.
+      run("flipCoin = function(){ return Promise.resolve(true); };");
+      G = freshG();
+      const eevee = mkId('base2-51', { attachedEnergy: [Li] });
+      const jabber = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      G.players[1].active = eevee; G.players[2].active = jabber;
+      await run('performAttack')(1, eevee.attacks.find(a => a.name === 'Tail Wag'));
+      await settle();
+      assert('Tail Wag: Eevee flagged immune, bound to the Defending Pokémon', eevee.immuneToAttack === true && eevee.immuneToAttackFrom === jabber.uid);
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      assert('Tail Wag: immunity survives Eevee\'s owner ending the turn', eevee.immuneToAttack === true && G.turn === 2);
+      await run('performAttack')(2, jabber.attacks.find(a => a.name === 'Jab'));
+      await settle();
+      assertEqual('Tail Wag: Hitmonchan\'s Jab is prevented (no damage to Eevee)', eevee.damage, 0);
+      assert('Tail Wag: the blocked attack still ends the opponent\'s turn', G.turn === 1);
+      assert('Tail Wag: immunity expires once the opponent\'s turn ends', eevee.immuneToAttack === false && eevee.immuneToAttackFrom === null);
+
+      // "(Benching either Pokémon ends this effect.)" — a different Pokémon may attack Eevee.
+      G = freshG();
+      const eevee2 = mkId('base2-51', { attachedEnergy: [Li] });
+      const jabA = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      const jabB = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      G.players[1].active = eevee2; G.players[2].active = jabA; G.players[2].bench[0] = jabB;
+      await run('performAttack')(1, eevee2.attacks.find(a => a.name === 'Tail Wag'));
+      await settle();
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      // Opponent benches the original defender and promotes a fresh Hitmonchan.
+      run('clearActiveOnlyEffects')(jabA); G.players[2].bench[0] = jabA; G.players[2].active = jabB;
+      await run('performAttack')(2, jabB.attacks.find(a => a.name === 'Jab'));
+      await settle();
+      assertEqual('Tail Wag: a different attacker is NOT blocked (Jab 20 ×2 Fighting weakness = 40)', eevee2.damage, 40);
+
+      // Snivel (Cubone): −20, not the hard-coded −10.
+      G = freshG();
+      const cubone = mkId('base2-50', { attachedEnergy: [Fi] });
+      const jabC = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      G.players[1].active = cubone; G.players[2].active = jabC;
+      await run('performAttack')(1, cubone.attacks.find(a => a.name === 'Snivel'));
+      await settle();
+      assert('Snivel: Cubone flagged with a 20-point reduction bound to the defender', cubone.pounceActive === true && cubone.pounceReduction === 20 && cubone.pounceFrom === jabC.uid);
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      await run('performAttack')(2, jabC.attacks.find(a => a.name === 'Jab'));
+      await settle();
+      assertEqual('Snivel: Jab 20 − 20 = 0 damage to Cubone', cubone.damage, 0);
+
+      // Headache (Psyduck): opponent can't play Trainers during THEIR next turn.
+      // Used to be unblocked at the START of that turn, so it never applied.
+      G = freshG();
+      const psyduck = mkId('base3-53', { attachedEnergy: [{ name: 'Psychic Energy', supertype: 'Energy' }] });
+      G.players[1].active = psyduck; G.players[2].active = mkBy('Hitmonchan', 'Jab', { attachedEnergy: [Fi] });
+      await run('performAttack')(1, psyduck.attacks.find(a => a.name === 'Headache'));
+      await settle();
+      assert('Headache: P2 is Trainer-blocked', G.players[2].trainerBlocked === true);
+      if (G.turn === 1) { run('endTurn')(); await settle(); }
+      assert('Headache: block persists into P2\'s turn', G.players[2].trainerBlocked === true && G.turn === 2);
+      run('endTurn')(); await settle();
+      assert('Headache: block lifts when P2\'s turn ends', G.players[2].trainerBlocked === false && G.turn === 1);
 
       // Fly (Flying Pikachu): heads = 30 + full protection; tails = nothing at all.
       run("flipCoin = function(){ return Promise.resolve(true); };");

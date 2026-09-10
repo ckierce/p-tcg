@@ -397,10 +397,16 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
         // Poison and Burn never prevent attacking. Read special with legacy fallback.
         const specialStatus = card.special ?? card.status ?? null;
         const isStatusBlocked = specialStatus === 'paralyzed' || specialStatus === 'asleep';
-        // Agility/Barrier (defenderFullEffects) and Tail Wag (immuneToAttack) are handled
-        // inside performAttack — don't grey out attacks here, player should still be able to select them
-        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked;
+        // Agility/Barrier (defenderFullEffects) is handled inside performAttack —
+        // don't grey out attacks for it; the attack still resolves (minus effects).
+        // Tail Wag / Leer immunity DOES prevent the attack outright, so grey it out
+        // here rather than let the player click it and forfeit their attack.
+        const _oppActiveForMenu = G.players[player === 1 ? 2 : 1].active;
+        const isImmuneTarget = typeof isImmuneToAttackFrom === 'function' &&
+          isImmuneToAttackFrom(_oppActiveForMenu, card);
+        const blocked = !canAfford || isDisabled || isLeekSlapUsed || isConversion1Blocked || isStatusBlocked || isImmuneTarget;
         const subLabel = isStatusBlocked ? `${costStr} · CANNOT ATTACK (${specialStatus.toUpperCase()})` :
+                         isImmuneTarget ? `${costStr} · CAN'T ATTACK ${(_oppActiveForMenu?.name || '').toUpperCase()} THIS TURN` :
                          isLeekSlapUsed ? `${costStr} · USED (once only)` :
                          isDisabled ? `${costStr} · DISABLED` :
                          isConversion1Blocked ? `${costStr} · NO WEAKNESS TO CHANGE` :
@@ -1086,10 +1092,14 @@ async function applyDamageModifiers(dmg, atk, player, myActive, oppActive) {
       addLog(`Defender reduces damage to ${dmg}.`);
     }
 
-    // Pounce (Persian): reduce damage if defender used Pounce last turn
-    if (oppActive.pounceActive && dmg > 0) {
-      dmg = Math.max(0, dmg - 10);
-      addLog(`Pounce: ${oppActive.name} reduces incoming damage by 10 (now ${dmg}).`);
+    // Pounce / Growl (−10) / Snivel (−20): only vs the Pokémon it was used
+    // against. Used to hard-code −10, so Snivel's 20 was silently halved.
+    const _pounceCut = typeof pounceReductionFor === 'function'
+      ? pounceReductionFor(oppActive, myActive)
+      : (oppActive.pounceActive ? (oppActive.pounceReduction || 10) : 0);
+    if (_pounceCut > 0 && dmg > 0) {
+      dmg = Math.max(0, dmg - _pounceCut);
+      addLog(`${oppActive.name} reduces incoming damage by ${_pounceCut} (now ${dmg}).`);
     }
   }
 
@@ -1512,8 +1522,8 @@ async function performAttack(player, atk) {
     // would cause a 5+ second double-flash on every Agility'd attack.
     // fall through — the attack still resolves; protected flag handles the rest
   }
-  if (oppActive?.immuneToAttack) {
-    addLog(`${oppActive.name} cannot be attacked this turn!`, true);
+  if (typeof isImmuneToAttackFrom === 'function' ? isImmuneToAttackFrom(oppActive, myActive) : oppActive?.immuneToAttack) {
+    addLog(`${oppActive.name} cannot be attacked by ${myActive?.name || 'that Pokémon'} this turn!`, true);
     showToast(`${oppActive.name} cannot be attacked!`, true);
     showBlockedFlash(player, myActive?.name || '?', atk.name, `${oppActive.name} IMMUNE TO ATTACK`);
     endTurn();

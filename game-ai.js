@@ -740,7 +740,10 @@ function aiFinalDamage(raw, plus, attacker, defender, skipWR, opts = {}) {
   if (defender?.defenderThreshold && dmg <= defender.defenderThreshold) return 0;
   if (typeof hasInvisibleWall === 'function' && defender && hasInvisibleWall(defender) && dmg >= 30) return 0;
   if (defender?.defender) dmg = Math.max(0, dmg - 20);
-  if (defender?.pounceActive && dmg > 0) dmg = Math.max(0, dmg - (defender.pounceReduction || 10));
+  if (defender?.pounceActive && dmg > 0) {
+    const cut = typeof pounceReductionFor === 'function' ? pounceReductionFor(defender, attacker) : (defender.pounceReduction || 10);
+    dmg = Math.max(0, dmg - cut);
+  }
   if (opts.attackReduction) dmg = Math.max(0, dmg - opts.attackReduction);
   return dmg;
 }
@@ -1128,6 +1131,9 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
           for (const atk of moves) {
             if (!canAffordAttack(attached, atk.cost || [], attacker)) continue;
             if (attacker.disabledAttack && attacker.disabledAttack === atk.name) continue;
+            // Tail Wag / Leer: this target can't be attacked by this attacker.
+            // (A different attacker — e.g. after a switch preStep — is fine.)
+            if (typeof isImmuneToAttackFrom === 'function' && isImmuneToAttackFrom(targetCard, attacker)) continue;
 
             const dist = aiDamageDistribution(atk, plannedAttacker, targetCard, {
               plus: pp * 10, attackerPlayerNum: meNum,
@@ -1542,7 +1548,9 @@ async function executePlanTail(plan, delayMs) {
     await aiDelay(delayMs * 0.5);
   }
 
-  if (plan.attack && p2.active && p1.active) {
+  const _immuneNow = typeof isImmuneToAttackFrom === 'function' && isImmuneToAttackFrom(p1.active, p2.active);
+  if (_immuneNow && plan.attack) aiLog(`can't attack ${p1.active?.name} this turn (Tail Wag / Leer).`, true);
+  if (plan.attack && p2.active && p1.active && !_immuneNow) {
     const attackToUse = plan.attack;
     aiLog(`uses ${attackToUse.name}${plan.metronomeTarget ? ` (copying ${plan.metronomeTarget})` : ''}!`, true);
     aiThinking = false;
