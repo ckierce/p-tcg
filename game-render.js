@@ -949,6 +949,9 @@ function enrichCard(card) {
   }
   return {
     ...card,
+    // Prefer the catalogue's image paths: cards.json now points at the local
+    // card-images/ mirror, while decks saved earlier carry the slow remote URL.
+    images: { ...(card.images || {}), ...(full.images || {}) },
     types: (Array.isArray(card.types) && card.types.length) ? card.types : (full.types || card.types || []),
     subtypes: safeSubtypes.length ? safeSubtypes : (full.subtypes || []),
     evolvesFrom: full.evolvesFrom || card.evolvesFrom || null,
