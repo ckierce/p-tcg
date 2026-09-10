@@ -862,8 +862,9 @@ select:focus { border-color: var(--accent); }
     transform: translateX(20px);
     transition: opacity .2s, transform .2s;
   }
-  .browser.mobile-hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); }
-  .deck-panel.mobile-visible { opacity: 1; pointer-events: all; transform: translateX(0); }
+  .browser.mobile-hidden { opacity: 0; pointer-events: none; transform: translateX(-20px); visibility: hidden; }
+  .deck-panel { visibility: hidden; }
+  .deck-panel.mobile-visible { opacity: 1; pointer-events: all; transform: translateX(0); visibility: visible; }
 
   .controls { gap: 6px; }
   .search-wrap { min-width: 0; }
@@ -1128,7 +1129,7 @@ function cardHTML(c) {
   const deckFull = deckTotal() >= MAX_DECK;
   const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
   const imgSrc = c.images?.small || '';
-  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-count="${qty}" tabindex="0" role="button" aria-label="Add ${c.name} to deck" onclick="addCard('${c.id}')" oncontextmenu="event.preventDefault();openCardZoom('${c.id}')" title="${c.name} — click to add, right-click to view">
+  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-id="${c.id}" data-count="${qty}" tabindex="0" role="button" aria-label="Add ${c.name} to deck" onclick="addCard('${c.id}')" oncontextmenu="event.preventDefault();openCardZoom('${c.id}')" title="${c.name} — click to add, right-click to view">
     <button class="card-zoom-btn" type="button" aria-label="View ${c.name}" onclick="event.stopPropagation();openCardZoom('${c.id}')">🔍</button>
     <div class="card-img-wrap">
       ${imgSrc
@@ -1146,6 +1147,30 @@ function cardHTML(c) {
       </div>
     </div>
   </div>`;
+}
+
+// Update in-deck / maxed / count state on the existing tiles WITHOUT rebuilding
+// the grid. Rebuilding on every add re-created all 205 <img>s, so each click
+// made every tile flash its placeholder.
+function refreshGridState() {
+  const deckFull = deckTotal() >= MAX_DECK;
+  document.querySelectorAll('.card-item[data-id], .card-list-item[data-id]').forEach(el => {
+    const id = el.dataset.id;
+    const card = allCards.find(c => c.id === id);
+    if (!card) return;
+    const qty = deck[id] ? deck[id].qty : 0;
+    const atMax = qty >= getMaxCopies(card);
+    el.classList.toggle('in-deck', qty > 0);
+    el.classList.toggle('maxed', atMax || (deckFull && qty === 0));
+    el.dataset.count = qty;
+    if (el.classList.contains('card-list-item')) {
+      let badge = el.querySelector('.cli-deck-qty');
+      if (qty > 0) {
+        if (!badge) { badge = document.createElement('span'); badge.className = 'cli-deck-qty'; el.insertBefore(badge, el.querySelector('.cli-more')); }
+        badge.textContent = `×${qty}`;
+      } else if (badge) badge.remove();
+    }
+  });
 }
 
 function renderGrid() {
@@ -1218,6 +1243,7 @@ function renderGrid() {
   }
 
   grid.innerHTML = html;
+  grid.querySelectorAll('.card-img-wrap img, .cli-thumb img').forEach(i => { if (i.complete && i.naturalWidth > 0) i.parentElement.classList.add('loaded'); });
 
   if (!mobile && useList) {
     grid.querySelectorAll('.card-list-inner').forEach(el => el.classList.add('desktop-list'));
@@ -1372,7 +1398,7 @@ function addCard(id) {
   if (qty >= cardMax) { showToast(`Max ${cardMax} copies allowed!`, true); return; }
   if (deckTotal() >= MAX_DECK) { showToast('Deck is full! (60 cards)', true); return; }
   deck[id] = { card, qty: qty + 1 };
-  renderDeck(); renderGrid(); validateDeck(false);
+  renderDeck(); refreshGridState(); validateDeck(false);
 }
 
 function changeQty(id, delta) {
@@ -1386,7 +1412,7 @@ function changeQty(id, delta) {
   }
   if (newQty <= 0) { delete deck[id]; }
   else { deck[id].qty = newQty; }
-  renderDeck(); renderGrid(); validateDeck(false);
+  renderDeck(); refreshGridState(); validateDeck(false);
 }
 
 let _clearedDeck = null;
@@ -1395,14 +1421,14 @@ function clearDeck() {
   // Undoable rather than blocking: one mis-click used to wipe 60 cards for good
   _clearedDeck = deck;
   deck = {};
-  renderDeck(); renderGrid(); updateHeader();
+  renderDeck(); refreshGridState(); updateHeader();
   document.getElementById('validation-strip').className = 'validation-strip';
   showToast('Deck cleared', false, { label: 'Undo', fn: undoClear }, 6000);
 }
 function undoClear() {
   if (!_clearedDeck) return;
   deck = _clearedDeck; _clearedDeck = null;
-  renderDeck(); renderGrid(); validateDeck(false);
+  renderDeck(); refreshGridState(); validateDeck(false);
   showToast('Deck restored');
 }
 
@@ -1793,7 +1819,7 @@ async function loadDeck(encodedFKey, encodedName) {
   });
   document.getElementById('deck-name').value = name;
   lastUsedFolder = d.folder || fKey;
-  renderDeck(); renderGrid(); validateDeck(false);
+  renderDeck(); refreshGridState(); validateDeck(false);
   closeDecksModal();
   showToast(`"${name}" loaded!`);
 }

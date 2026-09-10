@@ -72,7 +72,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/1.png",
+      "small": "card-images/base1/1.jpg",
       "large": "https://images.pokemontcg.io/base1/1_hires.png"
     },
     "tcgplayer": {
@@ -183,7 +183,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/2.png",
+      "small": "card-images/base1/2.jpg",
       "large": "https://images.pokemontcg.io/base1/2_hires.png"
     },
     "tcgplayer": {
@@ -304,7 +304,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/3.png",
+      "small": "card-images/base1/3.jpg",
       "large": "https://images.pokemontcg.io/base1/3_hires.png"
     },
     "tcgplayer": {
@@ -422,7 +422,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/4.png",
+      "small": "card-images/base1/4.jpg",
       "large": "https://images.pokemontcg.io/base1/4_hires.png"
     },
     "tcgplayer": {
@@ -541,7 +541,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/5.png",
+      "small": "card-images/base1/5.jpg",
       "large": "https://images.pokemontcg.io/base1/5_hires.png"
     },
     "tcgplayer": {
@@ -663,7 +663,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/6.png",
+      "small": "card-images/base1/6.jpg",
       "large": "https://images.pokemontcg.io/base1/6_hires.png"
     },
     "tcgplayer": {
@@ -774,7 +774,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/7.png",
+      "small": "card-images/base1/7.jpg",
       "large": "https://images.pokemontcg.io/base1/7_hires.png"
     },
     "tcgplayer": {
@@ -886,7 +886,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/8.png",
+      "small": "card-images/base1/8.jpg",
       "large": "https://images.pokemontcg.io/base1/8_hires.png"
     },
     "tcgplayer": {
@@ -994,7 +994,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/9.png",
+      "small": "card-images/base1/9.jpg",
       "large": "https://images.pokemontcg.io/base1/9_hires.png"
     },
     "tcgplayer": {
@@ -1106,7 +1106,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/10.png",
+      "small": "card-images/base1/10.jpg",
       "large": "https://images.pokemontcg.io/base1/10_hires.png"
     },
     "tcgplayer": {
@@ -1221,7 +1221,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/11.png",
+      "small": "card-images/base1/11.jpg",
       "large": "https://images.pokemontcg.io/base1/11_hires.png"
     },
     "tcgplayer": {
@@ -1334,7 +1334,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/12.png",
+      "small": "card-images/base1/12.jpg",
       "large": "https://images.pokemontcg.io/base1/12_hires.png"
     },
     "tcgplayer": {
@@ -1450,7 +1450,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/13.png",
+      "small": "card-images/base1/13.jpg",
       "large": "https://images.pokemontcg.io/base1/13_hires.png"
     },
     "tcgplayer": {
@@ -1564,7 +1564,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/14.png",
+      "small": "card-images/base1/14.jpg",
       "large": "https://images.pokemontcg.io/base1/14_hires.png"
     },
     "tcgplayer": {
@@ -1675,7 +1675,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/15.png",
+      "small": "card-images/base1/15.jpg",
       "large": "https://images.pokemontcg.io/base1/15_hires.png"
     },
     "tcgplayer": {
@@ -1791,7 +1791,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/16.png",
+      "small": "card-images/base1/16.jpg",
       "large": "https://images.pokemontcg.io/base1/16_hires.png"
     },
     "tcgplayer": {
@@ -1906,7 +1906,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/17.png",
+      "small": "card-images/base1/17.jpg",
       "large": "https://images.pokemontcg.io/base1/17_hires.png"
     },
     "tcgplayer": {
@@ -2024,7 +2024,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/18.png",
+      "small": "card-images/base1/18.jpg",
       "large": "https://images.pokemontcg.io/base1/18_hires.png"
     },
     "tcgplayer": {
@@ -2145,7 +2145,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/19.png",
+      "small": "card-images/base1/19.jpg",
       "large": "https://images.pokemontcg.io/base1/19_hires.png"
     },
     "tcgplayer": {
@@ -2258,7 +2258,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/20.png",
+      "small": "card-images/base1/20.jpg",
       "large": "https://images.pokemontcg.io/base1/20_hires.png"
     },
     "tcgplayer": {
@@ -2367,7 +2367,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/21.png",
+      "small": "card-images/base1/21.jpg",
       "large": "https://images.pokemontcg.io/base1/21_hires.png"
     },
     "tcgplayer": {
@@ -2488,7 +2488,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/22.png",
+      "small": "card-images/base1/22.jpg",
       "large": "https://images.pokemontcg.io/base1/22_hires.png"
     },
     "tcgplayer": {
@@ -2604,7 +2604,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/23.png",
+      "small": "card-images/base1/23.jpg",
       "large": "https://images.pokemontcg.io/base1/23_hires.png"
     },
     "tcgplayer": {
@@ -2720,7 +2720,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/24.png",
+      "small": "card-images/base1/24.jpg",
       "large": "https://images.pokemontcg.io/base1/24_hires.png"
     },
     "tcgplayer": {
@@ -2836,7 +2836,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/25.png",
+      "small": "card-images/base1/25.jpg",
       "large": "https://images.pokemontcg.io/base1/25_hires.png"
     },
     "tcgplayer": {
@@ -2938,7 +2938,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/26.png",
+      "small": "card-images/base1/26.jpg",
       "large": "https://images.pokemontcg.io/base1/26_hires.png"
     },
     "tcgplayer": {
@@ -3057,7 +3057,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/27.png",
+      "small": "card-images/base1/27.jpg",
       "large": "https://images.pokemontcg.io/base1/27_hires.png"
     },
     "tcgplayer": {
@@ -3160,7 +3160,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/28.png",
+      "small": "card-images/base1/28.jpg",
       "large": "https://images.pokemontcg.io/base1/28_hires.png"
     },
     "tcgplayer": {
@@ -3273,7 +3273,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/29.png",
+      "small": "card-images/base1/29.jpg",
       "large": "https://images.pokemontcg.io/base1/29_hires.png"
     },
     "tcgplayer": {
@@ -3389,7 +3389,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/30.png",
+      "small": "card-images/base1/30.jpg",
       "large": "https://images.pokemontcg.io/base1/30_hires.png"
     },
     "tcgplayer": {
@@ -3500,7 +3500,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/31.png",
+      "small": "card-images/base1/31.jpg",
       "large": "https://images.pokemontcg.io/base1/31_hires.png"
     },
     "tcgplayer": {
@@ -3617,7 +3617,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/32.png",
+      "small": "card-images/base1/32.jpg",
       "large": "https://images.pokemontcg.io/base1/32_hires.png"
     },
     "tcgplayer": {
@@ -3732,7 +3732,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/33.png",
+      "small": "card-images/base1/33.jpg",
       "large": "https://images.pokemontcg.io/base1/33_hires.png"
     },
     "tcgplayer": {
@@ -3851,7 +3851,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/34.png",
+      "small": "card-images/base1/34.jpg",
       "large": "https://images.pokemontcg.io/base1/34_hires.png"
     },
     "tcgplayer": {
@@ -3962,7 +3962,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/35.png",
+      "small": "card-images/base1/35.jpg",
       "large": "https://images.pokemontcg.io/base1/35_hires.png"
     },
     "tcgplayer": {
@@ -4077,7 +4077,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/36.png",
+      "small": "card-images/base1/36.jpg",
       "large": "https://images.pokemontcg.io/base1/36_hires.png"
     },
     "tcgplayer": {
@@ -4194,7 +4194,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/37.png",
+      "small": "card-images/base1/37.jpg",
       "large": "https://images.pokemontcg.io/base1/37_hires.png"
     },
     "tcgplayer": {
@@ -4310,7 +4310,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/38.png",
+      "small": "card-images/base1/38.jpg",
       "large": "https://images.pokemontcg.io/base1/38_hires.png"
     },
     "tcgplayer": {
@@ -4428,7 +4428,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/39.png",
+      "small": "card-images/base1/39.jpg",
       "large": "https://images.pokemontcg.io/base1/39_hires.png"
     },
     "tcgplayer": {
@@ -4545,7 +4545,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/40.png",
+      "small": "card-images/base1/40.jpg",
       "large": "https://images.pokemontcg.io/base1/40_hires.png"
     },
     "tcgplayer": {
@@ -4647,7 +4647,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/41.png",
+      "small": "card-images/base1/41.jpg",
       "large": "https://images.pokemontcg.io/base1/41_hires.png"
     },
     "tcgplayer": {
@@ -4762,7 +4762,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/42.png",
+      "small": "card-images/base1/42.jpg",
       "large": "https://images.pokemontcg.io/base1/42_hires.png"
     },
     "tcgplayer": {
@@ -4860,7 +4860,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/43.png",
+      "small": "card-images/base1/43.jpg",
       "large": "https://images.pokemontcg.io/base1/43_hires.png"
     },
     "tcgplayer": {
@@ -4963,7 +4963,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/44.png",
+      "small": "card-images/base1/44.jpg",
       "large": "https://images.pokemontcg.io/base1/44_hires.png"
     },
     "tcgplayer": {
@@ -5066,7 +5066,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/45.png",
+      "small": "card-images/base1/45.jpg",
       "large": "https://images.pokemontcg.io/base1/45_hires.png"
     },
     "tcgplayer": {
@@ -5178,7 +5178,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/46.png",
+      "small": "card-images/base1/46.jpg",
       "large": "https://images.pokemontcg.io/base1/46_hires.png"
     },
     "tcgplayer": {
@@ -5292,7 +5292,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/47.png",
+      "small": "card-images/base1/47.jpg",
       "large": "https://images.pokemontcg.io/base1/47_hires.png"
     },
     "tcgplayer": {
@@ -5396,7 +5396,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/48.png",
+      "small": "card-images/base1/48.jpg",
       "large": "https://images.pokemontcg.io/base1/48_hires.png"
     },
     "tcgplayer": {
@@ -5508,7 +5508,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/49.png",
+      "small": "card-images/base1/49.jpg",
       "large": "https://images.pokemontcg.io/base1/49_hires.png"
     },
     "tcgplayer": {
@@ -5616,7 +5616,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/50.png",
+      "small": "card-images/base1/50.jpg",
       "large": "https://images.pokemontcg.io/base1/50_hires.png"
     },
     "tcgplayer": {
@@ -5719,7 +5719,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/51.png",
+      "small": "card-images/base1/51.jpg",
       "large": "https://images.pokemontcg.io/base1/51_hires.png"
     },
     "tcgplayer": {
@@ -5821,7 +5821,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/52.png",
+      "small": "card-images/base1/52.jpg",
       "large": "https://images.pokemontcg.io/base1/52_hires.png"
     },
     "tcgplayer": {
@@ -5933,7 +5933,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/53.png",
+      "small": "card-images/base1/53.jpg",
       "large": "https://images.pokemontcg.io/base1/53_hires.png"
     },
     "tcgplayer": {
@@ -6048,7 +6048,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/54.png",
+      "small": "card-images/base1/54.jpg",
       "large": "https://images.pokemontcg.io/base1/54_hires.png"
     },
     "tcgplayer": {
@@ -6150,7 +6150,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/55.png",
+      "small": "card-images/base1/55.jpg",
       "large": "https://images.pokemontcg.io/base1/55_hires.png"
     },
     "tcgplayer": {
@@ -6264,7 +6264,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/56.png",
+      "small": "card-images/base1/56.jpg",
       "large": "https://images.pokemontcg.io/base1/56_hires.png"
     },
     "tcgplayer": {
@@ -6373,7 +6373,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/57.png",
+      "small": "card-images/base1/57.jpg",
       "large": "https://images.pokemontcg.io/base1/57_hires.png"
     },
     "tcgplayer": {
@@ -6485,7 +6485,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/58.png",
+      "small": "card-images/base1/58.jpg",
       "large": "https://images.pokemontcg.io/base1/58_hires.png"
     },
     "tcgplayer": {
@@ -6587,7 +6587,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/59.png",
+      "small": "card-images/base1/59.jpg",
       "large": "https://images.pokemontcg.io/base1/59_hires.png"
     },
     "tcgplayer": {
@@ -6700,7 +6700,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/60.png",
+      "small": "card-images/base1/60.jpg",
       "large": "https://images.pokemontcg.io/base1/60_hires.png"
     },
     "tcgplayer": {
@@ -6804,7 +6804,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/61.png",
+      "small": "card-images/base1/61.jpg",
       "large": "https://images.pokemontcg.io/base1/61_hires.png"
     },
     "tcgplayer": {
@@ -6912,7 +6912,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/62.png",
+      "small": "card-images/base1/62.jpg",
       "large": "https://images.pokemontcg.io/base1/62_hires.png"
     },
     "tcgplayer": {
@@ -7024,7 +7024,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/63.png",
+      "small": "card-images/base1/63.jpg",
       "large": "https://images.pokemontcg.io/base1/63_hires.png"
     },
     "tcgplayer": {
@@ -7136,7 +7136,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/64.png",
+      "small": "card-images/base1/64.jpg",
       "large": "https://images.pokemontcg.io/base1/64_hires.png"
     },
     "tcgplayer": {
@@ -7238,7 +7238,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/65.png",
+      "small": "card-images/base1/65.jpg",
       "large": "https://images.pokemontcg.io/base1/65_hires.png"
     },
     "tcgplayer": {
@@ -7353,7 +7353,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/66.png",
+      "small": "card-images/base1/66.jpg",
       "large": "https://images.pokemontcg.io/base1/66_hires.png"
     },
     "tcgplayer": {
@@ -7455,7 +7455,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/67.png",
+      "small": "card-images/base1/67.jpg",
       "large": "https://images.pokemontcg.io/base1/67_hires.png"
     },
     "tcgplayer": {
@@ -7558,7 +7558,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/68.png",
+      "small": "card-images/base1/68.jpg",
       "large": "https://images.pokemontcg.io/base1/68_hires.png"
     },
     "tcgplayer": {
@@ -7661,7 +7661,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/69.png",
+      "small": "card-images/base1/69.jpg",
       "large": "https://images.pokemontcg.io/base1/69_hires.png"
     },
     "tcgplayer": {
@@ -7731,7 +7731,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/70.png",
+      "small": "card-images/base1/70.jpg",
       "large": "https://images.pokemontcg.io/base1/70_hires.png"
     },
     "tcgplayer": {
@@ -7800,7 +7800,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/71.png",
+      "small": "card-images/base1/71.jpg",
       "large": "https://images.pokemontcg.io/base1/71_hires.png"
     },
     "tcgplayer": {
@@ -7869,7 +7869,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/72.png",
+      "small": "card-images/base1/72.jpg",
       "large": "https://images.pokemontcg.io/base1/72_hires.png"
     },
     "tcgplayer": {
@@ -7938,7 +7938,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/73.png",
+      "small": "card-images/base1/73.jpg",
       "large": "https://images.pokemontcg.io/base1/73_hires.png"
     },
     "tcgplayer": {
@@ -8007,7 +8007,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/74.png",
+      "small": "card-images/base1/74.jpg",
       "large": "https://images.pokemontcg.io/base1/74_hires.png"
     },
     "tcgplayer": {
@@ -8076,7 +8076,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/75.png",
+      "small": "card-images/base1/75.jpg",
       "large": "https://images.pokemontcg.io/base1/75_hires.png"
     },
     "tcgplayer": {
@@ -8145,7 +8145,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/76.png",
+      "small": "card-images/base1/76.jpg",
       "large": "https://images.pokemontcg.io/base1/76_hires.png"
     },
     "tcgplayer": {
@@ -8214,7 +8214,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/77.png",
+      "small": "card-images/base1/77.jpg",
       "large": "https://images.pokemontcg.io/base1/77_hires.png"
     },
     "tcgplayer": {
@@ -8283,7 +8283,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/78.png",
+      "small": "card-images/base1/78.jpg",
       "large": "https://images.pokemontcg.io/base1/78_hires.png"
     },
     "tcgplayer": {
@@ -8352,7 +8352,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/79.png",
+      "small": "card-images/base1/79.jpg",
       "large": "https://images.pokemontcg.io/base1/79_hires.png"
     },
     "tcgplayer": {
@@ -8421,7 +8421,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/80.png",
+      "small": "card-images/base1/80.jpg",
       "large": "https://images.pokemontcg.io/base1/80_hires.png"
     },
     "tcgplayer": {
@@ -8492,7 +8492,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/81.png",
+      "small": "card-images/base1/81.jpg",
       "large": "https://images.pokemontcg.io/base1/81_hires.png"
     },
     "tcgplayer": {
@@ -8561,7 +8561,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/82.png",
+      "small": "card-images/base1/82.jpg",
       "large": "https://images.pokemontcg.io/base1/82_hires.png"
     },
     "tcgplayer": {
@@ -8631,7 +8631,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/83.png",
+      "small": "card-images/base1/83.jpg",
       "large": "https://images.pokemontcg.io/base1/83_hires.png"
     },
     "tcgplayer": {
@@ -8701,7 +8701,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/84.png",
+      "small": "card-images/base1/84.jpg",
       "large": "https://images.pokemontcg.io/base1/84_hires.png"
     },
     "tcgplayer": {
@@ -8770,7 +8770,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/85.png",
+      "small": "card-images/base1/85.jpg",
       "large": "https://images.pokemontcg.io/base1/85_hires.png"
     },
     "tcgplayer": {
@@ -8839,7 +8839,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/86.png",
+      "small": "card-images/base1/86.jpg",
       "large": "https://images.pokemontcg.io/base1/86_hires.png"
     },
     "tcgplayer": {
@@ -8909,7 +8909,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/87.png",
+      "small": "card-images/base1/87.jpg",
       "large": "https://images.pokemontcg.io/base1/87_hires.png"
     },
     "tcgplayer": {
@@ -8978,7 +8978,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/88.png",
+      "small": "card-images/base1/88.jpg",
       "large": "https://images.pokemontcg.io/base1/88_hires.png"
     },
     "tcgplayer": {
@@ -9047,7 +9047,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/89.png",
+      "small": "card-images/base1/89.jpg",
       "large": "https://images.pokemontcg.io/base1/89_hires.png"
     },
     "tcgplayer": {
@@ -9116,7 +9116,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/90.png",
+      "small": "card-images/base1/90.jpg",
       "large": "https://images.pokemontcg.io/base1/90_hires.png"
     },
     "tcgplayer": {
@@ -9185,7 +9185,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/91.png",
+      "small": "card-images/base1/91.jpg",
       "large": "https://images.pokemontcg.io/base1/91_hires.png"
     },
     "tcgplayer": {
@@ -9254,7 +9254,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/92.png",
+      "small": "card-images/base1/92.jpg",
       "large": "https://images.pokemontcg.io/base1/92_hires.png"
     },
     "tcgplayer": {
@@ -9323,7 +9323,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/93.png",
+      "small": "card-images/base1/93.jpg",
       "large": "https://images.pokemontcg.io/base1/93_hires.png"
     },
     "tcgplayer": {
@@ -9394,7 +9394,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/94.png",
+      "small": "card-images/base1/94.jpg",
       "large": "https://images.pokemontcg.io/base1/94_hires.png"
     },
     "tcgplayer": {
@@ -9465,7 +9465,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/95.png",
+      "small": "card-images/base1/95.jpg",
       "large": "https://images.pokemontcg.io/base1/95_hires.png"
     },
     "tcgplayer": {
@@ -9538,7 +9538,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/96.png",
+      "small": "card-images/base1/96.jpg",
       "large": "https://images.pokemontcg.io/base1/96_hires.png"
     },
     "tcgplayer": {
@@ -9608,7 +9608,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/97.png",
+      "small": "card-images/base1/97.jpg",
       "large": "https://images.pokemontcg.io/base1/97_hires.png"
     },
     "tcgplayer": {
@@ -9678,7 +9678,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/98.png",
+      "small": "card-images/base1/98.jpg",
       "large": "https://images.pokemontcg.io/base1/98_hires.png"
     },
     "tcgplayer": {
@@ -9748,7 +9748,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/99.png",
+      "small": "card-images/base1/99.jpg",
       "large": "https://images.pokemontcg.io/base1/99_hires.png"
     },
     "tcgplayer": {
@@ -9818,7 +9818,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/100.png",
+      "small": "card-images/base1/100.jpg",
       "large": "https://images.pokemontcg.io/base1/100_hires.png"
     },
     "tcgplayer": {
@@ -9888,7 +9888,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/101.png",
+      "small": "card-images/base1/101.jpg",
       "large": "https://images.pokemontcg.io/base1/101_hires.png"
     },
     "tcgplayer": {
@@ -9958,7 +9958,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base1/102.png",
+      "small": "card-images/base1/102.jpg",
       "large": "https://images.pokemontcg.io/base1/102_hires.png"
     },
     "tcgplayer": {
@@ -10075,7 +10075,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/1.png",
+      "small": "card-images/base2/1.jpg",
       "large": "https://images.pokemontcg.io/base2/1_hires.png"
     },
     "tcgplayer": {
@@ -10194,7 +10194,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/2.png",
+      "small": "card-images/base2/2.jpg",
       "large": "https://images.pokemontcg.io/base2/2_hires.png"
     },
     "tcgplayer": {
@@ -10314,7 +10314,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/3.png",
+      "small": "card-images/base2/3.jpg",
       "large": "https://images.pokemontcg.io/base2/3_hires.png"
     },
     "tcgplayer": {
@@ -10433,7 +10433,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/4.png",
+      "small": "card-images/base2/4.jpg",
       "large": "https://images.pokemontcg.io/base2/4_hires.png"
     },
     "tcgplayer": {
@@ -10559,7 +10559,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/5.png",
+      "small": "card-images/base2/5.jpg",
       "large": "https://images.pokemontcg.io/base2/5_hires.png"
     },
     "tcgplayer": {
@@ -10673,7 +10673,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/6.png",
+      "small": "card-images/base2/6.jpg",
       "large": "https://images.pokemontcg.io/base2/6_hires.png"
     },
     "tcgplayer": {
@@ -10795,7 +10795,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/7.png",
+      "small": "card-images/base2/7.jpg",
       "large": "https://images.pokemontcg.io/base2/7_hires.png"
     },
     "tcgplayer": {
@@ -10916,7 +10916,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/8.png",
+      "small": "card-images/base2/8.jpg",
       "large": "https://images.pokemontcg.io/base2/8_hires.png"
     },
     "tcgplayer": {
@@ -11035,7 +11035,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/9.png",
+      "small": "card-images/base2/9.jpg",
       "large": "https://images.pokemontcg.io/base2/9_hires.png"
     },
     "tcgplayer": {
@@ -11157,7 +11157,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/10.png",
+      "small": "card-images/base2/10.jpg",
       "large": "https://images.pokemontcg.io/base2/10_hires.png"
     },
     "tcgplayer": {
@@ -11282,7 +11282,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/11.png",
+      "small": "card-images/base2/11.jpg",
       "large": "https://images.pokemontcg.io/base2/11_hires.png"
     },
     "tcgplayer": {
@@ -11401,7 +11401,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/12.png",
+      "small": "card-images/base2/12.jpg",
       "large": "https://images.pokemontcg.io/base2/12_hires.png"
     },
     "tcgplayer": {
@@ -11518,7 +11518,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/13.png",
+      "small": "card-images/base2/13.jpg",
       "large": "https://images.pokemontcg.io/base2/13_hires.png"
     },
     "tcgplayer": {
@@ -11636,7 +11636,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/14.png",
+      "small": "card-images/base2/14.jpg",
       "large": "https://images.pokemontcg.io/base2/14_hires.png"
     },
     "tcgplayer": {
@@ -11753,7 +11753,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/15.png",
+      "small": "card-images/base2/15.jpg",
       "large": "https://images.pokemontcg.io/base2/15_hires.png"
     },
     "tcgplayer": {
@@ -11878,7 +11878,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/16.png",
+      "small": "card-images/base2/16.jpg",
       "large": "https://images.pokemontcg.io/base2/16_hires.png"
     },
     "tcgplayer": {
@@ -12000,7 +12000,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/33.png",
+      "small": "card-images/base2/33.jpg",
       "large": "https://images.pokemontcg.io/base2/33_hires.png"
     },
     "tcgplayer": {
@@ -12118,7 +12118,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/34.png",
+      "small": "card-images/base2/34.jpg",
       "large": "https://images.pokemontcg.io/base2/34_hires.png"
     },
     "tcgplayer": {
@@ -12236,7 +12236,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/35.png",
+      "small": "card-images/base2/35.jpg",
       "large": "https://images.pokemontcg.io/base2/35_hires.png"
     },
     "tcgplayer": {
@@ -12359,7 +12359,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/36.png",
+      "small": "card-images/base2/36.jpg",
       "large": "https://images.pokemontcg.io/base2/36_hires.png"
     },
     "tcgplayer": {
@@ -12480,7 +12480,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/37.png",
+      "small": "card-images/base2/37.jpg",
       "large": "https://images.pokemontcg.io/base2/37_hires.png"
     },
     "tcgplayer": {
@@ -12607,7 +12607,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/38.png",
+      "small": "card-images/base2/38.jpg",
       "large": "https://images.pokemontcg.io/base2/38_hires.png"
     },
     "tcgplayer": {
@@ -12732,7 +12732,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/39.png",
+      "small": "card-images/base2/39.jpg",
       "large": "https://images.pokemontcg.io/base2/39_hires.png"
     },
     "tcgplayer": {
@@ -12853,7 +12853,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/40.png",
+      "small": "card-images/base2/40.jpg",
       "large": "https://images.pokemontcg.io/base2/40_hires.png"
     },
     "tcgplayer": {
@@ -12972,7 +12972,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/41.png",
+      "small": "card-images/base2/41.jpg",
       "large": "https://images.pokemontcg.io/base2/41_hires.png"
     },
     "tcgplayer": {
@@ -13093,7 +13093,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/42.png",
+      "small": "card-images/base2/42.jpg",
       "large": "https://images.pokemontcg.io/base2/42_hires.png"
     },
     "tcgplayer": {
@@ -13212,7 +13212,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/43.png",
+      "small": "card-images/base2/43.jpg",
       "large": "https://images.pokemontcg.io/base2/43_hires.png"
     },
     "tcgplayer": {
@@ -13327,7 +13327,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/44.png",
+      "small": "card-images/base2/44.jpg",
       "large": "https://images.pokemontcg.io/base2/44_hires.png"
     },
     "tcgplayer": {
@@ -13459,7 +13459,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/45.png",
+      "small": "card-images/base2/45.jpg",
       "large": "https://images.pokemontcg.io/base2/45_hires.png"
     },
     "tcgplayer": {
@@ -13576,7 +13576,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/46.png",
+      "small": "card-images/base2/46.jpg",
       "large": "https://images.pokemontcg.io/base2/46_hires.png"
     },
     "tcgplayer": {
@@ -13701,7 +13701,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/47.png",
+      "small": "card-images/base2/47.jpg",
       "large": "https://images.pokemontcg.io/base2/47_hires.png"
     },
     "tcgplayer": {
@@ -13821,7 +13821,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/48.png",
+      "small": "card-images/base2/48.jpg",
       "large": "https://images.pokemontcg.io/base2/48_hires.png"
     },
     "tcgplayer": {
@@ -13939,7 +13939,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/49.png",
+      "small": "card-images/base2/49.jpg",
       "large": "https://images.pokemontcg.io/base2/49_hires.png"
     },
     "tcgplayer": {
@@ -14064,7 +14064,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/50.png",
+      "small": "card-images/base2/50.jpg",
       "large": "https://images.pokemontcg.io/base2/50_hires.png"
     },
     "tcgplayer": {
@@ -14196,7 +14196,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/51.png",
+      "small": "card-images/base2/51.jpg",
       "large": "https://images.pokemontcg.io/base2/51_hires.png"
     },
     "tcgplayer": {
@@ -14315,7 +14315,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/52.png",
+      "small": "card-images/base2/52.jpg",
       "large": "https://images.pokemontcg.io/base2/52_hires.png"
     },
     "tcgplayer": {
@@ -14420,7 +14420,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/53.png",
+      "small": "card-images/base2/53.jpg",
       "large": "https://images.pokemontcg.io/base2/53_hires.png"
     },
     "tcgplayer": {
@@ -14545,7 +14545,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/54.png",
+      "small": "card-images/base2/54.jpg",
       "large": "https://images.pokemontcg.io/base2/54_hires.png"
     },
     "tcgplayer": {
@@ -14657,7 +14657,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/55.png",
+      "small": "card-images/base2/55.jpg",
       "large": "https://images.pokemontcg.io/base2/55_hires.png"
     },
     "tcgplayer": {
@@ -14773,7 +14773,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/56.png",
+      "small": "card-images/base2/56.jpg",
       "large": "https://images.pokemontcg.io/base2/56_hires.png"
     },
     "tcgplayer": {
@@ -14892,7 +14892,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/57.png",
+      "small": "card-images/base2/57.jpg",
       "large": "https://images.pokemontcg.io/base2/57_hires.png"
     },
     "tcgplayer": {
@@ -15011,7 +15011,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/58.png",
+      "small": "card-images/base2/58.jpg",
       "large": "https://images.pokemontcg.io/base2/58_hires.png"
     },
     "tcgplayer": {
@@ -15131,7 +15131,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/59.png",
+      "small": "card-images/base2/59.jpg",
       "large": "https://images.pokemontcg.io/base2/59_hires.png"
     },
     "tcgplayer": {
@@ -15241,7 +15241,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/60.png",
+      "small": "card-images/base2/60.jpg",
       "large": "https://images.pokemontcg.io/base2/60_hires.png"
     },
     "tcgplayer": {
@@ -15369,7 +15369,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/61.png",
+      "small": "card-images/base2/61.jpg",
       "large": "https://images.pokemontcg.io/base2/61_hires.png"
     },
     "tcgplayer": {
@@ -15491,7 +15491,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/62.png",
+      "small": "card-images/base2/62.jpg",
       "large": "https://images.pokemontcg.io/base2/62_hires.png"
     },
     "tcgplayer": {
@@ -15610,7 +15610,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/63.png",
+      "small": "card-images/base2/63.jpg",
       "large": "https://images.pokemontcg.io/base2/63_hires.png"
     },
     "tcgplayer": {
@@ -15688,7 +15688,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base2/64.png",
+      "small": "card-images/base2/64.jpg",
       "large": "https://images.pokemontcg.io/base2/64_hires.png"
     },
     "tcgplayer": {
@@ -15811,7 +15811,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/1.png",
+      "small": "card-images/base3/1.jpg",
       "large": "https://images.pokemontcg.io/base3/1_hires.png"
     },
     "tcgplayer": {
@@ -15932,7 +15932,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/2.png",
+      "small": "card-images/base3/2.jpg",
       "large": "https://images.pokemontcg.io/base3/2_hires.png"
     },
     "tcgplayer": {
@@ -16040,7 +16040,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/3.png",
+      "small": "card-images/base3/3.jpg",
       "large": "https://images.pokemontcg.io/base3/3_hires.png"
     },
     "tcgplayer": {
@@ -16157,7 +16157,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/4.png",
+      "small": "card-images/base3/4.jpg",
       "large": "https://images.pokemontcg.io/base3/4_hires.png"
     },
     "tcgplayer": {
@@ -16273,7 +16273,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/5.png",
+      "small": "card-images/base3/5.jpg",
       "large": "https://images.pokemontcg.io/base3/5_hires.png"
     },
     "tcgplayer": {
@@ -16387,7 +16387,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/6.png",
+      "small": "card-images/base3/6.jpg",
       "large": "https://images.pokemontcg.io/base3/6_hires.png"
     },
     "tcgplayer": {
@@ -16505,7 +16505,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/7.png",
+      "small": "card-images/base3/7.jpg",
       "large": "https://images.pokemontcg.io/base3/7_hires.png"
     },
     "tcgplayer": {
@@ -16624,7 +16624,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/8.png",
+      "small": "card-images/base3/8.jpg",
       "large": "https://images.pokemontcg.io/base3/8_hires.png"
     },
     "tcgplayer": {
@@ -16744,7 +16744,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/9.png",
+      "small": "card-images/base3/9.jpg",
       "large": "https://images.pokemontcg.io/base3/9_hires.png"
     },
     "tcgplayer": {
@@ -16861,7 +16861,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/10.png",
+      "small": "card-images/base3/10.jpg",
       "large": "https://images.pokemontcg.io/base3/10_hires.png"
     },
     "tcgplayer": {
@@ -16985,7 +16985,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/11.png",
+      "small": "card-images/base3/11.jpg",
       "large": "https://images.pokemontcg.io/base3/11_hires.png"
     },
     "tcgplayer": {
@@ -17104,7 +17104,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/12.png",
+      "small": "card-images/base3/12.jpg",
       "large": "https://images.pokemontcg.io/base3/12_hires.png"
     },
     "tcgplayer": {
@@ -17221,7 +17221,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/13.png",
+      "small": "card-images/base3/13.jpg",
       "large": "https://images.pokemontcg.io/base3/13_hires.png"
     },
     "tcgplayer": {
@@ -17331,7 +17331,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/14.png",
+      "small": "card-images/base3/14.jpg",
       "large": "https://images.pokemontcg.io/base3/14_hires.png"
     },
     "tcgplayer": {
@@ -17441,7 +17441,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/15.png",
+      "small": "card-images/base3/15.jpg",
       "large": "https://images.pokemontcg.io/base3/15_hires.png"
     },
     "tcgplayer": {
@@ -17560,7 +17560,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/31.png",
+      "small": "card-images/base3/31.jpg",
       "large": "https://images.pokemontcg.io/base3/31_hires.png"
     },
     "tcgplayer": {
@@ -17679,7 +17679,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/32.png",
+      "small": "card-images/base3/32.jpg",
       "large": "https://images.pokemontcg.io/base3/32_hires.png"
     },
     "tcgplayer": {
@@ -17794,7 +17794,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/33.png",
+      "small": "card-images/base3/33.jpg",
       "large": "https://images.pokemontcg.io/base3/33_hires.png"
     },
     "tcgplayer": {
@@ -17919,7 +17919,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/34.png",
+      "small": "card-images/base3/34.jpg",
       "large": "https://images.pokemontcg.io/base3/34_hires.png"
     },
     "tcgplayer": {
@@ -18037,7 +18037,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/35.png",
+      "small": "card-images/base3/35.jpg",
       "large": "https://images.pokemontcg.io/base3/35_hires.png"
     },
     "tcgplayer": {
@@ -18162,7 +18162,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/36.png",
+      "small": "card-images/base3/36.jpg",
       "large": "https://images.pokemontcg.io/base3/36_hires.png"
     },
     "tcgplayer": {
@@ -18285,7 +18285,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/37.png",
+      "small": "card-images/base3/37.jpg",
       "large": "https://images.pokemontcg.io/base3/37_hires.png"
     },
     "tcgplayer": {
@@ -18405,7 +18405,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/38.png",
+      "small": "card-images/base3/38.jpg",
       "large": "https://images.pokemontcg.io/base3/38_hires.png"
     },
     "tcgplayer": {
@@ -18524,7 +18524,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/39.png",
+      "small": "card-images/base3/39.jpg",
       "large": "https://images.pokemontcg.io/base3/39_hires.png"
     },
     "tcgplayer": {
@@ -18642,7 +18642,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/40.png",
+      "small": "card-images/base3/40.jpg",
       "large": "https://images.pokemontcg.io/base3/40_hires.png"
     },
     "tcgplayer": {
@@ -18766,7 +18766,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/41.png",
+      "small": "card-images/base3/41.jpg",
       "large": "https://images.pokemontcg.io/base3/41_hires.png"
     },
     "tcgplayer": {
@@ -18888,7 +18888,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/42.png",
+      "small": "card-images/base3/42.jpg",
       "large": "https://images.pokemontcg.io/base3/42_hires.png"
     },
     "tcgplayer": {
@@ -19003,7 +19003,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/43.png",
+      "small": "card-images/base3/43.jpg",
       "large": "https://images.pokemontcg.io/base3/43_hires.png"
     },
     "tcgplayer": {
@@ -19116,7 +19116,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/44.png",
+      "small": "card-images/base3/44.jpg",
       "large": "https://images.pokemontcg.io/base3/44_hires.png"
     },
     "tcgplayer": {
@@ -19235,7 +19235,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/45.png",
+      "small": "card-images/base3/45.jpg",
       "large": "https://images.pokemontcg.io/base3/45_hires.png"
     },
     "tcgplayer": {
@@ -19354,7 +19354,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/46.png",
+      "small": "card-images/base3/46.jpg",
       "large": "https://images.pokemontcg.io/base3/46_hires.png"
     },
     "tcgplayer": {
@@ -19464,7 +19464,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/47.png",
+      "small": "card-images/base3/47.jpg",
       "large": "https://images.pokemontcg.io/base3/47_hires.png"
     },
     "tcgplayer": {
@@ -19582,7 +19582,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/48.png",
+      "small": "card-images/base3/48.jpg",
       "large": "https://images.pokemontcg.io/base3/48_hires.png"
     },
     "tcgplayer": {
@@ -19687,7 +19687,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/49.png",
+      "small": "card-images/base3/49.jpg",
       "large": "https://images.pokemontcg.io/base3/49_hires.png"
     },
     "tcgplayer": {
@@ -19804,7 +19804,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/50.png",
+      "small": "card-images/base3/50.jpg",
       "large": "https://images.pokemontcg.io/base3/50_hires.png"
     },
     "tcgplayer": {
@@ -19924,7 +19924,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/51.png",
+      "small": "card-images/base3/51.jpg",
       "large": "https://images.pokemontcg.io/base3/51_hires.png"
     },
     "tcgplayer": {
@@ -20041,7 +20041,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/52.png",
+      "small": "card-images/base3/52.jpg",
       "large": "https://images.pokemontcg.io/base3/52_hires.png"
     },
     "tcgplayer": {
@@ -20159,7 +20159,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/53.png",
+      "small": "card-images/base3/53.jpg",
       "large": "https://images.pokemontcg.io/base3/53_hires.png"
     },
     "tcgplayer": {
@@ -20277,7 +20277,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/54.png",
+      "small": "card-images/base3/54.jpg",
       "large": "https://images.pokemontcg.io/base3/54_hires.png"
     },
     "tcgplayer": {
@@ -20397,7 +20397,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/55.png",
+      "small": "card-images/base3/55.jpg",
       "large": "https://images.pokemontcg.io/base3/55_hires.png"
     },
     "tcgplayer": {
@@ -20509,7 +20509,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/56.png",
+      "small": "card-images/base3/56.jpg",
       "large": "https://images.pokemontcg.io/base3/56_hires.png"
     },
     "tcgplayer": {
@@ -20631,7 +20631,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/57.png",
+      "small": "card-images/base3/57.jpg",
       "large": "https://images.pokemontcg.io/base3/57_hires.png"
     },
     "tcgplayer": {
@@ -20707,7 +20707,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/58.png",
+      "small": "card-images/base3/58.jpg",
       "large": "https://images.pokemontcg.io/base3/58_hires.png"
     },
     "tcgplayer": {
@@ -20785,7 +20785,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/59.png",
+      "small": "card-images/base3/59.jpg",
       "large": "https://images.pokemontcg.io/base3/59_hires.png"
     },
     "tcgplayer": {
@@ -20861,7 +20861,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/60.png",
+      "small": "card-images/base3/60.jpg",
       "large": "https://images.pokemontcg.io/base3/60_hires.png"
     },
     "tcgplayer": {
@@ -20938,7 +20938,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/61.png",
+      "small": "card-images/base3/61.jpg",
       "large": "https://images.pokemontcg.io/base3/61_hires.png"
     },
     "tcgplayer": {
@@ -21015,7 +21015,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/base3/62.png",
+      "small": "card-images/base3/62.jpg",
       "large": "https://images.pokemontcg.io/base3/62_hires.png"
     },
     "tcgplayer": {
@@ -21134,7 +21134,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/1.png",
+      "small": "card-images/basep/1.jpg",
       "large": "https://images.pokemontcg.io/basep/1_hires.png"
     }
   },
@@ -21213,7 +21213,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/2.png",
+      "small": "card-images/basep/2.jpg",
       "large": "https://images.pokemontcg.io/basep/2_hires.png"
     }
   },
@@ -21289,7 +21289,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/5.png",
+      "small": "card-images/basep/5.jpg",
       "large": "https://images.pokemontcg.io/basep/5_hires.png"
     }
   },
@@ -21364,7 +21364,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/8.png",
+      "small": "card-images/basep/8.jpg",
       "large": "https://images.pokemontcg.io/basep/8_hires.png"
     }
   },
@@ -21441,7 +21441,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/14.png",
+      "small": "card-images/basep/14.jpg",
       "large": "https://images.pokemontcg.io/basep/14_hires.png"
     }
   },
@@ -21520,7 +21520,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/25.png",
+      "small": "card-images/basep/25.jpg",
       "large": "https://images.pokemontcg.io/basep/25_hires.png"
     }
   },
@@ -21590,7 +21590,7 @@
       "expanded": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/28.png",
+      "small": "card-images/basep/28.jpg",
       "large": "https://images.pokemontcg.io/basep/28_hires.png"
     }
   },
@@ -21675,7 +21675,7 @@
       "unlimited": "Legal"
     },
     "images": {
-      "small": "https://images.pokemontcg.io/basep/7.png",
+      "small": "card-images/basep/7.jpg",
       "large": "https://images.pokemontcg.io/basep/7_hires.png"
     }
   }
