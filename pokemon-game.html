@@ -1569,6 +1569,22 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #move-flash-inner  { animation: moveFlashAnim   3.5s ease-out forwards; }
 #action-flash-inner { animation: actionFlashAnim 2.5s ease-out forwards; }
+/* The panels take the tap themselves (so it does not fall through to a card);
+   everywhere else on the stage stays click-through. See dismissFlashes(). */
+#move-flash-inner, #action-flash-inner, #turn-flash-inner { pointer-events: auto; cursor: pointer; }
+#move-flash-inner::after, #action-flash-inner::after {
+  content: 'tap to dismiss';
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: .8;
+}
+@media (hover: hover) and (pointer: fine) {
+  #move-flash-inner::after, #action-flash-inner::after { content: 'click to dismiss'; }
+}
 
 @keyframes moveFlashAnim {
   0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
