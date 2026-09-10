@@ -70,12 +70,14 @@ const GAME_STATE_DEFAULTS = {
   nextAttackDouble:     false,
   smokescreened:        false,
   immuneToAttack:       false,
+  immuneToAttackFrom:   null,   // uid of the Defending Pokémon Tail Wag/Leer was used against
   disabledAttack:       null,
   cantRetreat:          false,
   destinyBond:          false,
   leekSlapUsed:         false,
   pounceActive:         false,
   pounceReduction:      0,
+  pounceFrom:           null,   // uid of the Defending Pokémon Pounce/Growl/Snivel was used against
   lightScreen:          false,
   swordsDanceActive:    false,
   swordsDanceJustSet:   false,
@@ -500,14 +502,47 @@ function clearActiveOnlyEffects(card) {
   card.smokescreened = false;
   card.leekSlapUsed = false;
   card.immuneToAttack = false;
+  card.immuneToAttackFrom = null;
   card.destinyBond = false;
   card.pounceActive = false;
   card.pounceReduction = 0;
+  card.pounceFrom = null;
   card.lightScreen = false;
   card.disabledAttack = null;
   card.attackReduction = 0;
 }
 
+
+// ── isImmuneToAttackFrom ──────────────────────────────────────────────────────
+// Tail Wag (Eevee) / Leer (Rhyhorn): "the Defending Pokémon can't attack
+// <this Pokémon> during your opponent's next turn. (Benching either Pokémon
+// ends this effect.)" The flag lives on the Tail Wag user (`defender` here —
+// it is the one being attacked next turn) and remembers WHICH opposing
+// Pokémon it was used against. A different Pokémon that comes up (the
+// original was benched/KO'd) may attack freely. The user leaving the Active
+// spot clears the flag via clearActiveOnlyEffects.
+// A missing `immuneToAttackFrom` (legacy state) blocks every attacker.
+function isImmuneToAttackFrom(defender, attacker) {
+  if (!defender?.immuneToAttack) return false;
+  const from = defender.immuneToAttackFrom;
+  if (!from || !attacker?.uid) return true;
+  return from === attacker.uid;
+}
+
+// ── pounceReductionFor ────────────────────────────────────────────────────────
+// Pounce (Persian, −10) / Growl (Pikachu Promo, −10) / Snivel (Cubone, −20):
+// "If the Defending Pokémon attacks <this Pokémon> during your opponent's next
+// turn, any damage done by the attack is reduced by N (after applying Weakness
+// and Resistance). (Benching either Pokémon ends this effect.)"
+// Returns the reduction to apply when `attacker` hits `defender`, or 0. Same
+// uid rule as isImmuneToAttackFrom: only the Pokémon that was Defending when
+// the attack was used is affected; a missing `pounceFrom` applies to everyone.
+function pounceReductionFor(defender, attacker) {
+  if (!defender?.pounceActive) return 0;
+  const from = defender.pounceFrom;
+  if (from && attacker?.uid && from !== attacker.uid) return 0;
+  return defender.pounceReduction || 10;
+}
 
 // TCG rule: at every turn boundary, EVERY active Pokémon with poison/burn
 // takes a tick of damage. Not "the player whose turn just ended" — both.
@@ -675,7 +710,7 @@ if (typeof module !== 'undefined') {
     coerceCardArrays, mergeGameStateDefaults,
     computeBetweenTurnDamage,
     parseDiscardEnergyCost, eligibleEnergyForDiscard,
-    clearActiveOnlyEffects,
+    clearActiveOnlyEffects, isImmuneToAttackFrom, pounceReductionFor,
     transitionPhase,
     buildEvolutionStackUnder, devolveTopStage,
     GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
