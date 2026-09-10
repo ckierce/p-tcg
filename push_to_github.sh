@@ -91,7 +91,9 @@ node game-tests.js || { echo "❌ Tests failed — aborting push"; exit 1; }
 # cache busts EXACTLY when the code changes (and stays stable otherwise — no
 # churn). Without this, a stale cached game-*.js silently serves old behavior:
 # the "I deployed the fix but the game still does the old thing" trap.
-JS_BUNDLE="game-utils.js game-render.js game-actions.js game-ai.js pokemon-powers.js trainer-cards.js move-effects.js game-init.js"
+# theme.css is part of the hashed bundle so a stylesheet-only change still
+# busts the cache (the same ?v= is stamped on its <link> tags).
+JS_BUNDLE="game-utils.js game-render.js game-actions.js game-ai.js pokemon-powers.js trainer-cards.js move-effects.js game-init.js theme.css"
 VER=$(cat $JS_BUNDLE | shasum | cut -c1-10)
 if [[ -n "$VER" ]]; then
   # Add-or-replace ?v=<hash> on each script-tagged local .js src.
