@@ -1230,9 +1230,15 @@ if (typeof window !== 'undefined') {
 // "dismiss and play" is one gesture; a tap on the banner itself only dismisses
 // (the panel is the pointer-down target, so no card receives the click).
 if (typeof document !== 'undefined') {
-  document.addEventListener('pointerdown', () => { dismissFlashes(); }, true);
+  document.addEventListener('pointerdown', () => {
+    dismissFlashes();
+    if (typeof skipCoinFlip === 'function') skipCoinFlip();
+  }, true);
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && dismissFlashes()) e.preventDefault();
+    if (e.key !== 'Escape' && e.key !== ' ') return;
+    if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    const did = dismissFlashes() | (typeof skipCoinFlip === 'function' && skipCoinFlip());
+    if (did) e.preventDefault();
   });
 }
 

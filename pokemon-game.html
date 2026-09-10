@@ -1662,9 +1662,10 @@ body.skin-sheet .card-badge.power .badge-glyph { display: none; }
 #coin-overlay {
   display: none;
   pointer-events: none;
+  cursor: pointer; /* tap / click skips to the result — see skipCoinFlip() */
   width: max-content; max-width: min(92vw, 440px);
 }
-#coin-overlay.show { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#coin-overlay.show { display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: auto; }
 #coin-overlay-panel {
   background: var(--surface);
   border: 1px solid var(--border2);
