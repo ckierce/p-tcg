@@ -702,86 +702,90 @@ function cancelAction() {
 // ══════════════════════════════════════════════════
 // COIN FLIP
 // ══════════════════════════════════════════════════
-function showCoinAnimation(label, heads, opts = {}) {
+// ── Coin sequence (shared by live flips and multiplayer replays) ──────────────
+// pre-delay → 1s spin → result → 1.2s hold → resolve. A tap / click / Escape /
+// Space at any point (skipCoinFlip) jumps straight to the landed face, shows
+// the result and resolves after a short beat; a second tap closes at once.
+let _coinSkipFn = null;
+function skipCoinFlip() {
+  if (!_coinSkipFn) return false;
+  _coinSkipFn();
+  return true;
+}
+function _runCoinSequence(label, heads, opts = {}) {
   return new Promise(resolve => {
     const overlay = document.getElementById('coin-overlay');
     const coin = document.getElementById('coin');
     const resultEl = document.getElementById('coin-result');
     const labelEl = document.getElementById('coin-label');
     const endDeg = heads ? 1440 : 1620;
+    const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
+      ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}` : label;
+    // Shorter pre-delay if the overlay is already showing (consecutive flips)
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
-    setTimeout(() => {
+    const timers = [];
+    const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+    const clearTimers = () => { timers.forEach(clearTimeout); timers.length = 0; };
+
+    const showResult = () => {
+      resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
+      resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
+    };
+    const finish = () => {
+      clearTimers();
+      _coinSkipFn = null;
+      if (!opts.persistent) overlay.classList.remove('show');
+      coin.classList.remove('flipping');
+      coin.style.transform = '';
+      resolve();
+    };
+    const start = () => {
       coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
-      const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
-        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}` : label;
       labelEl.textContent = header || 'Flipping a coin...';
       resultEl.textContent = '';
       overlay.classList.add('show');
       coin.classList.remove('flipping');
       void coin.offsetWidth;
       coin.classList.add('flipping');
-      setTimeout(() => {
-        resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
-        resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
-        setTimeout(() => {
-          if (!opts.persistent) overlay.classList.remove('show');
-          coin.classList.remove('flipping');
-          resolve();
-        }, 1200);
-      }, 1000);
-    }, PRE_DELAY);
+      later(() => { showResult(); later(finish, 1200); }, 1000);
+    };
+    // Skip: land the coin on its final face right now, show the result, then
+    // resolve after a beat. Skipping again during that beat resolves at once.
+    _coinSkipFn = () => {
+      clearTimers();
+      coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
+      labelEl.textContent = header || 'Flipping a coin...';
+      overlay.classList.add('show');
+      coin.classList.remove('flipping');
+      coin.style.transform = `rotateY(${endDeg}deg)`;
+      showResult();
+      _coinSkipFn = finish;
+      later(finish, 350);
+    };
+    later(start, PRE_DELAY);
   });
+}
+
+// Replay of a flip that already happened (opponent's flips in multiplayer).
+function showCoinAnimation(label, heads, opts = {}) {
+  return _runCoinSequence(label, heads, opts);
 }
 
 function flipCoin(label, opts = {}) {
   // opts.persistent: keep overlay open after resolving (caller closes via closeCoinOverlay())
   // opts.flipNum / opts.totalFlips: show "Flip X of Y" when in a multi-flip sequence
-  return new Promise(resolve => {
-    const overlay = document.getElementById('coin-overlay');
-    const coin = document.getElementById('coin');
-    const resultEl = document.getElementById('coin-result');
-    const labelEl = document.getElementById('coin-label');
-
-    const heads = Math.random() < 0.5;
-    if (!G.coinFlipLog) G.coinFlipLog = [];
-    const _flipTs = Date.now();
-    G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips, ts: _flipTs });
-    // Advance the receive-replay watermark so this client's own listener — which
-    // can fire for the local optimistic write echo if isWriting toggles between
-    // pushes — doesn't replay a flip we just animated live. The opponent's
-    // window._lastCoinFlipTs is independent (separate browser context), so they
-    // still see the flip on their next receiveGameState. See bug: "Coin flips
-    // are happening twice (Lickitung Tongue Wrap)".
-    if (typeof window !== 'undefined') window._lastCoinFlipTs = _flipTs;
-    const endDeg = heads ? 1440 : 1620;
-
-    // Shorter pre-delay if overlay is already showing (consecutive flips)
-    const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
-
-    setTimeout(() => {
-      coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
-      const header = (opts.flipNum && opts.totalFlips && opts.totalFlips > 1)
-        ? `Flip ${opts.flipNum} of ${opts.totalFlips} — ${label}`
-        : label;
-      labelEl.textContent = header || 'Flipping a coin...';
-      resultEl.textContent = '';
-      overlay.classList.add('show');
-
-      coin.classList.remove('flipping');
-      void coin.offsetWidth;
-      coin.classList.add('flipping');
-
-      setTimeout(() => {
-        resultEl.textContent = heads ? '✦ HEADS ✦' : '✦ TAILS ✦';
-        resultEl.style.color = heads ? 'var(--ok)' : 'var(--p2color)';
-        setTimeout(() => {
-          if (!opts.persistent) overlay.classList.remove('show');
-          coin.classList.remove('flipping');
-          resolve(heads);
-        }, 1200);
-      }, 1000);
-    }, PRE_DELAY);
-  });
+  const heads = Math.random() < 0.5;
+  if (!G.coinFlipLog) G.coinFlipLog = [];
+  const _flipTs = Date.now();
+  G.coinFlipLog.push({ label, heads, flipNum: opts.flipNum, totalFlips: opts.totalFlips, ts: _flipTs });
+  // Advance the receive-replay watermark so this client's own listener — which
+  // can fire for the local optimistic write echo if isWriting toggles between
+  // pushes — doesn't replay a flip we just animated live. The opponent's
+  // window._lastCoinFlipTs is independent (separate browser context), so they
+  // still see the flip on their next receiveGameState. See bug: "Coin flips
+  // are happening twice (Lickitung Tongue Wrap)".
+  if (typeof window !== 'undefined') window._lastCoinFlipTs = _flipTs;
+  return _runCoinSequence(label, heads, opts).then(() => heads);
 }
 
 function closeCoinOverlay() {
