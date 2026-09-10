@@ -215,7 +215,7 @@ function renderField(player) {
         const badgeParts1 = [
           card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
           card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
-          oppPower1 ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${oppPowerSup1 ? 'opacity:.4;text-decoration:line-through' : ''}">${oppPower1.name.substring(0,8)}</div>` : '',
+          powerBadge(oppPower1, oppPowerSup1),
           typeof conversionBadges === 'function' ? conversionBadges(card) : '',
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
@@ -246,7 +246,7 @@ function renderField(player) {
           const badgeParts2 = [
             card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
             card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
-            benchPower ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${benchPowerSup ? 'opacity:.4;text-decoration:line-through' : ''}">${benchPower.name.substring(0,8)}</div>` : '',
+            powerBadge(benchPower, benchPowerSup),
             typeof conversionBadges === 'function' ? conversionBadges(card) : '',
           ].filter(Boolean);
           const badges = badgeParts2.length ? `<div class="card-badges">${badgeParts2.join('')}</div>` : '';
@@ -314,7 +314,7 @@ function renderSlotP1(el, card) {
   const badgeParts3 = [
     card.defender  ? `<div class="card-badge defender">DEF</div>` : '',
     card.plusPower ? `<div class="card-badge pluspower">+10</div>` : '',
-    power ? `<div class="card-badge" style="background:rgba(180,100,220,.9);color:#fff;${powerSuppressed ? 'opacity:.4;text-decoration:line-through' : ''}">${power.name.substring(0,8)}</div>` : '',
+    powerBadge(power, powerSuppressed),
     typeof conversionBadges === 'function' ? conversionBadges(card) : '',
   ].filter(Boolean);
   const badges = badgeParts3.length ? `<div class="card-badges">${badgeParts3.join('')}</div>` : '';
@@ -824,6 +824,15 @@ function energyIcon(energyName, size = 16) {
   return `<svg width="${s}" height="${s}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="15" fill="${c}" stroke="rgba(0,0,0,.4)" stroke-width="1.5"/><text x="16" y="21" text-anchor="middle" font-size="14" fill="white" font-family="sans-serif" font-weight="bold">${key[0].toUpperCase()}</text></svg>`;
 }
 
+
+// Pokémon Power badge: the FULL power name (CSS clips it with an ellipsis to
+// the card width) plus a star glyph that small bench cards show instead.
+function powerBadge(power, suppressed) {
+  if (!power) return '';
+  const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+  const name = esc(power.name || '');
+  return `<div class="card-badge power${suppressed ? ' suppressed' : ''}" title="${name}${suppressed ? ' (suppressed by Toxic Gas)' : ''}"><span class="badge-full">${name}</span><span class="badge-glyph">★</span></div>`;
+}
 
 // Returns HTML for damage counter dots — one black dot per 10 damage
 function damageCounters(damage, isActive = false) {
