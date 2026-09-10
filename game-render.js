@@ -1026,6 +1026,33 @@ function clearFlashQueue(hideVisible = false) {
   }
 }
 
+// Tap / click / Escape: hide whatever banner is up and skip the narration
+// still waiting behind it, so the player never has to sit through a queue of
+// announcements to keep playing. Board updates and turn hand-offs queued as
+// duration-0 items are KEPT and run immediately. The coin flip is not a
+// banner and is left alone (game logic awaits it).
+function dismissFlashes() {
+  if (typeof document === 'undefined') return false;
+  let dismissed = false;
+  for (const id of _FLASH_ELEMENT_IDS) {
+    const el = document.getElementById(id);
+    if (!el || !el.classList.contains('show')) continue;
+    el.classList.remove('show');
+    el._flashUntil = 0;
+    clearTimeout(el._flashTimer);
+    dismissed = true;
+  }
+  if (!dismissed) return false;
+  const keep = _flashQueue.filter(item => !(item.duration > 0));
+  _flashQueue.length = 0;
+  _flashQueue.push(...keep);
+  _flashBusy = false;
+  _flashGen++;
+  clearTimeout(_flashRetryTimer);
+  _runFlashQueue();
+  return true;
+}
+
 function _runFlashQueue() {
   if (_flashBusy || _flashQueue.length === 0) return;
   // Never start a new flash while another overlay is still on screen — that is
@@ -1184,6 +1211,17 @@ if (typeof document !== 'undefined') {
 }
 if (typeof window !== 'undefined') {
   window.addEventListener('focus', _stopTitleBlink);
+}
+
+// Any pointer-down while a banner is showing dismisses it. Capture phase, no
+// preventDefault: a tap on the board still reaches the card underneath, so
+// "dismiss and play" is one gesture; a tap on the banner itself only dismisses
+// (the panel is the pointer-down target, so no card receives the click).
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', () => { dismissFlashes(); }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && dismissFlashes()) e.preventDefault();
+  });
 }
 
 // Keyboard activation for the board's clickable <div>s (slots, hand cards).
