@@ -8,19 +8,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 <style>
 :root {
-  --bg:         #1a3a2a;
-  --surface:    #1e4a32;
-  --surface2:   #245c3c;
-  --border:     #2d7a50;
-  --border2:    #3a9660;
-  --text:       #e8f0e0;
-  --muted:      #6a9c7a;
-  --accent:     #e8c84a;
-  --ok:         #48bb78;
-  --warn:       #ed8936;
-  --danger:     #f56565;
-  --font:       'Gill Sans', 'Gill Sans MT', Calibri, sans-serif;
-  --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
+  /* Colour + type tokens live in theme.css (shared with the game board) */
   --radius:     4px;
   --card-w:     150px;
 }
@@ -74,7 +62,7 @@ header h1 span {
 
 .deck-summary {
   font-family: var(--font-title);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   text-align: right;
   letter-spacing: 1px;
@@ -123,7 +111,7 @@ header h1 span {
   background: transparent;
   color: var(--danger);
   border: 1px solid var(--danger);
-  font-size: 9px;
+  font-size: 11px;
   padding: 5px 10px;
 }
 .btn-danger:hover { background: rgba(245,101,101,.1); }
@@ -263,7 +251,7 @@ select:focus { border-color: var(--accent); }
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.grid-section-header:hover { color: var(--text); }
+.grid-section-header:hover { color: var(--text); background: rgba(255,255,255,.04); }
 
 .grid-type-header {
   font-family: var(--font);
@@ -278,7 +266,7 @@ select:focus { border-color: var(--accent); }
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
-.grid-type-header:hover { color: var(--text); }
+.grid-type-header:hover { color: var(--text); background: rgba(255,255,255,.04); }
 
 .grid-section-count {
   font-family: var(--font);
@@ -289,7 +277,7 @@ select:focus { border-color: var(--accent); }
 
 .collapse-arrow {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 13px;
   color: var(--muted);
   transition: transform .2s;
   display: inline-block;
@@ -309,7 +297,18 @@ select:focus { border-color: var(--accent); }
   transition: transform .15s, border-color .15s;
   position: relative;
 }
-.card-item:hover { transform: translateY(-2px); border-color: var(--accent); }
+.card-item:hover, .card-item:focus-visible { transform: translateY(-2px); border-color: var(--accent); }
+/* Hover / focus magnifier: view the full card without adding it (right-click does the same) */
+.card-zoom-btn {
+  position: absolute; top: 5px; left: 5px; z-index: 2;
+  width: 26px; height: 26px; border-radius: var(--radius);
+  border: 1px solid var(--border2); background: rgba(0,0,0,.65); color: var(--text);
+  font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s;
+}
+.card-item:hover .card-zoom-btn, .card-item:focus-within .card-zoom-btn, .card-zoom-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .card-zoom-btn { opacity: 1; } }
+.card-zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
 .card-item.maxed { opacity: 0.35; pointer-events: none; }
 .card-item.in-deck { border-color: var(--accent); }
 .card-item.in-deck::after {
@@ -320,7 +319,7 @@ select:focus { border-color: var(--accent); }
   background: var(--accent);
   color: #000;
   font-family: var(--font-title);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: bold;
   padding: 2px 5px;
   border-radius: 3px;
@@ -337,17 +336,32 @@ select:focus { border-color: var(--accent); }
   align-items: center;
   justify-content: center;
 }
-.card-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+/* Card back + shimmer while the (lazy, remote) image loads; fades in on load */
+.card-img-wrap, .cli-thumb, .deck-card-img, .action-sheet-thumb {
+  background: var(--surface2) url("back.jpg") center / cover no-repeat;
+  position: relative;
+}
+.card-img-wrap::before, .cli-thumb::before {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(110deg, rgba(0,0,0,.35) 30%, rgba(255,255,255,.10) 50%, rgba(0,0,0,.35) 70%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.card-img-wrap.loaded::before, .cli-thumb.loaded::before { display: none; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.card-img-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s, opacity .25s; opacity: 0; position: relative; }
+.card-img-wrap.loaded img, .cli-thumb.loaded img { opacity: 1; }
+.cli-thumb img { opacity: 0; transition: opacity .25s; }
 .card-item:hover .card-img-wrap img { transform: scale(1.03); }
 .card-img-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 24px; }
 
 .card-info { padding: 6px 8px; border-top: 1px solid var(--border); }
 .card-name { font-size: 10px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
-.card-type { font-size: 9px; color: var(--muted); }
+.card-type { font-size: 11px; color: var(--muted); }
 .card-set-badge {
   font-family: var(--font-title);
-  font-size: 6px;
+  font-size: 9px;
   padding: 2px 4px;
   border-radius: 2px;
   background: var(--surface2);
@@ -364,7 +378,7 @@ select:focus { border-color: var(--accent); }
 .desktop-list .cli-thumb { width: 28px; height: 40px; }
 .desktop-list .cli-name { font-size: 12px; }
 .desktop-list .cli-add { width: 28px; height: 28px; font-size: 18px; border-radius: var(--radius); }
-.desktop-list .cli-more { display: none; }
+.desktop-list .cli-more { display: flex; }
 
 /* ── RIGHT: DECK PANEL ───────────────────────────────────────────────────── */
 .deck-panel {
@@ -395,13 +409,14 @@ select:focus { border-color: var(--accent); }
   padding: 7px 10px;
   color: var(--text);
   font-family: var(--font-title);
-  font-size: 10px;
+  font-size: 13px;
   outline: none;
   transition: border-color .15s;
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 .deck-name-input:focus { border-color: var(--accent); }
+.deck-name-input.error { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(248,113,113,.25); }
 .deck-name-input::placeholder { color: var(--muted); }
 
 .deck-stats {
@@ -417,7 +432,7 @@ select:focus { border-color: var(--accent); }
   text-align: center;
 }
 .stat-box .stat-val { font-family: var(--font-title); font-size: 16px; color: var(--text); }
-.stat-box .stat-lbl { font-size: 9px; color: var(--muted); margin-top: 2px; letter-spacing: .3px; }
+.stat-box .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 2px; letter-spacing: .3px; }
 
 .validation-strip {
   margin-top: 8px;
@@ -437,7 +452,7 @@ select:focus { border-color: var(--accent); }
 .deck-group { margin-bottom: 13px; }
 .deck-group-label {
   font-family: var(--font-title);
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -477,7 +492,7 @@ select:focus { border-color: var(--accent); }
 
 .empty-deck { text-align: center; padding: 36px 16px; color: var(--muted); }
 .empty-deck .poke-emoji { font-size: 36px; margin-bottom: 10px; }
-.empty-deck p { font-family: var(--font-title); font-size: 9px; line-height: 2.2; letter-spacing: 1px; text-transform: uppercase; }
+.empty-deck p { font-family: var(--font-title); font-size: 11px; line-height: 2.2; letter-spacing: 1px; text-transform: uppercase; }
 
 /* ── LOADING / ERROR ─────────────────────────────────────────────────────── */
 .loading { text-align: center; padding: 60px 20px; color: var(--muted); }
@@ -514,6 +529,15 @@ select:focus { border-color: var(--accent); }
   pointer-events: none;
 }
 .toast.show { opacity: 1; pointer-events: auto; }
+.toast-action {
+  margin-left: 14px; padding: 4px 10px; border-radius: var(--radius);
+  border: 1px solid var(--accent); background: transparent; color: var(--accent);
+  font-family: var(--font); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+}
+.toast-action:hover { background: rgba(232,200,74,.12); }
+/* Desktop: sit over the deck panel, where the action happened, not over the grid */
+@media (min-width: 641px) { .toast { left: auto; right: 20px; transform: none; bottom: 64px; } }
+.saved-deck-item .d-del.armed { background: var(--danger); color: #000; }
 .toast.error { border-color: var(--danger); color: var(--danger); }
 
 /* ── MODAL ───────────────────────────────────────────────────────────────── */
@@ -559,7 +583,7 @@ select:focus { border-color: var(--accent); }
 .saved-deck-item .d-count { font-size: 10px; color: var(--muted); }
 .saved-deck-item .d-load {
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 11px;
   padding: 5px 10px;
   background: var(--accent);
   color: #000;
@@ -572,7 +596,7 @@ select:focus { border-color: var(--accent); }
 .saved-deck-item .d-load:hover { background: #f0d060; }
 .saved-deck-item .d-del {
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 11px;
   padding: 5px 8px;
   background: transparent;
   color: var(--danger);
@@ -619,7 +643,7 @@ select:focus { border-color: var(--accent); }
 .cli-sub { font-size: 11px; color: var(--muted); margin-top: 2px; display: flex; align-items: center; gap: 5px; }
 .cli-badge {
   font-family: var(--font-title);
-  font-size: 6px;
+  font-size: 9px;
   padding: 2px 4px;
   border-radius: 2px;
   background: var(--surface2);
@@ -629,7 +653,7 @@ select:focus { border-color: var(--accent); }
 }
 .cli-deck-qty {
   font-family: var(--font-title);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--accent);
   background: rgba(232,200,74,.1);
   border: 1px solid rgba(232,200,74,.3);
@@ -686,6 +710,10 @@ select:focus { border-color: var(--accent); }
   animation: slideUp .2s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+/* On wide screens the sheet is a centred card, not a full-width strip */
+@media (min-width: 641px) {
+  .action-sheet { max-width: 420px; margin: 0 auto 24px; border-radius: 8px; border: 1px solid var(--border2); }
+}
 
 .action-sheet-header {
   display: flex; align-items: center; gap: 12px;
@@ -778,7 +806,7 @@ select:focus { border-color: var(--accent); }
   border: none;
   color: var(--muted);
   font-family: var(--font-title);
-  font-size: 7px;
+  font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: pointer;
@@ -796,7 +824,7 @@ select:focus { border-color: var(--accent); }
   background: var(--accent);
   color: #000;
   font-family: var(--font-title);
-  font-size: 7px;
+  font-size: 10px;
   font-weight: bold;
   padding: 2px 4px;
   border-radius: 3px;
@@ -813,13 +841,13 @@ select:focus { border-color: var(--accent); }
 ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
 
 /* ── RESPONSIVE ──────────────────────────────────────────────────────────── */
-@media (max-width: 800px) {
+@media (max-width: 640px) {
   header { padding: 10px 14px; gap: 10px; flex-wrap: nowrap; }
   header h1 { font-size: 10px; flex-shrink: 0; }
   .header-right { gap: 5px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }
   .deck-summary { display: none; }
   .btn-ghost.hide-mobile { display: none; }
-  .btn { font-size: 8px; padding: 8px 10px; }
+  .btn { font-size: 10px; padding: 8px 10px; }
 
   .layout { display: block; height: calc(100vh - 50px); position: relative; overflow: hidden; }
   .browser {
@@ -850,15 +878,16 @@ select:focus { border-color: var(--accent); }
   .qty-btn { width: 28px; height: 28px; font-size: 17px; }
   .deck-card-row { padding: 6px 0; }
   .deck-actions { padding: 9px 12px 12px; }
-  .deck-actions .btn { padding: 11px 8px; font-size: 8px; }
+  .deck-actions .btn { padding: 11px 8px; font-size: 10px; }
 
   .mobile-tabs { display: block; }
   #view-toggle { display: none !important; }
   .toast { bottom: 70px; }
   .modal { padding: 18px 14px; }
-  .grid-section-header { font-size: 9px; }
+  .grid-section-header { font-size: 11px; }
 }
 </style>
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
 
@@ -879,9 +908,9 @@ select:focus { border-color: var(--accent); }
 
     <div class="controls">
       <div class="search-wrap">
-        <input type="text" id="search" placeholder="Search cards..." oninput="filterCards()">
+        <input type="text" id="search" placeholder="Search cards..." aria-label="Search cards" oninput="filterCards()">
       </div>
-      <select id="type-filter" onchange="filterCards()">
+      <select id="type-filter" aria-label="Filter by card type" onchange="filterCards()">
         <option value="">All Types</option>
         <option value="Pokémon">Pokémon</option>
         <option value="Trainer">Trainer</option>
@@ -891,8 +920,8 @@ select:focus { border-color: var(--accent); }
     <div class="results-row">
       <div class="results-info" id="results-info"></div>
       <div class="view-toggle" id="view-toggle" title="Toggle view">
-        <button class="view-btn active" id="vbtn-grid" onclick="setViewMode('grid')" title="Grid view">⊞</button>
-        <button class="view-btn" id="vbtn-list" onclick="setViewMode('list')" title="List view">☰</button>
+        <button class="view-btn active" id="vbtn-grid" onclick="setViewMode('grid')" title="Grid view" aria-label="Grid view">⊞</button>
+        <button class="view-btn" id="vbtn-list" onclick="setViewMode('list')" title="List view" aria-label="List view">☰</button>
       </div>
     </div>
     <div class="card-grid" id="card-grid">
@@ -907,7 +936,7 @@ select:focus { border-color: var(--accent); }
   <div class="deck-panel">
     <div class="deck-header">
       <div class="deck-name-row">
-        <input type="text" class="deck-name-input" id="deck-name" value="" placeholder="DECK NAME">
+        <input type="text" class="deck-name-input" id="deck-name" value="" placeholder="DECK NAME" aria-label="Deck name" oninput="this.classList.remove('error')">
       </div>
       <div class="deck-stats">
         <div class="stat-box"><div class="stat-val" id="stat-poke">0</div><div class="stat-lbl">Pokémon</div></div>
@@ -935,7 +964,7 @@ select:focus { border-color: var(--accent); }
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <button class="btn btn-ghost" id="modal-back-btn" onclick="modalGoBack()" style="display:none;padding:6px 10px;font-size:11px">← Back</button>
       <h2 style="margin-bottom:0" id="modal-title">Folders</h2>
-      <button class="btn btn-ghost" id="modal-new-folder-btn" onclick="modalNewFolder()" style="margin-left:auto;font-size:9px;padding:6px 10px">+ New Folder</button>
+      <button class="btn btn-ghost" id="modal-new-folder-btn" onclick="modalNewFolder()" style="margin-left:auto;font-size:11px;padding:6px 10px">+ New Folder</button>
     </div>
     <div class="saved-deck-list" id="saved-deck-list"></div>
     <button class="btn btn-ghost modal-close" onclick="closeDecksModal()">Close</button>
@@ -1099,10 +1128,11 @@ function cardHTML(c) {
   const deckFull = deckTotal() >= MAX_DECK;
   const disabled = (atMax || (deckFull && !inDeck)) ? 'maxed' : '';
   const imgSrc = c.images?.small || '';
-  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-count="${qty}" onclick="addCard('${c.id}')" title="${c.name}">
+  return `<div class="card-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-count="${qty}" tabindex="0" role="button" aria-label="Add ${c.name} to deck" onclick="addCard('${c.id}')" oncontextmenu="event.preventDefault();openCardZoom('${c.id}')" title="${c.name} — click to add, right-click to view">
+    <button class="card-zoom-btn" type="button" aria-label="View ${c.name}" onclick="event.stopPropagation();openCardZoom('${c.id}')">🔍</button>
     <div class="card-img-wrap">
       ${imgSrc
-        ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">`
+        ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy" decoding="async" onload="this.parentElement.classList.add('loaded')">`
         : `<div class="card-img-placeholder">${typeEmoji(c.supertype)}</div>`}
     </div>
     <div class="card-info">
@@ -1208,13 +1238,13 @@ function typeGroupHeader(type, color, count, key) {
   return `<div class="grid-type-header${collapsed ? ' section-collapsed' : ''}" onclick="toggleSection('${key}')">
     <span class="type-dot" style="background:${color};width:9px;height:9px;display:inline-block;border-radius:50%;margin-right:6px;vertical-align:middle;flex-shrink:0"></span>
     ${TYPE_LABELS[type] || type} <span class="grid-section-count">${count}</span>
-    <span class="collapse-arrow" style="font-size:8px">▼</span>
+    <span class="collapse-arrow" style="font-size:10px">▼</span>
   </div>`;
 }
 
 // ─── MOBILE LIST RENDERING ──────────────────────────────────────────────────
 function isMobileLayout() {
-  return window.innerWidth <= 800;
+  return window.innerWidth <= 640;
 }
 
 function cardLevel(c) {
@@ -1238,7 +1268,7 @@ function cardListItemHTML(c) {
 
   return `<div class="card-list-item ${inDeck ? 'in-deck' : ''} ${disabled}" data-id="${c.id}">
     <div class="cli-thumb">
-      ${imgSrc ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy">` : typeEmoji(c.supertype)}
+      ${imgSrc ? `<img src="${imgSrc}" alt="${c.name}" loading="lazy" decoding="async" onload="this.parentElement.classList.add('loaded')">` : typeEmoji(c.supertype)}
     </div>
     <div class="cli-info">
       <div class="cli-name">${c.name}</div>
@@ -1309,14 +1339,19 @@ function closeActionSheet() {
 }
 function asAddCard()    { if (actionSheetCardId) { addCard(actionSheetCardId); closeActionSheet(); } }
 function asRemoveCard() { if (actionSheetCardId) { changeQty(actionSheetCardId, -1); closeActionSheet(); } }
-function asViewCard() {
-  if (!actionSheetCardId) return;
-  const card = allCards.find(c => c.id === actionSheetCardId);
+// Full-size view of any card (grid magnifier, right-click, or the action sheet)
+function openCardZoom(cardId) {
+  const card = allCards.find(c => c.id === cardId);
   if (!card) return;
   const imgSrc = card.images?.large || card.images?.small || '';
-  if (!imgSrc) { showToast('No image available', true); closeActionSheet(); return; }
-  document.getElementById('card-zoom-img').src = imgSrc;
+  if (!imgSrc) { showToast('No image available', true); return; }
+  const img = document.getElementById('card-zoom-img');
+  img.src = imgSrc; img.alt = card.name;
   document.getElementById('card-zoom-overlay').classList.add('show');
+}
+function asViewCard() {
+  if (!actionSheetCardId) return;
+  openCardZoom(actionSheetCardId);
   closeActionSheet();
 }
 function closeCardZoom() {
@@ -1354,11 +1389,21 @@ function changeQty(id, delta) {
   renderDeck(); renderGrid(); validateDeck(false);
 }
 
+let _clearedDeck = null;
 function clearDeck() {
   if (!Object.keys(deck).length) return;
+  // Undoable rather than blocking: one mis-click used to wipe 60 cards for good
+  _clearedDeck = deck;
   deck = {};
   renderDeck(); renderGrid(); updateHeader();
   document.getElementById('validation-strip').className = 'validation-strip';
+  showToast('Deck cleared', false, { label: 'Undo', fn: undoClear }, 6000);
+}
+function undoClear() {
+  if (!_clearedDeck) return;
+  deck = _clearedDeck; _clearedDeck = null;
+  renderDeck(); renderGrid(); validateDeck(false);
+  showToast('Deck restored');
 }
 
 // ─── RENDER DECK ────────────────────────────────────────────────────────────
@@ -1384,13 +1429,13 @@ function renderDeck() {
       const img = card.images?.small;
       html += `<div class="deck-card-row">
         ${img
-          ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy">`
+          ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy" decoding="async">`
           : `<div class="deck-card-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">${typeEmoji(card.supertype)}</div>`}
         <span class="deck-card-name">${card.name}</span>
         <div class="qty-ctrl">
-          <button class="qty-btn" onclick="changeQty('${card.id}', -1)">−</button>
-          <span class="qty-num">${qty}</span>
-          <button class="qty-btn" onclick="changeQty('${card.id}', 1)">+</button>
+          <button class="qty-btn" aria-label="Remove one ${card.name}" onclick="changeQty('${card.id}', -1)">−</button>
+          <span class="qty-num" aria-label="${qty} in deck">${qty}</span>
+          <button class="qty-btn" aria-label="Add one ${card.name}" onclick="changeQty('${card.id}', 1)">+</button>
         </div>
       </div>`;
     });
@@ -1451,6 +1496,7 @@ async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim();
   if (!name || name.toLowerCase() === 'my deck' || name.toLowerCase() === 'new deck') {
     showToast('Please give your deck a name before saving!', true);
+    document.getElementById('deck-name').classList.add('error');
     document.getElementById('deck-name').focus();
     return;
   }
@@ -1564,12 +1610,12 @@ async function pickSaveFolder() {
 
     const cancelBtn = document.createElement('button');
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'flex:1;font-family:var(--font);font-size:9px;padding:10px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;';
+    cancelBtn.style.cssText = 'flex:1;font-family:var(--font);font-size:11px;padding:10px;background:transparent;border:1px solid var(--border2);color:var(--muted);border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;';
     cancelBtn.addEventListener('click', () => { overlay.remove(); resolve(null); });
 
     const saveBtn = document.createElement('button');
     saveBtn.textContent = 'Save';
-    saveBtn.style.cssText = 'flex:2;font-family:var(--font);font-size:9px;padding:10px;background:var(--accent);border:1px solid var(--accent);color:#000;border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;font-weight:700;';
+    saveBtn.style.cssText = 'flex:2;font-family:var(--font);font-size:11px;padding:10px;background:var(--accent);border:1px solid var(--accent);color:#000;border-radius:var(--radius);cursor:pointer;letter-spacing:.5px;text-transform:uppercase;font-weight:700;';
     saveBtn.addEventListener('click', () => {
       const newVal = newInput.value.trim();
       const folder = newVal || selected || 'My Decks';
@@ -1692,7 +1738,7 @@ async function openFolder(encodedFKey, encodedDisplayName) {
           <div class="d-count">${total} cards</div>
         </div>
         <button class="d-load" onclick="loadDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Load</button>
-        <button class="d-del"  onclick="deleteDeck('${delFKey}','${encodeURIComponent(d.name)}',${isLegacy})">Del</button>
+        <button class="d-del"  onclick="confirmDelete(this,'${delFKey}','${encodeURIComponent(d.name)}',${isLegacy})" aria-label="Delete ${d.name}">Del</button>
       </div>`;
     }).join('');
   } catch(e) {
@@ -1752,6 +1798,15 @@ async function loadDeck(encodedFKey, encodedName) {
   showToast(`"${name}" loaded!`);
 }
 
+// First click arms the button ("Sure?"), a second click within 4s deletes.
+function confirmDelete(btn, encodedFKey, encodedName, isLegacy) {
+  if (btn.dataset.armed) { deleteDeck(encodedFKey, encodedName, isLegacy); return; }
+  btn.dataset.armed = '1';
+  const orig = btn.textContent;
+  btn.textContent = 'Sure?';
+  btn.classList.add('armed');
+  setTimeout(() => { delete btn.dataset.armed; btn.textContent = orig; btn.classList.remove('armed'); }, 4000);
+}
 async function deleteDeck(encodedFKey, encodedName, isLegacy) {
   const fKey = decodeURIComponent(encodedFKey);
   const name = decodeURIComponent(encodedName);
@@ -1769,18 +1824,41 @@ async function deleteDeck(encodedFKey, encodedName, isLegacy) {
 
 // ─── UI HELPERS ──────────────────────────────────────────────────────────────
 let toastTimer;
-function showToast(msg, isError = false) {
+// action: optional { label, fn } rendered as a button inside the toast (e.g. Undo)
+function showToast(msg, isError = false, action = null, duration = 2200) {
   const t = document.getElementById('toast');
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.className = 'toast-action'; b.type = 'button'; b.textContent = action.label;
+    b.onclick = () => { clearTimeout(toastTimer); t.className = 'toast'; action.fn(); };
+    t.appendChild(b);
+  }
   t.className = 'toast show' + (isError ? ' error' : '');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), 2200);
+  toastTimer = setTimeout(() => t.className = 'toast' + (isError ? ' error' : ''), duration);
 }
 
 
 
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
+});
+
+// Enter / Space activates the card tiles (role="button" divs) like a click
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const t = e.target;
+  if (!t || t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'SELECT') return;
+  if (t.getAttribute('role') !== 'button') return;
+  e.preventDefault(); t.click();
+});
+// Escape closes whatever overlay is open
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('card-zoom-overlay').classList.contains('show')) return closeCardZoom();
+  if (document.getElementById('action-sheet-overlay').classList.contains('show')) return closeActionSheet();
+  if (document.getElementById('decks-modal').classList.contains('show')) return closeDecksModal();
 });
 
 // ─── MOBILE TAB SWITCHING ────────────────────────────────────────────────────
