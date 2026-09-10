@@ -31,7 +31,10 @@
   --font:      'Gil Sans', 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif;
   --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
 
-  /* Fluid card sizing — active is the hero, bench is supporting */
+  /* Fluid card sizing — active is the hero, bench is supporting.
+     These :root values are fallbacks used OUTSIDE the field (sidebar prizes tab
+     etc.). The real board sizes live on #field-body below, where they are also
+     capped by the field's own height via container-query units (cqh). */
   --active-w:    clamp(130px, 18vw, 260px);
   --active-h:    clamp(182px, 25.2vw, 364px);
   --card-w-sm:   clamp(64px,  8vw,  110px);
@@ -39,6 +42,11 @@
   /* Prize card size: 2 cols × 3 rows must fit below midline alongside player zone */
   --prize-w:     clamp(36px, 4.5vw, 62px);
   --prize-h:     calc(var(--prize-w) * 1.4);
+  /* Opponent cards — deliberately smaller than the player's */
+  --opp-active-h: 168px;
+  --opp-active-w: 120px;
+  --opp-bench-h:  90px;
+  --opp-bench-w:  64px;
   /* Legacy aliases */
   --card-w:      var(--active-w);
   --card-h:      var(--active-h);
@@ -99,7 +107,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 #login-box input {
   width: 100%;
-  font-family: var(--pixel);
+  font-family: var(--font);
   font-size: 12px;
   background: var(--surface2);
   border: 1px solid var(--border2);
@@ -111,14 +119,14 @@ h1, h2, h3 { font-family: var(--font-title); }
 #login-box input:focus { border-color: var(--accent); }
 #login-error {
   font-size: 9px;
-  color: var(--accent2);
+  color: var(--p2color);
   min-height: 14px;
   text-align: center;
   letter-spacing: .5px;
 }
 #login-submit {
   width: 100%;
-  font-family: var(--pixel);
+  font-family: var(--font);
   font-size: 11px;
   letter-spacing: 1px;
   background: var(--accent);
@@ -336,13 +344,35 @@ h1, h2, h3 { font-family: var(--font-title); }
   display: flex;
   flex-direction: column;
   align-items: center;
-  overflow: hidden;
-  /* Side panels are position:absolute — padding reserves their width so bench never underlaps */
-  padding: 10px calc(var(--card-w-sm) + 14px);
+  /* Safety net: if a viewport is still too short, the bench scrolls into view
+     instead of being silently lost below the clipped edge. */
+  overflow: hidden auto;
+  padding: 10px 14px;
   gap: 8px;
   min-height: 0;
   position: relative;
   background: radial-gradient(ellipse at center, #2a6e40 0%, #1a4828 60%, #122e1c 100%);
+
+  /* ── Vertical budget ──
+     The field is a size container, so descendants can size cards in cqh
+     (1cqh = 1% of the field's own height). Every card is the SMALLER of its
+     width-driven size and its height-driven share, so the whole board —
+     opponent zone + midline + active + bench — always fits between the top
+     bar and the hand. Budget: opp ≈22cqh, active 38cqh, bench 17cqh, plus
+     ~80px of fixed gaps/padding/midline. */
+  container-type: size;
+  --active-h:     clamp(120px, min(25.2vw, 38cqh), 364px);
+  --active-w:     calc(var(--active-h) / 1.4);
+  --card-h-sm:    clamp(70px,  min(11.2vw, 17cqh), 154px);
+  --card-w-sm:    calc(var(--card-h-sm) / 1.4);
+  --prize-w:      clamp(30px,  min(4.5vw, 5.5cqh), 62px);
+  --prize-h:      calc(var(--prize-w) * 1.4);
+  --opp-active-h: clamp(90px,  min(11.7vw, 22cqh), 168px);
+  --opp-active-w: calc(var(--opp-active-h) / 1.4);
+  --opp-bench-h:  clamp(50px,  min(6.25vw, 11cqh), 90px);
+  --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
+  /* Width of the prize / deck+discard columns that flank the player's field */
+  --side-w:       max(calc(2 * var(--prize-w) + 4px), calc(var(--card-w-sm) + 26px));
 }
 
 /* ── OPPONENT ZONE — horizontal strip, active centered ────── */
@@ -470,8 +500,8 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 .opp-bench::-webkit-scrollbar { display: none; }
 
 .opp-bench-slot {
-  width: 64px;
-  height: 90px;
+  width: var(--opp-bench-w);
+  height: var(--opp-bench-h);
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface2);
@@ -495,8 +525,8 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 
 /* Opponent active — larger, centered in the top bar */
 .opp-active-slot {
-  width: 120px;
-  height: 168px;
+  width: var(--opp-active-w);
+  height: var(--opp-active-h);
   border: 2px solid var(--p2color);
   border-radius: 8px;
   background: var(--surface2);
@@ -524,11 +554,12 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   padding: 2px 0;
 }
 
-/* Opp prizes — 2×3 grid to match player side */
+/* Opp prizes — 3×2 grid on desktop: the opponent strip is wide but short, and a
+   2×3 column was what made it ~290px tall (mobile flips it back to 2×3). */
 .opp-prizes {
   display: grid;
-  grid-template-columns: repeat(2, var(--prize-w));
-  grid-template-rows: repeat(3, var(--prize-h));
+  grid-template-columns: repeat(3, var(--prize-w));
+  grid-template-rows: repeat(2, var(--prize-h));
   gap: 4px;
   flex-shrink: 0;
 }
@@ -615,15 +646,17 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 }
 
 /* ── PLAYER ZONE ──────────────────────────────────────────── */
-/* Single centered column: bench → active */
+/* Three columns: prizes | active+bench | deck+discard. The side panels live in
+   the flow (not position:absolute) so they always start exactly at the midline
+   and can never overlap the opponent zone or be underlapped by the bench. */
 #player-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+  align-items: start;
   gap: 8px;
   flex-shrink: 0;
   width: 100%;
-  max-width: 100%; /* content constrained by field-body padding */
+  max-width: 100%;
 }
 
 #player-field-col {
@@ -734,7 +767,6 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .energy-overlay svg,
 .energy-overlay-bench svg {
   flex-shrink: 0;
-  drop-shadow: 0 1px 3px rgba(0,0,0,.7);
   filter: drop-shadow(0 1px 2px rgba(0,0,0,.6));
 }
 
@@ -891,21 +923,16 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 #active-p1.highlight { box-shadow: 0 0 16px rgba(232,200,74,.5); }
 
-/* Prizes — fixed to left edge, sits just below midline and grows downward */
+/* Prizes — left column of the player zone, grows downward from the midline */
 #player-prizes-panel {
-  position: absolute;
-  left: 10px;
-  top: 50%;           /* anchored at midline */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
+  justify-content: flex-start;
   padding-top: 6px;
   align-items: center;
   gap: 4px;
-  z-index: 10;
-  pointer-events: none;
+  min-width: 0;
 }
-#player-prizes-panel .prize-grid { pointer-events: auto; }
 #player-prizes-panel .panel-label {
   font-size: 8px;
   color: var(--muted);
@@ -913,18 +940,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   margin-bottom: 2px;
 }
 
-/* Deck + discard — fixed to right edge, sits just below midline and grows downward */
+/* Deck + discard — right column of the player zone, grows downward from the midline */
 #player-aux {
-  position: absolute;
-  right: 10px;
-  top: 50%;           /* anchored at midline */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;   /* grow down from midline, not centered */
+  justify-content: flex-start;
   padding-top: 6px;
   gap: 6px;
   align-items: center;
-  z-index: 10;
+  min-width: 0;
 }
 
 .player-deck-slot {
@@ -1071,7 +1095,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   transition: transform .1s, border-color .1s, box-shadow .1s;
   position: relative;
 }
-.hand-card:hover { transform: translateY(-6px); border-color: var(--border2); box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+/* Lift on hover only where hover exists — on touch screens :hover sticks after a tap */
+@media (hover: hover) {
+  .hand-card:hover { transform: translateY(-6px); border-color: var(--border2); box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+}
+@media (hover: none) {
+  .hand-card:active { transform: translateY(-4px); border-color: var(--border2); }
+}
 .hand-card.selected { border-color: var(--accent); transform: translateY(-8px); box-shadow: 0 0 10px rgba(232,200,74,.4); }
 
 .hand-card-img {
@@ -1086,17 +1116,20 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: rgba(0,0,0,.6);
 }
 .hand-card-name {
-  font-size: 7px;
+  font-size: clamp(9px, 0.7vw, 11px);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-height: 1.5;
+  line-height: 1.4;
 }
 .hand-card-sub {
-  font-size: 7px;
+  font-size: clamp(9px, 0.65vw, 10px);
   color: var(--muted);
-  line-height: 1.4;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hand-card-type-pip {
   display: inline-block;
@@ -1157,7 +1190,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* Log entries */
 .game-log { display: flex; flex-direction: column; gap: 3px; padding: 4px; }
 .log-turn-header {
-  font-size: 8px;
+  font-size: 9px;
   color: var(--border2);
   text-align: center;
   letter-spacing: 1px;
@@ -2103,35 +2136,26 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
    MOBILE OPTIMIZATIONS  (max-width: 600px)
    ══════════════════════════════════════════════════ */
 
-/* ── Global touch sizing ── */
-@media (max-width: 600px) {
-  :root {
-    --active-w:  clamp(80px,  22vw, 120px);
-    --active-h:  clamp(112px, 31vw, 168px);
-    --card-w-sm: clamp(44px,  12vw,  72px);
-    --card-h-sm: clamp(62px,  17vw, 100px);
-    --prize-w:   clamp(24px,  6vw,  38px);
-    --prize-h:   calc(var(--prize-w) * 1.4);
-  }
-
-  #hand-toggle-btn { display: inline-block; }
-
-  html, body { overflow: hidden; touch-action: manipulation; }
-
+/* ── Touch input (phones AND tablets, any width) ──
+   Keyed on the input device rather than the viewport width so an iPad in
+   desktop layout still gets finger-sized targets and no sticky hover. */
+@media (pointer: coarse) {
+  html, body { touch-action: manipulation; }
   /* Prevent double-tap zoom on all interactive elements */
   button, .hand-card, .zone-slot, .opp-bench-slot, .opp-active-slot,
   .setup-player, .lobby-btn, .action-btn, .modal-deck-item {
     touch-action: manipulation;
   }
+  .top-bar-btn { min-height: 36px; padding: 7px 10px; }
+  .action-btn { min-height: 44px; padding: 13px 12px; margin-bottom: 6px; }
+  .sidebar-tab { min-height: 44px; padding: 12px 4px; }
+  .modal-close-btn, .win-btn, .dex-btn, #lass-dismiss { min-height: 44px; padding: 10px 16px; }
+  .modal-deck-item { min-height: 52px; padding: 12px 10px; }
+  #hand-toggle-btn { min-height: 32px; padding: 5px 10px; }
+}
 
-  /* ── Setup screen ── */
-  #setup-screen { gap: 16px; padding: 16px; }
-  #setup-screen h1 { font-size: 15px; }
-  .setup-players { flex-wrap: wrap; gap: 12px; justify-content: center; }
-  .setup-player { width: 140px; padding: 16px 12px; }
-  .lobby-btn { font-size: 11px; padding: 12px 14px; }
-
-  /* ── Game board: sidebar becomes full-overlay drawer ── */
+/* ── Sidebar as an overlay drawer: narrow OR short viewports ── */
+@media (max-width: 600px), (max-height: 520px) {
   #game-board {
     grid-template-columns: 1fr !important;
     position: relative;
@@ -2149,7 +2173,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #game-board.sidebar-open #sidebar {
     transform: translateX(0);
   }
-  /* Dim backdrop behind sidebar on mobile */
+  /* Dim backdrop behind sidebar */
   #sidebar-backdrop {
     display: none;
     position: fixed; inset: 0;
@@ -2157,6 +2181,34 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     z-index: 889;
   }
   #game-board.sidebar-open #sidebar-backdrop { display: block; }
+  #hand-toggle-btn { display: inline-block; }
+}
+
+/* ── Narrow (phone portrait) ── */
+@media (max-width: 600px) {
+  #field-body {
+    --active-h:     clamp(96px,  min(31vw, 34cqh), 168px);
+    --active-w:     calc(var(--active-h) / 1.4);
+    --card-h-sm:    clamp(52px,  min(17vw, 15cqh), 100px);
+    --card-w-sm:    calc(var(--card-h-sm) / 1.4);
+    --prize-w:      clamp(20px,  min(6vw, 5cqh), 38px);
+    --prize-h:      calc(var(--prize-w) * 1.4);
+    /* Opponent active is full player size on phones; bench is a small strip */
+    --opp-active-h: var(--active-h);
+    --opp-active-w: var(--active-w);
+    --opp-bench-h:  clamp(40px, min(15vw, 11cqh), 56px);
+    --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
+    --side-w:       max(calc(2 * var(--prize-w) + 3px), calc(clamp(36px, 9vw, 52px) + 26px));
+  }
+
+  html, body { overflow: hidden; }
+
+  /* ── Setup screen ── */
+  #setup-screen { gap: 16px; padding: 16px; }
+  #setup-screen h1 { font-size: 15px; }
+  .setup-players { flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .setup-player { width: 140px; padding: 16px 12px; }
+  .lobby-btn { font-size: 11px; padding: 12px 14px; }
 
   /* ── Top bar ── */
   #top-bar { padding: 6px 10px; gap: 6px; }
@@ -2165,18 +2217,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #phase-badge { display: none; }
   .top-bar-btn { font-size: 9px; padding: 7px 10px; min-height: 36px; }
 
-  /* ── Field body: padding reserves space for absolute side panels ── */
-  #field-body { padding: 6px 46px; gap: 4px; }
+  /* ── Field body ── */
+  #field-body { padding: 6px 4px; gap: 4px; }
+  #player-zone { gap: 4px; }
 
-  /* Side panels: prizes left, deck/discard right — pip style, top-anchored */
-  #player-prizes-panel {
-    left: 2px;
-    gap: 3px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;       /* don't stretch to bottom */
-    justify-content: flex-start;
-    padding-top: 4px;
-  }
+  /* Side columns: prizes left, deck/discard right — pip style */
+  #player-prizes-panel { gap: 3px; padding-top: 4px; }
   #player-prizes-panel .panel-label { display: none; }
 
   /* Prize grid — use responsive CSS variables */
@@ -2190,14 +2236,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     height: var(--prize-h);
     border-radius: 2px;
   }
-  .prize-slot img { object-fit: cover; }  #player-aux {
-    right: 2px;
-    gap: 4px;
-    top: 50%;           /* anchored at midline, grows downward */
-    bottom: auto;
-    justify-content: flex-start;
-    padding-top: 4px;
-  }
+  .prize-slot img { object-fit: cover; }
+  #player-aux { gap: 4px; padding-top: 4px; }
   .player-deck-slot {
     width: clamp(36px, 9vw, 52px);
     height: clamp(50px, 12.5vw, 72px);
@@ -2235,15 +2275,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   }
   .opp-label { display: none; }
   .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
-  .opp-bench-slot { width: 40px; height: 56px; }
   .opp-hand-reveal { justify-content: flex-start; }
   .opp-hand-reveal-card { width: 30px; height: 42px; }
 
-  /* Active — full player-active size, bottom area */
+  /* Active — full player-active size (see --opp-active-* above), bottom area */
   .opp-active-slot {
     grid-area: active;
-    width: var(--active-w);
-    height: var(--active-h);
     flex-shrink: 0;
   }
 
@@ -2282,10 +2319,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* ── Midline ── */
   #midline { padding: 1px 0; }
-  #midline-info { font-size: 8px; white-space: normal; text-align: center; max-width: 180px; }
+  #midline-info { font-size: 9px; white-space: normal; text-align: center; max-width: 180px; }
 
   /* ── Player zone ── */
-  #player-zone { gap: 4px; }
   #player-field-col { gap: 4px; }
   .bench-row { gap: 4px; }
   .bench-label { display: none; }
@@ -2294,11 +2330,9 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #bottom-bar { padding: 6px 8px 8px; gap: 4px; max-height: 35vh; }
   .hand-label { font-size: 9px; }
   #hand-p1 { gap: 4px; max-height: 28vh; }
-  .hand-card { width: 52px; }
-  .hand-card:hover { transform: none; } /* no hover on touch */
-  .hand-card:active { transform: translateY(-4px); border-color: var(--border2); }
-  .hand-card-name { font-size: 5px; }
-  .hand-card-sub { font-size: 5px; }
+  .hand-card { width: 56px; }
+  .hand-card-name { font-size: 8px; }
+  .hand-card-sub { font-size: 8px; }
 
   /* ── Action menu: bottom sheet on mobile ── */
   #action-menu {
@@ -2334,7 +2368,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #card-picker-modal .modal-box { width: 96vw !important; }
   #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
   .picker-card img { width: 100%; flex: 1 1 auto; min-height: 0; object-fit: contain; background: #111; border-radius: 4px; }
-  .picker-card-name { font-size: 7px; }
+  .picker-card-name { font-size: 9px; }
   .modal-title { font-size: 12px; }
   .modal-close-btn { font-size: 11px; padding: 10px 16px; min-height: 44px; }
   .modal-deck-item { padding: 12px 10px; min-height: 52px; }
@@ -2357,7 +2391,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #win-trophy { font-size: 36px; }
   #win-headline { font-size: 11px; }
   #win-player-name { font-size: 19px; }
-  #win-reason { font-size: 8px; }
+  #win-reason { font-size: 10px; }
   .win-btn { font-size: 9px; padding: 10px 16px; min-height: 44px; }
 
   /* ── Promote banner ── */
@@ -2411,14 +2445,65 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #move-flash, #action-flash { backdrop-filter: none; }
 }
 
-/* Landscape phone: give field body a bit more vertical room */
-@media (max-width: 600px) and (orientation: landscape) {
-  #bottom-bar { max-height: 28vh; }
-  #hand-p1 { max-height: 22vh; }
-  .hand-card { width: 42px; }
-  #player-prizes-panel { display: none; }
-  #hand-toggle-btn { display: inline-block; }
-  #player-aux { display: none; }
+/* Small phones (iPhone SE class): trade a little hand height and card size for
+   a board that fits without scrolling */
+@media (max-width: 600px) and (max-height: 640px) {
+  #field-body {
+    --active-h:  clamp(84px, min(31vw, 32cqh), 168px);
+    --card-h-sm: clamp(46px, min(17vw, 14cqh), 100px);
+  }
+  #bottom-bar { max-height: 30vh; }
+  #hand-p1 { max-height: 23vh; }
+}
+
+/* ══════════════════════════════════════════════════
+   SHORT VIEWPORTS  (max-height: 520px) — phones in landscape.
+   Keyed on height, not width: a landscape phone is 667–932px WIDE, so a
+   max-width query never matches it. Everything here is about reclaiming
+   vertical room: a one-row scrolling hand strip, tighter gaps, and lower
+   size floors so the cqh budget can actually be honoured.
+   ══════════════════════════════════════════════════ */
+@media (max-height: 520px) {
+  #field-body {
+    padding: 4px 8px;
+    gap: 4px;
+    /* Larger height shares (the side columns are narrow here) and lower floors */
+    --active-h:     clamp(72px, 40cqh, 364px);
+    --active-w:     calc(var(--active-h) / 1.4);
+    --card-h-sm:    clamp(40px, 18cqh, 154px);
+    --card-w-sm:    calc(var(--card-h-sm) / 1.4);
+    --prize-w:      clamp(16px, 5cqh, 62px);
+    --prize-h:      calc(var(--prize-w) * 1.4);
+    --opp-active-h: clamp(48px, 22cqh, 168px);
+    --opp-active-w: calc(var(--opp-active-h) / 1.4);
+    --opp-bench-h:  clamp(32px, 12cqh, 90px);
+    --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
+  }
+  #top-bar { padding: 4px 10px; }
+  #phase-badge { display: none; }
+  #opponent-zone { padding: 4px 8px; gap: 6px; }
+  #midline { padding: 0; }
+  #midline-info { font-size: 9px; }
+  #player-zone, #player-field-col, .bench-row { gap: 4px; }
+  #player-prizes-panel .panel-label { display: none; }
+  #player-prizes-panel, #player-aux { padding-top: 2px; }
+  .active-label, .bench-label, .opp-label { display: none; }
+
+  /* Hand: a single horizontally-scrolling strip of small cards, no captions */
+  #bottom-bar { padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px)); gap: 2px; max-height: none; }
+  .hand-label { font-size: 9px; }
+  #hand-p1 {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: none;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .hand-card { width: 46px; }
+  .hand-card-info { display: none; }
+  .hand-card.selected { transform: translateY(-3px); }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -2445,16 +2530,25 @@ body.skin-sheet {
   --warn:      #e37400;
   --font:      'Calibri', 'Segoe UI', Arial, sans-serif;
   --font-title:'Calibri', 'Segoe UI', Arial, sans-serif;
-  /* Everything is a CELL: wide & short, uniform row height — not card-shaped */
+  /* Face-down cards: no image — a diagonal hatch "redacted cell" pattern */
+  --card-back-bg:
+    repeating-linear-gradient(45deg, #c6cbd1 0 6px, #d9dbdf 6px 12px);
+}
+/* Everything is a CELL: wide & short, uniform row height — not card-shaped.
+   Set on #field-body (not body) so it beats the board's own cqh sizing. */
+body.skin-sheet,
+body.skin-sheet #field-body {
   --active-w:  clamp(150px, 18vw, 210px);
   --active-h:  48px;
   --card-w-sm: clamp(96px, 11vw, 150px);
   --card-h-sm: 48px;
   --prize-w:   clamp(56px, 7vw, 84px);
   --prize-h:   28px;
-  /* Face-down cards: no image — a diagonal hatch "redacted cell" pattern */
-  --card-back-bg:
-    repeating-linear-gradient(45deg, #c6cbd1 0 6px, #d9dbdf 6px 12px);
+  --opp-active-w: var(--active-w);
+  --opp-active-h: var(--active-h);
+  --opp-bench-w:  var(--card-w-sm);
+  --opp-bench-h:  var(--card-h-sm);
+  --side-w: auto;
 }
 
 /* Kill every remaining bitmap so the skin is genuinely image-free.
@@ -2665,7 +2759,16 @@ body.skin-sheet #opp-right {
 }
 body.skin-sheet .opp-bench { flex: 0 0 auto; gap: 4px; overflow: visible; }
 
-body.skin-sheet #player-zone,
+/* Player zone → stacked worksheet rows: active/bench, then prizes, then deck/discard */
+body.skin-sheet #player-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: auto;
+  gap: 4px;
+}
+body.skin-sheet #player-prizes-panel { order: 2; }
+body.skin-sheet #player-aux { order: 3; }
 body.skin-sheet #player-field-col {
   align-items: flex-start;
   width: auto;
@@ -3009,8 +3112,15 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
         <div class="midline-rule"></div>
       </div>
 
-      <!-- PLAYER ZONE — centered column: active → bench -->
+      <!-- PLAYER ZONE — three columns: prizes | active → bench | deck + discard -->
       <div id="player-zone">
+
+        <!-- Prizes panel — left column, starts at the midline -->
+        <div id="player-prizes-panel">
+          <div class="panel-label">PRIZES</div>
+          <div class="prize-grid" id="prizes-p1"></div>
+        </div>
+
         <div id="player-field-col">
 
           <!-- Active row — hero card, closest to midline -->
@@ -3031,29 +3141,24 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
             <div class="zone-slot" id="bench-p1-4" onclick="event.stopPropagation();handleBenchClick(1,4,event)"><div class="zone-slot-empty">bench</div></div>
           </div>
 
-        </div>
-      </div><!-- /player-zone -->
+        </div><!-- /player-field-col -->
 
-      <!-- Prizes panel — left side, below midline -->
-      <div id="player-prizes-panel">
-        <div class="panel-label">PRIZES</div>
-        <div class="prize-grid" id="prizes-p1"></div>
-      </div>
-
-      <!-- Deck + discard — right side, below midline.
-           Counts sit BESIDE the cards, never overlaid on the art. -->
-      <div id="player-aux">
-        <div class="player-aux-row">
-          <div id="deck-count-p1" class="player-aux-count">0</div>
-          <div class="player-deck-slot" onclick="drawCard(G.turn)"></div>
-        </div>
-        <div class="player-aux-row">
-          <div id="discard-count-p1" class="player-aux-count">0</div>
-          <div class="player-discard-slot" id="discard-p1">
-            <span class="discard-placeholder">DISCARD</span>
+        <!-- Deck + discard — right column, starts at the midline.
+             Counts sit BESIDE the cards, never overlaid on the art. -->
+        <div id="player-aux">
+          <div class="player-aux-row">
+            <div id="deck-count-p1" class="player-aux-count">0</div>
+            <div class="player-deck-slot" onclick="drawCard(G.turn)"></div>
+          </div>
+          <div class="player-aux-row">
+            <div id="discard-count-p1" class="player-aux-count">0</div>
+            <div class="player-discard-slot" id="discard-p1">
+              <span class="discard-placeholder">DISC</span>
+            </div>
           </div>
         </div>
-      </div>
+
+      </div><!-- /player-zone -->
 
     </div><!-- /field-body -->
 

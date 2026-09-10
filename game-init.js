@@ -1959,3 +1959,26 @@ window.addEventListener('beforeunload', () => {
   // Don't delete room on unload — player may be refreshing to recover
   // Room cleanup happens only via playAgain()
 });
+
+// ── Re-measure when the field changes size ────────────────
+// Card sizes are height-aware (cqh), so a resize, rotation, sidebar toggle or
+// hand collapse changes slot pixel sizes. The energy-column margins are
+// measured from those sizes at render time, so re-render the two fields (not
+// renderAll — that also pushes networked state) once the size settles.
+(function watchFieldSize() {
+  let timer = null;
+  const rerender = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (typeof G === 'undefined' || !G || !G.started) return;
+      try { renderField(1); renderField(2); } catch (e) { /* board not mounted yet */ }
+    }, 150);
+  };
+  const field = typeof document !== 'undefined' && document.getElementById
+    ? document.getElementById('field-body') : null;
+  if (field && typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(rerender).observe(field);
+  } else if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('resize', rerender);
+  }
+})();
