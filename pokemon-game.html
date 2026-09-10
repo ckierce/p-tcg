@@ -30,6 +30,10 @@
   --warn:      #ed8936;
   --font:      'Gil Sans', 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif;
   --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
+  /* The two halves of the board share one width cap so the side columns sit
+     near the action instead of at the screen edges on wide monitors. */
+  --board-max-w: 1180px;
+  --zone-bg:     rgba(0,0,0,.14);
 
   /* Fluid card sizing — active is the hero, bench is supporting.
      These :root values are fallbacks used OUTSIDE the field (sidebar prizes tab
@@ -298,6 +302,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 .top-bar-logo {
+  white-space: nowrap;
   font-size: 12px;
   color: var(--accent);
   letter-spacing: 1px;
@@ -305,6 +310,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 #turn-badge {
+  white-space: nowrap;
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 3px;
@@ -320,6 +326,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 .top-bar-btn {
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--border2);
   color: var(--text);
@@ -357,47 +364,66 @@ h1, h2, h3 { font-family: var(--font-title); }
      (1cqh = 1% of the field's own height). Every card is the SMALLER of its
      width-driven size and its height-driven share, so the whole board —
      opponent zone + midline + active + bench — always fits between the top
-     bar and the hand. Budget: opp ≈22cqh, active 38cqh, bench 17cqh, plus
-     ~80px of fixed gaps/padding/midline. */
+     bar and the hand. Height is the primary driver (cqh) so cards grow to
+     use tall viewports; width (cqw) is only a guard so five bench cards plus
+     the two side columns always fit. Budget: opp bench 12cqh + opp active
+     24cqh + active 34cqh + bench 15cqh = 85cqh, plus ~100px of fixed
+     gaps / padding / midline. */
   container-type: size;
-  --active-h:     clamp(120px, min(25.2vw, 38cqh), 364px);
+  --active-h:     clamp(120px, min(60cqw, 34cqh), 420px);
   --active-w:     calc(var(--active-h) / 1.4);
-  --card-h-sm:    clamp(70px,  min(11.2vw, 17cqh), 154px);
+  --card-h-sm:    clamp(70px,  min(16.8cqw, 15cqh), 190px);
   --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-  --prize-w:      clamp(30px,  min(4.5vw, 5.5cqh), 62px);
+  --prize-w:      clamp(30px,  min(5cqw, 6cqh), 72px);
   --prize-h:      calc(var(--prize-w) * 1.4);
-  --opp-active-h: clamp(90px,  min(11.7vw, 22cqh), 168px);
+  --opp-active-h: clamp(90px,  min(45cqw, 24cqh), 300px);
   --opp-active-w: calc(var(--opp-active-h) / 1.4);
-  --opp-bench-h:  clamp(50px,  min(6.25vw, 11cqh), 90px);
+  --opp-bench-h:  clamp(50px,  min(14cqw, 12cqh), 150px);
   --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
   /* Width of the prize / deck+discard columns that flank the player's field */
   --side-w:       max(calc(2 * var(--prize-w) + 4px), calc(var(--card-w-sm) + 26px));
 }
 
-/* ── OPPONENT ZONE — horizontal strip, active centered ────── */
+/* ── OPPONENT ZONE — a 180° copy of the player zone ───────────
+   Same three-column grid as #player-zone with the side columns swapped:
+   deck + discard | bench row → active row | prizes. The side columns hug the
+   midline (align-items: end); inside the field column the bench is the far
+   row and the active card the near row, so the two halves read as one table
+   and learning one half teaches the other. */
 #opponent-zone {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+  align-items: end;
+  gap: 8px;
   flex-shrink: 0;
   width: 100%;
+  max-width: var(--board-max-w);
+  padding: 8px 12px;
+  background: var(--zone-bg);
+  border-radius: 10px;
   position: relative;
 }
 
-/* Left group: label + bench — pushed left, active stays centered */
+#opp-field-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Bench row (far from the midline). Wraps so the Clairvoyance strip can take
+   its own full-width line above the bench. */
 #opp-left {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;   /* lets the Clairvoyance strip take its own row above the bench */
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
   gap: 8px;
-  flex: 1;
-  justify-content: flex-start;
-  overflow: hidden; /* contain bench overflow — bench itself scrolls */
+  width: 100%;
   min-width: 0;
+  overflow: hidden; /* contain bench overflow — slots shrink instead */
 }
 
 /* Clairvoyance (Omanyte) — opponent's hand face-up, full-width row above bench */
@@ -406,6 +432,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   order: -1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 3px 4px;
   border: 1px dashed rgba(180,100,220,.7);
@@ -440,61 +467,13 @@ h1, h2, h3 { font-family: var(--font-title); }
 /* Spreadsheet skin: cells are text, so give them room for the card name */
 body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 
-/* Right group: prizes + deck/disc + hand — pushed right */
-#opp-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  justify-content: flex-end;
-}
-
-#opp-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.opp-label {
-  font-size: 11px;
-  color: var(--p2color);
-  white-space: nowrap;
-  letter-spacing: 1px;
-}
-
-.opp-deck-count {
-  font-size: 11px;
-  color: #fff;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
-}
-
-.opp-aux-count {
-  font-size: 12px;
-  color: var(--p2color);
-  font-weight: 600;
-  line-height: 1;
-  min-width: 16px;
-  text-align: center;
-}
-
-/* Opp hand indicator */
-.opp-hand-count {
-  font-size: 11px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Opponent bench row */
 .opp-bench {
   display: flex;
-  gap: 5px;
-  align-items: center;
-  overflow: visible;
+  gap: 7px;
+  align-items: flex-end;
+  justify-content: center;
   min-width: 0;
-  flex: 1;
+  overflow: visible;
 }
 .opp-bench::-webkit-scrollbar { display: none; }
 
@@ -513,6 +492,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   position: relative;
   flex-shrink: 1;
   min-width: 24px;
+  cursor: pointer;
   transition: margin-right .15s ease, width .15s ease;
 }
 .opp-bench-slot img {
@@ -522,7 +502,24 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 }
 .opp-bench-slot.empty { opacity: .3; }
 
-/* Opponent active — larger, centered in the top bar */
+/* Active row (nearest the midline) — the opponent's name sits beside the card
+   the way ACTIVE / BENCH sit beside the player's rows */
+#opp-active-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+.opp-label {
+  font-size: 11px;
+  color: var(--p2color);
+  white-space: nowrap;
+  letter-spacing: 2px;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+}
 .opp-active-slot {
   width: var(--opp-active-w);
   height: var(--opp-active-h);
@@ -553,47 +550,43 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   padding: 2px 0;
 }
 
-/* Opp prizes — 3×2 grid on desktop: the opponent strip is wide but short, and a
-   2×3 column was what made it ~290px tall (mobile flips it back to 2×3). */
-.opp-prizes {
-  display: grid;
-  grid-template-columns: repeat(3, var(--prize-w));
-  grid-template-rows: repeat(2, var(--prize-h));
-  gap: 4px;
-  flex-shrink: 0;
+/* Deck + discard + hand count — LEFT column (mirror of the player's right
+   column), growing upward from the midline. Counts sit beside the cards. */
+#opp-aux {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  min-width: 0;
 }
-.opp-prize-pip {
-  width: var(--prize-w); height: var(--prize-h);
-  background: var(--card-back-bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-.opp-prize-pip.gone { opacity: .15; }
-
-/* Opp deck + discard side by side */
 .opp-aux-row {
   display: flex;
-  gap: 4px;
   align-items: center;
-  flex-shrink: 0;
+  gap: 6px;
 }
-.opp-aux-pair {
+.opp-aux-count {
+  font-size: 13px;
+  color: var(--p2color);
+  font-weight: 600;
+  line-height: 1;
+  min-width: 18px;
+  text-align: left;
+}
+.opp-hand-count {
+  font-size: 11px;
+  color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 .opp-deck-slot {
   width: var(--card-w-sm);
   height: var(--card-h-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--p2color);
   border-radius: 5px;
   background: var(--card-back-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--muted);
   flex-shrink: 0;
 }
 .opp-discard {
@@ -627,6 +620,38 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   border-radius: 2px;
 }
 
+/* Prizes — RIGHT column (mirror of the player's left column), 2×3 like the
+   player's grid, growing upward from the midline */
+#opp-prizes-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+#opp-prizes-panel .panel-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+.opp-prizes {
+  display: grid;
+  grid-template-columns: repeat(2, var(--prize-w));
+  grid-template-rows: repeat(3, var(--prize-h));
+  gap: 4px;
+  flex-shrink: 0;
+}
+.opp-prize-pip {
+  width: var(--prize-w); height: var(--prize-h);
+  background: var(--card-back-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.opp-prize-pip.gone { opacity: .15; }
+
 /* ── MIDLINE DIVIDER ──────────────────────────────────────── */
 #midline {
   display: flex;
@@ -635,7 +660,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   flex-shrink: 0;
   padding: 2px 0;
   width: 100%;
-  max-width: 700px;
+  max-width: var(--board-max-w);
 }
 .midline-rule { flex: 1; height: 1px; background: var(--border); }
 #midline-info {
@@ -659,7 +684,10 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   gap: 8px;
   flex-shrink: 0;
   width: 100%;
-  max-width: 100%;
+  max-width: var(--board-max-w);
+  padding: 8px 12px;
+  background: var(--zone-bg);
+  border-radius: 10px;
 }
 
 #player-field-col {
@@ -1088,7 +1116,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 .hand-card {
-  width: 64px;
+  width: clamp(64px, 5vw, 96px);
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -2172,16 +2200,17 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* ── Narrow (phone portrait) ── */
 @media (max-width: 600px) {
   #field-body {
-    --active-h:     clamp(96px,  min(31vw, 34cqh), 168px);
+    --active-h:     clamp(96px,  min(60cqw, 32cqh), 240px);
     --active-w:     calc(var(--active-h) / 1.4);
-    --card-h-sm:    clamp(52px,  min(17vw, 15cqh), 100px);
+    --card-h-sm:    clamp(52px,  min(16cqw, 14cqh), 110px);
     --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-    --prize-w:      clamp(20px,  min(6vw, 5cqh), 38px);
+    --prize-w:      clamp(18px,  min(5cqw, 5cqh), 38px);
     --prize-h:      calc(var(--prize-w) * 1.4);
-    /* Opponent active is full player size on phones; bench is a small strip */
-    --opp-active-h: var(--active-h);
-    --opp-active-w: var(--active-w);
-    --opp-bench-h:  clamp(40px, min(15vw, 11cqh), 56px);
+    /* Opponent cards keep their desktop proportion to the player's (~70%) so
+       the player's half stays the hero and the hand keeps its room */
+    --opp-active-h: clamp(72px,  min(45cqw, 23cqh), 170px);
+    --opp-active-w: calc(var(--opp-active-h) / 1.4);
+    --opp-bench-h:  clamp(40px,  min(13cqw, 11cqh), 76px);
     --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
     --side-w:       max(calc(2 * var(--prize-w) + 3px), calc(clamp(36px, 9vw, 52px) + 26px));
   }
@@ -2201,10 +2230,11 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #turn-badge { font-size: 11px; padding: 5px 7px; }
   #phase-badge { display: none; }
   .top-bar-btn { font-size: 11px; padding: 7px 10px; min-height: 36px; }
+  #skin-toggle-btn .btn-label { display: none; } /* icon only — the label does not fit beside END TURN + LOG */
 
   /* ── Field body ── */
   #field-body { padding: 6px 4px; gap: 4px; }
-  #player-zone { gap: 4px; }
+  #player-zone { gap: 4px; padding: 4px; }
 
   /* Side columns: prizes left, deck/discard right — pip style */
   #player-prizes-panel { gap: 3px; padding-top: 4px; }
@@ -2233,74 +2263,24 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   }
   #deck-count-p1 { font-size: 12px; }
 
-  /* ── Opponent zone: bench row on top, active (full size) below, prizes left, deck/disc right ── */
-  #opponent-zone {
-    display: grid;
-    grid-template-areas:
-      "prizes bench aux"
-      "prizes active aux";
-    grid-template-columns: auto 1fr auto;
-    grid-template-rows: auto auto;
-    align-items: center;
-    justify-items: center;
-    padding: 6px 4px 6px;
-    gap: 4px;
-    position: relative;
-  }
-  /* Bench — horizontal row, top area */
-  #opp-left {
-    grid-area: bench;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 3px;
-    flex: none;
-    width: 100%;
-  }
+  /* ── Opponent zone: same three-column mirror as desktop, tighter ── */
+  #opponent-zone { padding: 4px; gap: 4px; }
+  #opp-field-col, #opp-left, .opp-bench, #opp-active-row { gap: 4px; }
   .opp-label { display: none; }
-  .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
   .opp-hand-reveal { justify-content: flex-start; }
   .opp-hand-reveal-card { width: 30px; height: 42px; }
-
-  /* Active — full player-active size (see --opp-active-* above), bottom area */
-  .opp-active-slot {
-    grid-area: active;
-    flex-shrink: 0;
-  }
-
-  /* opp-right uses display:contents so its children sit in their own grid areas */
-  #opp-right { display: contents; }
-
-  /* Prizes — left column */
-  .opp-prizes {
-    grid-area: prizes;
-    grid-template-columns: repeat(2, var(--prize-w));
-    grid-template-rows: repeat(3, var(--prize-h));
-    gap: 3px;
-    align-self: center;
-  }
-  .opp-prize-pip { width: var(--prize-w); height: var(--prize-h); border-radius: 2px; }
-
-  /* Deck + discard — right column, stacked */
-  .opp-aux-row {
-    grid-area: aux;
-    flex-direction: column;
-    gap: 4px;
-    align-self: center;
-    align-items: center;
-  }
-  .opp-deck-slot {
-    width: clamp(36px, 9vw, 52px);
-    height: clamp(50px, 12.5vw, 72px);
-  }
+  #opp-prizes-panel { gap: 3px; padding-bottom: 4px; }
+  #opp-prizes-panel .panel-label { display: none; }
+  .opp-prizes { gap: 3px; }
+  .opp-prize-pip { border-radius: 2px; }
+  #opp-aux { gap: 4px; padding-bottom: 4px; }
+  .opp-aux-count { font-size: 12px; }
+  .opp-hand-count { font-size: 10px; }
+  .opp-deck-slot,
   .opp-discard {
     width: clamp(36px, 9vw, 52px);
     height: clamp(50px, 12.5vw, 72px);
   }
-
-  /* Hand count hidden — too little space */
-  .opp-hand-count { display: none; }
 
   /* ── Midline ── */
   #midline { padding: 1px 0; }
@@ -2434,8 +2414,8 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
    a board that fits without scrolling */
 @media (max-width: 600px) and (max-height: 640px) {
   #field-body {
-    --active-h:  clamp(84px, min(31vw, 32cqh), 168px);
-    --card-h-sm: clamp(46px, min(17vw, 14cqh), 100px);
+    --active-h:  clamp(84px, min(60cqw, 30cqh), 240px);
+    --card-h-sm: clamp(46px, min(16cqw, 13cqh), 110px);
   }
   #bottom-bar { max-height: 30vh; }
   #hand-p1 { max-height: 23vh; }
@@ -2453,20 +2433,41 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     padding: 4px 8px;
     gap: 4px;
     /* Larger height shares (the side columns are narrow here) and lower floors */
-    --active-h:     clamp(72px, 40cqh, 364px);
+    /* Opponent bench + active share ONE row here (see #opp-field-col below),
+       so the budget is opp active 26cqh + active 38cqh + bench 17cqh = 81cqh */
+    --active-h:     clamp(72px, min(60cqw, 36cqh), 364px);
     --active-w:     calc(var(--active-h) / 1.4);
-    --card-h-sm:    clamp(40px, 18cqh, 154px);
+    --card-h-sm:    clamp(36px, min(16.8cqw, 16cqh), 190px);
     --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-    --prize-w:      clamp(16px, 5cqh, 62px);
+    --prize-w:      clamp(16px, min(5cqw, 5cqh), 62px);
     --prize-h:      calc(var(--prize-w) * 1.4);
-    --opp-active-h: clamp(48px, 22cqh, 168px);
+    --opp-active-h: clamp(48px, min(45cqw, 26cqh), 300px);
     --opp-active-w: calc(var(--opp-active-h) / 1.4);
-    --opp-bench-h:  clamp(32px, 12cqh, 90px);
+    --opp-bench-h:  clamp(32px, min(14cqw, 14cqh), 150px);
     --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
+    /* Side columns hold deck + discard SIDE BY SIDE here (a stacked pair is
+       taller than the active card on a landscape phone), so they are wider */
+    --side-w:       max(calc(3 * var(--prize-w) + 8px), calc(2 * var(--card-w-sm) + 58px));
   }
   #top-bar { padding: 4px 10px; }
   #phase-badge { display: none; }
-  #opponent-zone { padding: 4px 8px; gap: 6px; }
+  #opponent-zone, #player-zone { padding: 0 8px; gap: 6px; }
+  /* Bench beside active, mirroring nothing but saving ~40% of the zone height */
+  #opp-field-col { flex-direction: row; align-items: flex-end; justify-content: center; gap: 8px; }
+  #opp-left { width: auto; flex: 0 1 auto; }
+  #opp-active-row { width: auto; gap: 4px; }
+  #opp-prizes-panel, #opp-aux { padding-bottom: 2px; }
+  #opp-prizes-panel .panel-label { display: none; }
+  /* Deck + discard side by side; prizes 3×2 — keeps each side column no
+     taller than the active card beside it */
+  #player-aux, #opp-aux { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; }
+  .opp-hand-count { flex-basis: 100%; justify-content: center; }
+  .prize-grid, .opp-prizes {
+    grid-template-columns: repeat(3, var(--prize-w));
+    grid-template-rows: repeat(2, var(--prize-h));
+    gap: 3px;
+  }
+  #midline-info { font-size: 10px; padding: 1px 8px; }
   #midline { padding: 0; }
   #midline-info { font-size: 11px; }
   #player-zone, #player-field-col, .bench-row { gap: 4px; }
@@ -2726,22 +2727,24 @@ body.skin-sheet #field-body {
 
 /* Drop the grouped "card table" boxes — rows are just runs of cells now */
 body.skin-sheet #opponent-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   background: transparent;
   border: none;
   border-radius: 0;
   padding: 0;
   width: auto;
+  max-width: none;
   gap: 4px;
-  justify-content: flex-start;
-  flex-wrap: nowrap;
 }
+body.skin-sheet #opp-field-col { order: 1; align-items: flex-start; width: auto; gap: 4px; }
+body.skin-sheet #opp-prizes-panel { order: 2; }
+body.skin-sheet #opp-aux { order: 3; }
 body.skin-sheet #opp-left,
-body.skin-sheet #opp-right {
-  flex: 0 0 auto;
-  justify-content: flex-start;
-  gap: 4px;
-  overflow: visible;
-}
+body.skin-sheet #opp-active-row { justify-content: flex-start; width: auto; gap: 4px; overflow: visible; }
+body.skin-sheet #opp-prizes-panel,
+body.skin-sheet #opp-aux { flex-direction: row; align-items: center; padding: 0; gap: 4px; }
 body.skin-sheet .opp-bench { flex: 0 0 auto; gap: 4px; overflow: visible; }
 
 /* Player zone → stacked worksheet rows: active/bench, then prizes, then deck/discard */
@@ -2750,6 +2753,9 @@ body.skin-sheet #player-zone {
   flex-direction: column;
   align-items: flex-start;
   width: auto;
+  max-width: none;
+  padding: 0;
+  background: transparent;
   gap: 4px;
 }
 body.skin-sheet #player-prizes-panel { order: 2; }
@@ -3105,45 +3111,58 @@ body.skin-sheet .hp-chip { display: none; } /* sheet cells print HP inline */
     <!-- Field body -->
     <div id="field-body">
 
-      <!-- OPPONENT ZONE — horizontal bar, active centered -->
+      <!-- OPPONENT ZONE — a 180° copy of the player zone:
+           deck + discard | bench row → active row | prizes.
+           Side columns hug the midline; the bench is the far row, the active
+           card the near row. All ids are unchanged (the render code keys on them). -->
       <div id="opponent-zone">
 
-        <!-- Left: label + bench -->
-        <div id="opp-left">
-          <!-- Clairvoyance (Omanyte): opponent's hand face-up, above their bench -->
-          <div class="opp-hand-reveal" id="opp-hand-reveal" style="display:none"></div>
-          <span class="opp-label" id="opp-label">OPP</span>
-          <div class="opp-bench">
-            <div class="opp-bench-slot empty" id="bench-p2-0" tabindex="0" role="button" aria-label="bench p2 0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-1" tabindex="0" role="button" aria-label="bench p2 1" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-2" tabindex="0" role="button" aria-label="bench p2 2" onclick="event.stopPropagation();handleBenchClick(2,2,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-3" tabindex="0" role="button" aria-label="bench p2 3" onclick="event.stopPropagation();handleBenchClick(2,3,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-4" tabindex="0" role="button" aria-label="bench p2 4" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
-          </div>
-        </div>
-
-        <!-- Center: active (flex:0, naturally centered between the two flex:1 groups) -->
-        <div class="opp-active-slot" id="active-p2" tabindex="0" role="button" aria-label="active p2" onclick="event.stopPropagation();onActiveClick(2,event)">
-          <span class="slot-label">ACTIVE</span>
-        </div>
-
-        <!-- Right: prizes + deck + discard + hand count -->
-        <div id="opp-right">
-          <div class="opp-prizes" id="prizes-p2"></div>
+        <!-- Deck + discard + hand count — left column (mirror of the player's right column) -->
+        <div id="opp-aux">
+          <div class="opp-hand-count" title="Cards in opponent's hand">🂠 <span id="hand-label-p2">0</span></div>
           <div class="opp-aux-row">
-            <div class="opp-aux-pair">
-              <div id="deck-count-p2" class="opp-aux-count">0</div>
-              <div class="opp-deck-slot"></div>
-            </div>
-            <div class="opp-aux-pair">
-              <div id="discard-count-p2" class="opp-aux-count">0</div>
-              <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISC</span></div>
-            </div>
+            <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISC</span></div>
+            <div id="discard-count-p2" class="opp-aux-count">0</div>
           </div>
-          <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
+          <!-- Deck is the row nearest the midline, as it is for the player (true 180° copy) -->
+          <div class="opp-aux-row">
+            <div class="opp-deck-slot" title="Opponent's deck"></div>
+            <div id="deck-count-p2" class="opp-aux-count">0</div>
+          </div>
         </div>
 
-      </div>
+        <div id="opp-field-col">
+
+          <!-- Bench row — far from the midline. #opp-left keeps its id: the
+               Clairvoyance (Omanyte) reveal strip lives here, above the bench. -->
+          <div id="opp-left">
+            <div class="opp-hand-reveal" id="opp-hand-reveal" style="display:none"></div>
+            <div class="opp-bench">
+              <div class="opp-bench-slot empty" id="bench-p2-0" tabindex="0" role="button" aria-label="Opponent bench 1" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-1" tabindex="0" role="button" aria-label="Opponent bench 2" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-2" tabindex="0" role="button" aria-label="Opponent bench 3" onclick="event.stopPropagation();handleBenchClick(2,2,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-3" tabindex="0" role="button" aria-label="Opponent bench 4" onclick="event.stopPropagation();handleBenchClick(2,3,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-4" tabindex="0" role="button" aria-label="Opponent bench 5" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
+            </div>
+          </div>
+
+          <!-- Active row — nearest the midline -->
+          <div id="opp-active-row">
+            <span class="opp-label" id="opp-label">OPP</span>
+            <div class="opp-active-slot" id="active-p2" tabindex="0" role="button" aria-label="Opponent active Pokémon" onclick="event.stopPropagation();onActiveClick(2,event)">
+              <span class="slot-label">ACTIVE</span>
+            </div>
+          </div>
+
+        </div><!-- /opp-field-col -->
+
+        <!-- Prizes — right column (mirror of the player's left column) -->
+        <div id="opp-prizes-panel">
+          <div class="opp-prizes" id="prizes-p2"></div>
+          <div class="panel-label">PRIZES</div>
+        </div>
+
+      </div><!-- /opponent-zone -->
 
       <!-- MIDLINE -->
       <div id="midline">

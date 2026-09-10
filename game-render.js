@@ -31,7 +31,10 @@ function applySkin(skin) {
   try { localStorage.setItem('tcg-skin', CURRENT_SKIN); } catch (e) {}
   const btn = document.getElementById('skin-toggle-btn');
   if (btn) {
-    btn.textContent = CURRENT_SKIN === 'sheet' ? '🟢 NORMAL' : '📊 BUSINESS TIME';
+    // Icon + label in separate spans so narrow screens can show the icon alone
+    btn.innerHTML = CURRENT_SKIN === 'sheet'
+      ? '<span class="btn-icon">🟢</span><span class="btn-label"> NORMAL</span>'
+      : '<span class="btn-icon">📊</span><span class="btn-label"> BUSINESS TIME</span>';
     btn.title = CURRENT_SKIN === 'sheet'
       ? 'Switch back to the normal card skin'
       : 'Switch to the spreadsheet skin';
