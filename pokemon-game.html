@@ -495,10 +495,12 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   cursor: pointer;
   transition: margin-right .15s ease, width .15s ease;
 }
+/* Full brightness: dimming read as "disabled", and these are the cards you
+   most need to inspect. Ownership is carried by position, size and the red
+   border on the active card instead. */
 .opp-bench-slot img {
   width: 100%; height: 100%;
   object-fit: cover;
-  filter: brightness(0.5);
 }
 .opp-bench-slot.empty { opacity: .3; }
 
@@ -542,7 +544,6 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   width: 100%; height: 100%;
   object-fit: cover;
   border-radius: 7px;
-  filter: brightness(0.75);
 }
 .opp-active-slot .slot-label {
   font-size: 10px;
