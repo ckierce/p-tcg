@@ -709,11 +709,6 @@ function showCoinAnimation(label, heads, opts = {}) {
     const resultEl = document.getElementById('coin-result');
     const labelEl = document.getElementById('coin-label');
     const endDeg = heads ? 1440 : 1620;
-    if (!overlay.classList.contains('show')) {
-      _flashQueue.length = 0; _flashBusy = false;
-      document.getElementById('move-flash')?.classList.remove('show');
-      document.getElementById('action-flash')?.classList.remove('show');
-    }
     const PRE_DELAY = overlay.classList.contains('show') ? 200 : 700;
     setTimeout(() => {
       coin.style.setProperty('--coin-end-deg', `${endDeg}deg`);
@@ -808,7 +803,7 @@ function pickNumber(title, min, max) {
       <div style="font-family:var(--font);font-size:10px;color:var(--accent);text-align:center;max-width:300px;padding:0 20px">${title}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:280px;">${buttons.join('')}</div>
       <button onclick="this.closest('div').remove();window._pickNumberVal=null"
-        style="font-family:var(--font);font-size:8px;padding:6px 16px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Cancel</button>`;
+        style="font-family:var(--font);font-size:10px;padding:6px 16px;background:var(--surface2);border:1px solid var(--muted);color:var(--muted);cursor:pointer;border-radius:4px;">Cancel</button>`;
     document.body.appendChild(overlay);
     const interval = setInterval(() => {
       if (window._pickNumberVal !== undefined) {
@@ -1437,7 +1432,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
       // Fall through to renderAll/endTurn below
     } else {
       transitionPhase('PROMOTE', { pendingPromotion: player });
-      _flashQueue.length = 0; _flashBusy = false;
+      clearFlashQueue();
       for (let i = 0; i < 5; i++) {
         if (G.players[player].bench[i]) {
           document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
@@ -1922,7 +1917,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
 
     // Always show the promote banner — even with one bench Pokémon the player must confirm
     transitionPhase('PROMOTE', { pendingPromotion: owner });
-    _flashQueue.length = 0; _flashBusy = false; // clear pending flashes
+    clearFlashQueue(); // drop pending flashes; the visible one finishes on its own
     // Highlight available bench slots for the KO'd player
     for (let i = 0; i < 5; i++) {
       if (G.players[owner].bench[i]) {
@@ -2117,7 +2112,7 @@ function endTurn() {
   for (const pNum of [1, 2]) {
     if (!G.players[pNum].active && G.players[pNum].bench.some(s => s !== null)) {
       transitionPhase('PROMOTE', { pendingPromotion: pNum });
-      _flashQueue.length = 0; _flashBusy = false;
+      clearFlashQueue();
       for (let i = 0; i < 5; i++) {
         if (G.players[pNum].bench[i]) {
           document.getElementById(`bench-p${pNum}-${i}`)?.classList.add('highlight');

@@ -31,10 +31,14 @@ function applySkin(skin) {
   try { localStorage.setItem('tcg-skin', CURRENT_SKIN); } catch (e) {}
   const btn = document.getElementById('skin-toggle-btn');
   if (btn) {
-    btn.textContent = CURRENT_SKIN === 'sheet' ? '🟢 NORMAL' : '📊 BUSINESS TIME';
+    // Icon + label in separate spans so narrow screens can show the icon alone
+    btn.innerHTML = CURRENT_SKIN === 'sheet'
+      ? '<span class="btn-icon">🃏</span><span class="btn-label"> CARDS</span>'
+      : '<span class="btn-icon">📊</span><span class="btn-label"> BUSINESS TIME</span>';
     btn.title = CURRENT_SKIN === 'sheet'
-      ? 'Switch back to the normal card skin'
-      : 'Switch to the spreadsheet skin';
+      ? 'Back to the card skin'
+      : 'Business Time: spreadsheet skin';
+    btn.setAttribute('aria-label', btn.title);
   }
   // Re-render so card faces / energy chips swap representation immediately.
   if (typeof G !== 'undefined' && G && typeof renderAll === 'function') {
@@ -123,11 +127,19 @@ function renderAll() {
   }
 }
 
+// The opponent's display name, used by every label that refers to them
+// (zone label, sidebar hand / prizes tabs) so the wording never drifts:
+// COMPUTER in vs-AI games, their trainer name when known, else PLAYER N.
+function oppDisplayName() {
+  const opp = (myRole === 2) ? 1 : 2;
+  if (typeof vsComputer !== 'undefined' && vsComputer) return 'COMPUTER';
+  const name = G?.players?.[opp]?.name;
+  return name ? String(name).toUpperCase() : `PLAYER ${opp}`;
+}
+
 function updatePerspectiveLabels() {
   if (myRole !== 2) return;
   // For P2: top zone shows P1 (opponent), bottom zone shows P2 (self)
-  const oppLabel = document.getElementById('opp-label');
-  if (oppLabel) oppLabel.textContent = 'PLAYER 1';
   const activeLabel = document.querySelector('.active-label');
   if (activeLabel) activeLabel.style.color = 'var(--p2color)';
   const deckBorder = document.querySelector('.player-deck-slot');
@@ -161,7 +173,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:8px">DISCARD</span>`;
+      discardEl.innerHTML = `<span class="discard-placeholder">DISCARD</span>`;
     }
     // Bottom hand label color
     const label1 = document.getElementById('hand-label-p1');
@@ -180,13 +192,15 @@ function renderField(player) {
     G._clairvoyanceActive = !setupHide && G.phase !== 'SETUP' && typeof isPowerActive === 'function' &&
       [G.players[bottomPlayer].active, ...G.players[bottomPlayer].bench].some(c => c && isPowerActive(c, 'Clairvoyance'));
     renderOppHandReveal(topPlayer);
+    const oppLabelEl = document.getElementById('opp-label');
+    if (oppLabelEl) oppLabelEl.textContent = oppDisplayName();
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
       if (setupHide) {
         activeEl.innerHTML = `<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px">
           <div style="font-size:18px">🂠</div>
-          <div style="font-size:8px;color:var(--muted)">PLACED</div>
+          <div style="font-size:10px;color:var(--muted)">PLACED</div>
         </div>`;
       } else {
         const card = p.active;
@@ -206,7 +220,7 @@ function renderField(player) {
         ].filter(Boolean);
         const badges = badgeParts1.length ? `<div class="card-badges">${badgeParts1.join('')}</div>` : '';
         activeEl.innerHTML = `${cardFace(card)}
-          <div class="energy-overlay" style="max-height:168px">${energyPips}</div>${dmg}${status}${badges}`;
+          <div class="energy-overlay" style="max-height:168px">${energyPips}</div>${dmg}${hpChip(card)}${status}${badges}`;
       }
     } else {
       activeEl.innerHTML = `<span class="slot-label">ACTIVE</span>`;
@@ -244,7 +258,7 @@ function renderField(player) {
           const benchEnergyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', oppIconSize), energyIcon('Colorless Energy', oppIconSize)] : [energyIcon(e.name, oppIconSize)]).join('');
           const oppBenchEnergyStyle = `max-height:${oppBenchH}px;max-width:none`;
           slotEl.innerHTML = `${cardFace(card)}
-            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${status}${badges}`;
+            <div class="energy-overlay-bench" style="${oppBenchEnergyStyle}">${benchEnergyPips}</div>${benchDmg}${hpChip(card)}${status}${badges}`;
           slotEl.classList.remove('empty');
           // Push next bench card right to avoid overlap
           const oppEnergyCount = (card.attachedEnergy || []).length;
@@ -269,7 +283,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:8px">DISC</span>`;
+      discardEl.innerHTML = `<span class="discard-placeholder">DISCARD</span>`;
     }
   }
 }
@@ -281,7 +295,7 @@ function renderSlotP1(el, card) {
   el.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
   if (!card) {
     el.classList.remove('occupied');
-    el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
+    el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'Bench'}</div>`;
     el.style.marginRight = ''; // clear any energy-pushed margin
     if (wasHighlighted) el.classList.add('highlight');
     return;
@@ -316,7 +330,7 @@ function renderSlotP1(el, card) {
   const energyPips = (card.attachedEnergy || []).flatMap(e => /double colorless/i.test(e.name) ? [energyIcon('Colorless Energy', iconSize), energyIcon('Colorless Energy', iconSize)] : [energyIcon(e.name, iconSize)]).join('');
   const energyStyle = `max-height:${slotH}px;max-width:none`;
   el.innerHTML = `${cardFace(card)}
-    <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${status}${badges}`;
+    <div class="${energyClass}" style="${energyStyle}">${energyPips}</div>${dmg}${hpChip(card)}${status}${badges}`;
 
   // Reserve right margin for energy columns so the next bench card is pushed right
   if (!isActive) {
@@ -345,11 +359,11 @@ function renderHands() {
   const localHand = G.players[localPlayer].hand;
   const container1 = document.getElementById('hand-p1');
   const label1 = document.getElementById('hand-label-p1');
-  label1.textContent = `P${localPlayer} HAND (${localHand.length})`;
+  label1.textContent = `YOUR HAND (${localHand.length})`;
   label1.style.color = localPlayer === 2 ? 'var(--p2color)' : 'var(--p1color)';
 
   if (!localHand.length) {
-    container1.innerHTML = `<div style="font-size:8px;color:var(--muted);padding:8px">No cards</div>`;
+    container1.innerHTML = `<div style="font-size:10px;color:var(--muted);padding:8px">No cards</div>`;
   } else {
     container1.innerHTML = localHand.map((card, i) => {
       const imgSrc = card.images?.small || '';
@@ -365,7 +379,7 @@ function renderHands() {
       const subText = card.supertype === 'Pokémon'
         ? `${pipHtml}${(card.subtypes || []).join(' ')} · ${card.hp || '?'}HP`
         : `${pipHtml}${card.supertype || ''}`;
-      return `<div class="hand-card" id="hand-card-${localPlayer}-${i}"
+      return `<div class="hand-card" id="hand-card-${localPlayer}-${i}" tabindex="0" role="button" aria-label="${card.name}"
         onclick="event.stopPropagation();selectHandCard(${localPlayer},${i},event)">
         <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
         <div class="hand-card-info">
@@ -416,25 +430,25 @@ function renderSidebarP2Hand() {
 
   // Only available in VS Computer mode
   if (!vsComputer) {
-    content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">Only available in VS Computer mode.</div>`;
+    content.innerHTML = `<div style="font-size:10px;color:var(--muted);text-align:center;padding:20px">Only available in VS Computer mode.</div>`;
     return;
   }
 
   const sidePlayer = (myRole === 2) ? 1 : 2;
   const sideHand = G.players[sidePlayer].hand;
   const sideColor = sidePlayer === 1 ? 'var(--p1color)' : 'var(--p2color)';
-  const label = myRole === 2 ? 'P1 HAND' : 'P2 HAND';
+  const label = `${oppDisplayName()} HAND`;
 
   // Show gate screen until player explicitly reveals
   if (!renderSidebarP2Hand._revealed) {
     content.innerHTML = `
       <div style="display:flex;flex-direction:column;align-items:center;padding:16px 10px;gap:12px;text-align:center">
-        <div style="font-size:9px;color:var(--muted);line-height:1.5;max-width:160px">
+        <div style="font-size:11px;color:var(--muted);line-height:1.5;max-width:160px">
           This will show the computer player's hand.<br><br>
           Technically cheating unless you're trying to debug something.
         </div>
         <button onclick="renderSidebarP2Hand._revealed=true;renderSidebarP2Hand();"
-          style="font-size:9px;padding:6px 12px;background:var(--surface2);color:var(--text);
+          style="font-size:11px;padding:6px 12px;background:var(--surface2);color:var(--text);
                  border:1px solid var(--border);border-radius:4px;cursor:pointer;letter-spacing:0.05em">
           SHOW COMPUTER HAND
         </button>
@@ -446,11 +460,11 @@ function renderSidebarP2Hand() {
   }
 
   if (!sideHand.length) {
-    content.innerHTML = `<div style="font-size:8px;color:var(--muted);text-align:center;padding:20px">${label}: no cards</div>`;
+    content.innerHTML = `<div style="font-size:10px;color:var(--muted);text-align:center;padding:20px">${label}: no cards</div>`;
     return;
   }
 
-  content.innerHTML = `<div style="font-size:8px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
+  content.innerHTML = `<div style="font-size:10px;color:${sideColor};margin-bottom:8px">${label} (${sideHand.length})</div>
     <div id="hand-p2">` +
     sideHand.map((card, i) => {
       const imgSrc = card.images?.small || '';
@@ -495,23 +509,23 @@ function renderPrizesTab() {
   const p2prizes = G.players[2].prizes;
   const myPrizes  = myRole === 2 ? p2prizes : p1prizes;
   const oppPrizes = myRole === 2 ? p1prizes : p2prizes;
-  const myLabel   = myRole === 2 ? 'YOUR PRIZES' : 'P1 PRIZES';
-  const oppLabel  = myRole === 2 ? 'OPP PRIZES'  : 'P2 PRIZES';
+  const myLabel   = 'YOUR PRIZES';
+  const oppLabel  = `${oppDisplayName()} PRIZES`;
   const myColor   = myRole === 2 ? 'var(--p2color)' : 'var(--p1color)';
   const oppColor  = myRole === 2 ? 'var(--p1color)' : 'var(--p2color)';
   content.innerHTML = `
-    <div style="font-size:8px;color:${myColor};margin-bottom:6px">${myLabel} (${myPrizes.filter(p=>p).length} left)</div>
+    <div style="font-size:10px;color:${myColor};margin-bottom:6px">${myLabel} (${myPrizes.filter(p=>p).length} left)</div>
     <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px;margin-bottom:12px">
       ${myPrizes.map(p => !p
         ? `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;opacity:.15"></div>`
-        : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted)">?</div>`
+        : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">?</div>`
       ).join('')}
     </div>
-    <div style="font-size:8px;color:${oppColor};margin-bottom:6px">${oppLabel} (${oppPrizes.filter(p=>p).length} left)</div>
+    <div style="font-size:10px;color:${oppColor};margin-bottom:6px">${oppLabel} (${oppPrizes.filter(p=>p).length} left)</div>
     <div style="display:grid;grid-template-columns:repeat(3,48px);gap:4px">
       ${oppPrizes.map(p => !p
         ? `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;opacity:.15"></div>`
-        : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted)">?</div>`
+        : `<div style="width:48px;height:66px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted)">?</div>`
       ).join('')}
     </div>`;
 }
@@ -806,6 +820,18 @@ function energyIcon(energyName, size = 16) {
 }
 
 
+// Returns HTML for a "current / max HP" chip on a Pokémon in play. Green above
+// half, amber at or below half, red at or below a fifth (or 20 HP or less).
+function hpChip(card) {
+  if (!card) return '';
+  if (CURRENT_SKIN === 'sheet') return ''; // sheet cells print HP inline
+  const max = parseInt(card.hp, 10);
+  if (!max) return '';
+  const cur = Math.max(0, max - (card.damage || 0));
+  const cls = (cur <= 20 || cur <= max * 0.2) ? ' hp-low' : (cur <= max * 0.5) ? ' hp-mid' : '';
+  return `<div class="hp-chip${cls}" title="${cur} of ${max} HP">${cur}/${max}</div>`;
+}
+
 // Returns HTML for damage counter dots — one black dot per 10 damage
 function damageCounters(damage, isActive = false) {
   if (!damage || damage <= 0) return '';
@@ -967,10 +993,58 @@ function hidePromoteBanner() {
 // and board state changes are visible at the same time as the flash that explains them.
 const _flashQueue = [];
 let _flashBusy = false;
+// Bumped every time a flash starts or the queue is cleared. The release
+// timeout of a flash only frees the queue if its generation is still current,
+// so a clear that happened mid-flash can't be undone by that stale timer.
+let _flashGen = 0;
+let _flashRetryTimer = null;
+const _FLASH_ELEMENT_IDS = ['move-flash', 'action-flash', 'turn-flash'];
+
+// How long (ms) until every currently-visible overlay has gone. The coin has
+// no fixed end (multi-flip sequences keep it open), so while it is up we poll.
+function _visibleFlashRemaining() {
+  if (typeof document === 'undefined') return 0;
+  const now = Date.now();
+  let wait = 0;
+  for (const id of _FLASH_ELEMENT_IDS) {
+    const el = document.getElementById(id);
+    if (el && el.classList.contains('show') && el._flashUntil) wait = Math.max(wait, el._flashUntil - now);
+  }
+  const coin = document.getElementById('coin-overlay');
+  if (coin && coin.classList.contains('show')) wait = Math.max(wait, 250);
+  return wait;
+}
+
+// Empty the queue and release it. hideVisible=true also removes whatever flash
+// is on screen right now (used when a modal such as the win screen takes over).
+function clearFlashQueue(hideVisible = false) {
+  _flashQueue.length = 0;
+  _flashBusy = false;
+  _flashGen++;
+  clearTimeout(_flashRetryTimer);
+  if (hideVisible && typeof document !== 'undefined') {
+    for (const id of _FLASH_ELEMENT_IDS) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.classList.remove('show');
+      el._flashUntil = 0;
+      clearTimeout(el._flashTimer);
+    }
+  }
+}
 
 function _runFlashQueue() {
   if (_flashBusy || _flashQueue.length === 0) return;
+  // Never start a new flash while another overlay is still on screen — that is
+  // exactly how two panels ended up on top of each other. Wait it out instead.
+  const remaining = _visibleFlashRemaining();
+  if (remaining > 0) {
+    clearTimeout(_flashRetryTimer);
+    _flashRetryTimer = setTimeout(_runFlashQueue, remaining + 40);
+    return;
+  }
   _flashBusy = true;
+  const gen = ++_flashGen;
   const { fn, duration } = _flashQueue.shift();
   // Guard the queued fn — if it throws, the setTimeout that releases _flashBusy
   // never gets scheduled and the queue jams forever. The visible symptom is
@@ -979,7 +1053,11 @@ function _runFlashQueue() {
   // would prevent endTurn from ever being processed. Logging instead of
   // swallowing silently so regressions surface in DevTools.
   try { fn(); } catch (e) { console.error('Flash queue handler threw:', e); }
-  setTimeout(() => { _flashBusy = false; _runFlashQueue(); }, duration + 80);
+  setTimeout(() => {
+    if (gen !== _flashGen) return; // queue was cleared/restarted meanwhile
+    _flashBusy = false;
+    _runFlashQueue();
+  }, duration + 80);
 }
 
 function _queueFlash(fn, duration) {
@@ -1010,7 +1088,9 @@ function showTurnFlash(player) {
     inner.style.animation = 'none';
     void inner.offsetWidth;
     inner.style.animation = '';
-    setTimeout(() => el.classList.remove('show'), 1300);
+    el._flashUntil = Date.now() + 1300;
+    clearTimeout(el._flashTimer);
+    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._flashUntil = 0; }, 1300);
   }, 1300);
 }
 
@@ -1113,6 +1193,24 @@ if (typeof window !== 'undefined') {
   window.addEventListener('focus', _stopTitleBlink);
 }
 
+// Keyboard activation for the board's clickable <div>s (slots, hand cards).
+// They carry role="button" + tabindex="0"; Enter / Space synthesises a click at
+// the element's centre so handlers that position a menu from clientX/Y work.
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const t = e.target;
+    if (!t || t.getAttribute?.('role') !== 'button') return;
+    if (['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+    e.preventDefault();
+    const r = t.getBoundingClientRect();
+    t.dispatchEvent(new MouseEvent('click', {
+      bubbles: true, cancelable: true,
+      clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+    }));
+  });
+}
+
 function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName, suffix) {
   // Store for opponent to see — only set on the attacker's client
   if (myRole === null || attackingPlayer === myRole) {
@@ -1142,9 +1240,9 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName,
     void inner.offsetWidth;
     inner.style.animation = '';
 
-    el._moveFlashUntil = Date.now() + DURATION;
+    el._flashUntil = Date.now() + DURATION;
     clearTimeout(el._flashTimer);
-    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._moveFlashUntil = 0; }, DURATION);
+    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._flashUntil = 0; }, DURATION);
   }, DURATION);
 }
 
@@ -1178,8 +1276,9 @@ function showActionFlash(player, verb, subject, detail) {
     void inner.offsetWidth;
     inner.style.animation = '';
 
+    el._flashUntil = Date.now() + DURATION;
     clearTimeout(el._flashTimer);
-    el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._flashUntil = 0; }, DURATION);
   }, DURATION);
 }
 
@@ -1204,8 +1303,9 @@ function showSetupFlash(label, subject, detail) {
     void inner.offsetWidth;
     inner.style.animation = '';
 
+    el._flashUntil = Date.now() + DURATION;
     clearTimeout(el._flashTimer);
-    el._flashTimer = setTimeout(() => el.classList.remove('show'), DURATION);
+    el._flashTimer = setTimeout(() => { el.classList.remove('show'); el._flashUntil = 0; }, DURATION);
   }, DURATION);
 }
 
@@ -1496,7 +1596,7 @@ function showLassModal(snapshots, lassCaster) {
 
     const cards = snapshots[pNum] || [];
     if (!cards.length) {
-      grid.innerHTML = `<div style="font-size:7px;color:var(--muted);padding:8px">Empty hand</div>`;
+      grid.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:8px">Empty hand</div>`;
     } else {
       grid.innerHTML = cards.map(c => `
         <div class="lass-card">

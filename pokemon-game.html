@@ -22,14 +22,18 @@
   --border:    #2d7a50;
   --border2:   #3a9660;
   --text:      #e8f0e0;
-  --muted:     #6a9c7a;
+  --muted:     #8fbf9f;
   --accent:    #e8c84a;
-  --p1color:   #5b9cf6;
-  --p2color:   #f56565;
+  --p1color:   #6aa6f8;
+  --p2color:   #f87171;
   --ok:        #48bb78;
   --warn:      #ed8936;
   --font:      'Gil Sans', 'Gill Sans MT', 'Gill Sans', Calibri, sans-serif;
   --font-title: 'Futura', 'Century Gothic', 'Trebuchet MS', sans-serif;
+  /* The two halves of the board share one width cap so the side columns sit
+     near the action instead of at the screen edges on wide monitors. */
+  --board-max-w: 1180px;
+  --zone-bg:     rgba(0,0,0,.14);
 
   /* Fluid card sizing — active is the hero, bench is supporting.
      These :root values are fallbacks used OUTSIDE the field (sidebar prizes tab
@@ -98,7 +102,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   gap: 12px;
 }
 #login-box label {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -118,7 +122,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 #login-box input:focus { border-color: var(--accent); }
 #login-error {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--p2color);
   min-height: 14px;
   text-align: center;
@@ -140,7 +144,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 #login-submit:hover { filter: brightness(1.1); }
 #login-submit:disabled { opacity: 0.5; cursor: default; }
 #login-mode-toggle {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   letter-spacing: .5px;
@@ -273,7 +277,6 @@ h1, h2, h3 { font-family: var(--font-title); }
   grid-template-columns: 1fr 0px;
   grid-template-rows: 100%;
   height: 100%;
-  transition: grid-template-columns 0.2s ease;
 }
 #game-board.sidebar-open {
   grid-template-columns: 1fr 260px;
@@ -299,6 +302,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 .top-bar-logo {
+  white-space: nowrap;
   font-size: 12px;
   color: var(--accent);
   letter-spacing: 1px;
@@ -306,6 +310,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 #turn-badge {
+  white-space: nowrap;
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 3px;
@@ -321,6 +326,7 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 
 .top-bar-btn {
+  white-space: nowrap;
   background: none;
   border: 1px solid var(--border2);
   color: var(--text);
@@ -337,6 +343,18 @@ h1, h2, h3 { font-family: var(--font-title); }
   color: #000;
 }
 .top-bar-btn.primary:hover { opacity: .85; }
+/* Quiet: a novelty toggle should not carry the same weight as END TURN —
+   icon only, no border until hovered, words live in the tooltip / aria-label */
+.top-bar-btn.quiet {
+  border-color: transparent;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 6px;
+  margin-left: 4px;
+}
+.top-bar-btn.quiet:hover { border-color: var(--border2); color: var(--text); }
+.top-bar-btn.quiet .btn-label { display: none; }
 
 /* ── FIELD BODY ───────────────────────────────────────────── */
 #field-body {
@@ -358,47 +376,66 @@ h1, h2, h3 { font-family: var(--font-title); }
      (1cqh = 1% of the field's own height). Every card is the SMALLER of its
      width-driven size and its height-driven share, so the whole board —
      opponent zone + midline + active + bench — always fits between the top
-     bar and the hand. Budget: opp ≈22cqh, active 38cqh, bench 17cqh, plus
-     ~80px of fixed gaps/padding/midline. */
+     bar and the hand. Height is the primary driver (cqh) so cards grow to
+     use tall viewports; width (cqw) is only a guard so five bench cards plus
+     the two side columns always fit. Budget: opp bench 12cqh + opp active
+     24cqh + active 34cqh + bench 15cqh = 85cqh, plus ~100px of fixed
+     gaps / padding / midline. */
   container-type: size;
-  --active-h:     clamp(120px, min(25.2vw, 38cqh), 364px);
+  --active-h:     clamp(120px, min(60cqw, 34cqh), 420px);
   --active-w:     calc(var(--active-h) / 1.4);
-  --card-h-sm:    clamp(70px,  min(11.2vw, 17cqh), 154px);
+  --card-h-sm:    clamp(70px,  min(16.8cqw, 15cqh), 190px);
   --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-  --prize-w:      clamp(30px,  min(4.5vw, 5.5cqh), 62px);
+  --prize-w:      clamp(30px,  min(5cqw, 6cqh), 72px);
   --prize-h:      calc(var(--prize-w) * 1.4);
-  --opp-active-h: clamp(90px,  min(11.7vw, 22cqh), 168px);
+  --opp-active-h: clamp(90px,  min(45cqw, 24cqh), 300px);
   --opp-active-w: calc(var(--opp-active-h) / 1.4);
-  --opp-bench-h:  clamp(50px,  min(6.25vw, 11cqh), 90px);
+  --opp-bench-h:  clamp(50px,  min(14cqw, 12cqh), 150px);
   --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
   /* Width of the prize / deck+discard columns that flank the player's field */
   --side-w:       max(calc(2 * var(--prize-w) + 4px), calc(var(--card-w-sm) + 26px));
 }
 
-/* ── OPPONENT ZONE — horizontal strip, active centered ────── */
+/* ── OPPONENT ZONE — a 180° copy of the player zone ───────────
+   Same three-column grid as #player-zone with the side columns swapped:
+   deck + discard | bench row → active row | prizes. The side columns hug the
+   midline (align-items: end); inside the field column the bench is the far
+   row and the active card the near row, so the two halves read as one table
+   and learning one half teaches the other. */
 #opponent-zone {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  display: grid;
+  grid-template-columns: var(--side-w) minmax(0, 1fr) var(--side-w);
+  align-items: end;
+  gap: 8px;
   flex-shrink: 0;
   width: 100%;
+  max-width: var(--board-max-w);
+  padding: 8px 12px;
+  background: var(--zone-bg);
+  border-radius: 10px;
   position: relative;
 }
 
-/* Left group: label + bench — pushed left, active stays centered */
+#opp-field-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Bench row (far from the midline). Wraps so the Clairvoyance strip can take
+   its own full-width line above the bench. */
 #opp-left {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;   /* lets the Clairvoyance strip take its own row above the bench */
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
   gap: 8px;
-  flex: 1;
-  justify-content: flex-start;
-  overflow: hidden; /* contain bench overflow — bench itself scrolls */
+  width: 100%;
   min-width: 0;
+  overflow: hidden; /* contain bench overflow — slots shrink instead */
 }
 
 /* Clairvoyance (Omanyte) — opponent's hand face-up, full-width row above bench */
@@ -407,6 +444,7 @@ h1, h2, h3 { font-family: var(--font-title); }
   order: -1;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
   padding: 3px 4px;
   border: 1px dashed rgba(180,100,220,.7);
@@ -417,14 +455,14 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 .opp-hand-reveal::-webkit-scrollbar { display: none; }
 .opp-hand-reveal-label {
-  font-size: 9px;
+  font-size: 11px;
   color: rgb(200,140,240);
   white-space: nowrap;
   letter-spacing: .5px;
   margin-right: 4px;
   flex-shrink: 0;
 }
-.opp-hand-reveal-empty { font-size: 8px; color: var(--muted); }
+.opp-hand-reveal-empty { font-size: 10px; color: var(--muted); }
 .opp-hand-reveal-card {
   width: 38px;
   height: 53px;
@@ -441,61 +479,13 @@ h1, h2, h3 { font-family: var(--font-title); }
 /* Spreadsheet skin: cells are text, so give them room for the card name */
 body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 
-/* Right group: prizes + deck/disc + hand — pushed right */
-#opp-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-  justify-content: flex-end;
-}
-
-#opp-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.opp-label {
-  font-size: 11px;
-  color: var(--p2color);
-  white-space: nowrap;
-  letter-spacing: 1px;
-}
-
-.opp-deck-count {
-  font-size: 11px;
-  color: #fff;
-  white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.9);
-}
-
-.opp-aux-count {
-  font-size: 12px;
-  color: var(--p2color);
-  font-weight: 600;
-  line-height: 1;
-  min-width: 16px;
-  text-align: center;
-}
-
-/* Opp hand indicator */
-.opp-hand-count {
-  font-size: 11px;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Opponent bench row */
 .opp-bench {
   display: flex;
-  gap: 5px;
-  align-items: center;
-  overflow: visible;
+  gap: 7px;
+  align-items: flex-end;
+  justify-content: center;
   min-width: 0;
-  flex: 1;
+  overflow: visible;
 }
 .opp-bench::-webkit-scrollbar { display: none; }
 
@@ -508,22 +498,45 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   overflow: visible;
   position: relative;
   flex-shrink: 1;
   min-width: 24px;
+  cursor: pointer;
   transition: margin-right .15s ease, width .15s ease;
 }
+/* Full brightness: dimming read as "disabled", and these are the cards you
+   most need to inspect. Ownership is carried by position, size and the red
+   border on the active card instead. */
 .opp-bench-slot img {
   width: 100%; height: 100%;
   object-fit: cover;
-  filter: brightness(0.5);
 }
 .opp-bench-slot.empty { opacity: .3; }
 
-/* Opponent active — larger, centered in the top bar */
+/* Active row (nearest the midline) — the opponent's name sits beside the card
+   the way ACTIVE / BENCH sit beside the player's rows */
+#opp-active-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+.opp-label {
+  font-size: 11px;
+  color: var(--p2color);
+  white-space: nowrap;
+  letter-spacing: 2px;
+  max-height: var(--opp-active-h);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+}
 .opp-active-slot {
   width: var(--opp-active-w);
   height: var(--opp-active-h);
@@ -535,7 +548,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   overflow: visible;
   position: relative;
@@ -546,55 +559,50 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   width: 100%; height: 100%;
   object-fit: cover;
   border-radius: 7px;
-  filter: brightness(0.75);
 }
 .opp-active-slot .slot-label {
-  font-size: 8px;
+  font-size: 10px;
   color: var(--p2color);
   padding: 2px 0;
 }
 
-/* Opp prizes — 3×2 grid on desktop: the opponent strip is wide but short, and a
-   2×3 column was what made it ~290px tall (mobile flips it back to 2×3). */
-.opp-prizes {
-  display: grid;
-  grid-template-columns: repeat(3, var(--prize-w));
-  grid-template-rows: repeat(2, var(--prize-h));
-  gap: 4px;
-  flex-shrink: 0;
+/* Deck + discard + hand count — LEFT column (mirror of the player's right
+   column), growing upward from the midline. Counts sit beside the cards. */
+#opp-aux {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  min-width: 0;
 }
-.opp-prize-pip {
-  width: var(--prize-w); height: var(--prize-h);
-  background: var(--card-back-bg);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-.opp-prize-pip.gone { opacity: .15; }
-
-/* Opp deck + discard side by side */
 .opp-aux-row {
   display: flex;
-  gap: 4px;
   align-items: center;
-  flex-shrink: 0;
+  gap: 6px;
 }
-.opp-aux-pair {
+.opp-aux-count {
+  font-size: 13px;
+  color: var(--p2color);
+  font-weight: 600;
+  line-height: 1;
+  min-width: 18px;
+  text-align: left;
+}
+.opp-hand-count {
+  font-size: 11px;
+  color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
 }
 .opp-deck-slot {
   width: var(--card-w-sm);
   height: var(--card-h-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--p2color);
   border-radius: 5px;
   background: var(--card-back-bg);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  color: var(--muted);
   flex-shrink: 0;
 }
 .opp-discard {
@@ -606,7 +614,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   overflow: hidden;
   position: relative;
@@ -616,17 +624,49 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 
 /* Unified "DISC"/"DISCARD" placeholder inside the empty discard pile */
 .discard-placeholder {
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: .5px;
 }
 .discard-count {
   position: absolute; bottom: 2px; right: 3px;
-  font-size: 8px;
+  font-size: 10px;
   background: rgba(0,0,0,.7);
   padding: 1px 2px;
   border-radius: 2px;
 }
+
+/* Prizes — RIGHT column (mirror of the player's left column), 2×3 like the
+   player's grid, growing upward from the midline */
+#opp-prizes-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+#opp-prizes-panel .panel-label {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+.opp-prizes {
+  display: grid;
+  grid-template-columns: repeat(2, var(--prize-w));
+  grid-template-rows: repeat(3, var(--prize-h));
+  gap: 4px;
+  flex-shrink: 0;
+}
+.opp-prize-pip {
+  width: var(--prize-w); height: var(--prize-h);
+  background: var(--card-back-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.opp-prize-pip.gone { opacity: .15; }
 
 /* ── MIDLINE DIVIDER ──────────────────────────────────────── */
 #midline {
@@ -636,13 +676,17 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   flex-shrink: 0;
   padding: 2px 0;
   width: 100%;
-  max-width: 700px;
+  max-width: var(--board-max-w);
 }
 .midline-rule { flex: 1; height: 1px; background: var(--border); }
 #midline-info {
-  font-size: 9px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--text);
   white-space: nowrap;
+  background: rgba(0,0,0,.38);
+  border: 1px solid rgba(255,255,255,.08);
+  padding: 3px 12px;
+  border-radius: 999px;
 }
 
 /* ── PLAYER ZONE ──────────────────────────────────────────── */
@@ -656,7 +700,10 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   gap: 8px;
   flex-shrink: 0;
   width: 100%;
-  max-width: 100%;
+  max-width: var(--board-max-w);
+  padding: 8px 12px;
+  background: var(--zone-bg);
+  border-radius: 10px;
 }
 
 #player-field-col {
@@ -680,7 +727,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 .bench-row::-webkit-scrollbar { display: none; }
 
 .bench-label {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   writing-mode: vertical-rl;
   text-orientation: mixed;
@@ -700,7 +747,7 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   overflow: visible;
   position: relative;
@@ -716,11 +763,11 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
 .zone-slot.occupied { border-color: var(--accent); }
 /* Collapse empty bench slots outside SETUP so the bench hugs occupied slots */
 body:not([data-phase="SETUP"]) .bench-row .zone-slot:not(.occupied):not(.highlight):not(.drag-valid):not(.drag-valid-evolve):not(.drag-valid-energy):not(.drag-valid-heal):not(.drag-valid-trainer) {
-  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
+  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0; visibility: hidden;
 }
 body:not([data-phase="SETUP"]) .bench-row .opp-bench-slot.empty:not(.highlight),
 body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) {
-  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0;
+  width: 0; min-width: 0; padding: 0; border: none; overflow: hidden; gap: 0; margin: 0; visibility: hidden;
 }
 .zone-slot img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
 
@@ -884,7 +931,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   align-items: flex-end;
 }
 .card-badge {
-  font-size: 8px;
+  font-size: 10px;
   font-family: var(--font);
   padding: 1px 3px;
   border-radius: 2px;
@@ -905,7 +952,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 .active-label {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--p1color);
   writing-mode: vertical-rl;
   text-orientation: mixed;
@@ -934,7 +981,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   min-width: 0;
 }
 #player-prizes-panel .panel-label {
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: 1px;
   margin-bottom: 2px;
@@ -993,7 +1040,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   overflow: hidden;
   position: relative;
@@ -1054,7 +1101,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   border-radius: 4px;
   color: var(--muted);
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 11px;
   padding: 3px 8px;
   cursor: pointer;
   letter-spacing: 1px;
@@ -1085,7 +1132,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 .hand-card {
-  width: 64px;
+  width: clamp(64px, 5vw, 96px);
   flex-shrink: 0;
   border: 1px solid var(--border);
   border-radius: 5px;
@@ -1116,7 +1163,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: rgba(0,0,0,.6);
 }
 .hand-card-name {
-  font-size: clamp(9px, 0.7vw, 11px);
+  font-size: clamp(11px, 0.8vw, 12px);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -1124,7 +1171,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   line-height: 1.4;
 }
 .hand-card-sub {
-  font-size: clamp(9px, 0.65vw, 10px);
+  font-size: clamp(10px, 0.75vw, 11px);
   color: var(--muted);
   line-height: 1.3;
   white-space: nowrap;
@@ -1153,7 +1200,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: var(--surface);
   overflow: hidden;
   border-left: 1px solid var(--border);
+  /* The grid column is reserved instantly (one reflow); the panel itself slides
+     in with a transform, which is compositor-only. Animating the grid track
+     used to reflow the whole board every frame and wrap the log word-by-word. */
+  transform: translateX(100%);
+  transition: transform .2s ease;
 }
+#game-board.sidebar-open #sidebar { transform: none; }
 
 /* Hidden on desktop — only used as mobile overlay backdrop */
 #sidebar-backdrop { display: none; }
@@ -1168,7 +1221,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   padding: 10px 6px;
   text-align: center;
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   cursor: pointer;
   border: none;
@@ -1190,7 +1243,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* Log entries */
 .game-log { display: flex; flex-direction: column; gap: 3px; padding: 4px; }
 .log-turn-header {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--border2);
   text-align: center;
   letter-spacing: 1px;
@@ -1257,7 +1310,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   border: 1px solid var(--border);
   color: var(--text);
   font-family: var(--font);
-  font-size: 9px;
+  font-size: 11px;
   padding: 9px 11px;
   cursor: pointer;
   border-radius: 4px;
@@ -1272,7 +1325,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .action-btn.danger:hover { border-color: var(--p2color); background: rgba(245,101,101,.06); }
 .action-btn-sub {
   display: block;
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
   margin-top: 2px;
   letter-spacing: 0;
@@ -1351,7 +1404,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .modal-back-item:hover { border-color: var(--border2); color: var(--text); }
 .modal-back-item .d-name { color: var(--muted); }
 .d-name { font-size: 12px; color: var(--text); margin-bottom: 3px; }
-.d-count { font-size: 9px; color: var(--muted); }
+.d-count { font-size: 11px; color: var(--muted); }
 
 .modal-close-btn {
   background: none;
@@ -1397,13 +1450,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   background: #111;
 }
 .picker-card-name {
-  font-size: 7px; color: var(--muted);
+  font-size: 11px; color: var(--muted);
   padding: 2px 3px;
   background: rgba(0,0,0,.5);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .picker-card-meta {
-  font-size: 7px; color: var(--text2);
+  font-size: 11px; color: var(--text2);
   padding: 1px 3px;
   background: rgba(0,0,0,.4);
   display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
@@ -1415,7 +1468,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 .picker-card .sel-badge {
   position: absolute; top: 2px; right: 2px;
   background: var(--accent); color: #000;
-  font-size: 9px; padding: 1px 3px; border-radius: 2px;
+  font-size: 11px; padding: 1px 3px; border-radius: 2px;
   display: none;
 }
 .picker-card.selected .sel-badge { display: block; }
@@ -1452,46 +1505,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   font-size: 11px;
   padding: 8px 16px;
   border-radius: 4px;
-  z-index: 1000;
+  z-index: 1040;
   white-space: nowrap;
   box-shadow: 0 4px 16px rgba(0,0,0,.4);
 }
 #toast.show { display: block; }
 #toast.err { border-color: var(--p2color); color: var(--p2color); }
 #toast.ok { border-color: var(--ok); color: var(--ok); }
-
-/* ── TURN CHANGE OVERLAY ──────────────────────────── */
-#turn-overlay {
-  display: none;
-  position: fixed; inset: 0; z-index: 950;
-  align-items: center; justify-content: center;
-  pointer-events: none;
-}
-#turn-overlay.show { display: flex; }
-#turn-overlay-inner {
-  font-family: var(--font);
-  font-size: 27px;
-  letter-spacing: 3px;
-  padding: 20px 48px;
-  border-radius: 6px;
-  animation: turnAnnounce 1.2s ease-out forwards;
-}
-@keyframes turnAnnounce {
-  0%   { opacity: 0; transform: scale(0.8); }
-  20%  { opacity: 1; transform: scale(1.05); }
-  70%  { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
-}
-#turn-overlay.p1 #turn-overlay-inner {
-  background: rgba(91,156,246,0.15);
-  border: 2px solid var(--p1color);
-  color: var(--p1color);
-}
-#turn-overlay.p2 #turn-overlay-inner {
-  background: rgba(245,101,101,0.15);
-  border: 2px solid var(--p2color);
-  color: var(--p2color);
-}
 
 /* ── FLASH OVERLAYS (move & action) ─────────────────
  * #move-flash  — attacks (YOUR ATTACK / ELECTABUZZ / THUNDERSHOCK / 30 damage → …)
@@ -1501,15 +1521,27 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
  * (moves 3.5s, actions 2.5s) and structure (move has 4 lines, action has 3).
  * The flash queue in game-render.js guarantees they never appear simultaneously.
  */
-#move-flash, #action-flash {
-  display: none;
+/* #overlay-stage — the ONE fixed layer for transient game overlays (coin flip,
+ * move flash, action flash). It is a centered flex column, so when two of them
+ * are visible at once (a status coin flip right after an attack flash) they
+ * stack as a pair instead of landing on top of each other. Only the stage
+ * paints the dim backdrop, so it never doubles up either. */
+#overlay-stage {
   position: fixed; inset: 0; z-index: 1010;
+  display: flex; flex-direction: column;
   align-items: center; justify-content: center;
+  gap: 14px;
   pointer-events: none;
+}
+#overlay-stage:has(.show) {
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(2px);
 }
-#action-flash { z-index: 1011; }
+#move-flash, #action-flash {
+  display: none;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
 #move-flash.show, #action-flash.show { display: flex; }
 
 #move-flash-inner, #action-flash-inner {
@@ -1606,17 +1638,13 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 /* ── COIN FLIP OVERLAY ─────────────────────────────
- * Centered on screen. The coin and move/action flashes are sequential —
- * flipCoin() clears any pending flash before showing the coin — so there's
- * no overlap concern. If that ever changes, add a body class (e.g.
- * `coin-with-flash`) that offsets this upward and the flash downward,
- * keeping both centered as a pair with a margin between them.
+ * Lives inside #overlay-stage (see above). If a move/action flash is showing
+ * when the coin appears, the stage stacks them: coin on top as the "cause",
+ * the flash below it. The flash queue in game-render.js holds any NEW flash
+ * until the coin closes.
  */
 #coin-overlay {
   display: none;
-  position: fixed;
-  top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 1030;  /* above #move-flash (1010) so it reads as the "cause" on top */
   pointer-events: none;
   width: max-content; max-width: min(92vw, 440px);
 }
@@ -1720,9 +1748,10 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* ── PROMOTE BANNER ───────────────────────────────────────── */
 #promote-banner {
   display: none;
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 970;
+  position: relative;
+  z-index: 5;
+  flex-shrink: 0;
+  width: 100%;
   padding: 14px 20px;
   background: rgba(0,0,0,.92);
   border-bottom: 3px solid var(--warn);
@@ -1786,7 +1815,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 #lass-subtitle {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   margin-top: -10px;
@@ -1842,7 +1871,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 .lass-card-name {
-  font-size: 7px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   white-space: nowrap;
@@ -1942,7 +1971,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 #win-reason {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   letter-spacing: 1px;
   line-height: 1.8;
@@ -2014,7 +2043,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 #pokedex-subtitle {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   letter-spacing: 1px;
@@ -2059,7 +2088,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 
 .dex-card-label {
-  font-size: 7px;
+  font-size: 11px;
   color: var(--muted);
   text-align: center;
   max-width: 100px;
@@ -2187,16 +2216,17 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* ── Narrow (phone portrait) ── */
 @media (max-width: 600px) {
   #field-body {
-    --active-h:     clamp(96px,  min(31vw, 34cqh), 168px);
+    --active-h:     clamp(96px,  min(60cqw, 32cqh), 240px);
     --active-w:     calc(var(--active-h) / 1.4);
-    --card-h-sm:    clamp(52px,  min(17vw, 15cqh), 100px);
+    --card-h-sm:    clamp(52px,  min(16cqw, 14cqh), 110px);
     --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-    --prize-w:      clamp(20px,  min(6vw, 5cqh), 38px);
+    --prize-w:      clamp(18px,  min(5cqw, 5cqh), 38px);
     --prize-h:      calc(var(--prize-w) * 1.4);
-    /* Opponent active is full player size on phones; bench is a small strip */
-    --opp-active-h: var(--active-h);
-    --opp-active-w: var(--active-w);
-    --opp-bench-h:  clamp(40px, min(15vw, 11cqh), 56px);
+    /* Opponent cards keep their desktop proportion to the player's (~70%) so
+       the player's half stays the hero and the hand keeps its room */
+    --opp-active-h: clamp(72px,  min(45cqw, 23cqh), 170px);
+    --opp-active-w: calc(var(--opp-active-h) / 1.4);
+    --opp-bench-h:  clamp(40px,  min(13cqw, 11cqh), 76px);
     --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
     --side-w:       max(calc(2 * var(--prize-w) + 3px), calc(clamp(36px, 9vw, 52px) + 26px));
   }
@@ -2212,14 +2242,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* ── Top bar ── */
   #top-bar { padding: 6px 10px; gap: 6px; }
-  .top-bar-logo { font-size: 9px; }
-  #turn-badge { font-size: 9px; padding: 5px 7px; }
+  .top-bar-logo { font-size: 11px; }
+  #turn-badge { font-size: 11px; padding: 5px 7px; }
   #phase-badge { display: none; }
-  .top-bar-btn { font-size: 9px; padding: 7px 10px; min-height: 36px; }
+  .top-bar-btn { font-size: 11px; padding: 7px 10px; min-height: 36px; }
 
   /* ── Field body ── */
   #field-body { padding: 6px 4px; gap: 4px; }
-  #player-zone { gap: 4px; }
+  #player-zone { gap: 4px; padding: 4px; }
 
   /* Side columns: prizes left, deck/discard right — pip style */
   #player-prizes-panel { gap: 3px; padding-top: 4px; }
@@ -2248,78 +2278,28 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   }
   #deck-count-p1 { font-size: 12px; }
 
-  /* ── Opponent zone: bench row on top, active (full size) below, prizes left, deck/disc right ── */
-  #opponent-zone {
-    display: grid;
-    grid-template-areas:
-      "prizes bench aux"
-      "prizes active aux";
-    grid-template-columns: auto 1fr auto;
-    grid-template-rows: auto auto;
-    align-items: center;
-    justify-items: center;
-    padding: 6px 4px 6px;
-    gap: 4px;
-    position: relative;
-  }
-  /* Bench — horizontal row, top area */
-  #opp-left {
-    grid-area: bench;
-    display: flex;
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: center;
-    gap: 3px;
-    flex: none;
-    width: 100%;
-  }
+  /* ── Opponent zone: same three-column mirror as desktop, tighter ── */
+  #opponent-zone { padding: 4px; gap: 4px; }
+  #opp-field-col, #opp-left, .opp-bench, #opp-active-row { gap: 4px; }
   .opp-label { display: none; }
-  .opp-bench { flex-direction: row; gap: 3px; justify-content: center; }
   .opp-hand-reveal { justify-content: flex-start; }
   .opp-hand-reveal-card { width: 30px; height: 42px; }
-
-  /* Active — full player-active size (see --opp-active-* above), bottom area */
-  .opp-active-slot {
-    grid-area: active;
-    flex-shrink: 0;
-  }
-
-  /* opp-right uses display:contents so its children sit in their own grid areas */
-  #opp-right { display: contents; }
-
-  /* Prizes — left column */
-  .opp-prizes {
-    grid-area: prizes;
-    grid-template-columns: repeat(2, var(--prize-w));
-    grid-template-rows: repeat(3, var(--prize-h));
-    gap: 3px;
-    align-self: center;
-  }
-  .opp-prize-pip { width: var(--prize-w); height: var(--prize-h); border-radius: 2px; }
-
-  /* Deck + discard — right column, stacked */
-  .opp-aux-row {
-    grid-area: aux;
-    flex-direction: column;
-    gap: 4px;
-    align-self: center;
-    align-items: center;
-  }
-  .opp-deck-slot {
-    width: clamp(36px, 9vw, 52px);
-    height: clamp(50px, 12.5vw, 72px);
-  }
+  #opp-prizes-panel { gap: 3px; padding-bottom: 4px; }
+  #opp-prizes-panel .panel-label { display: none; }
+  .opp-prizes { gap: 3px; }
+  .opp-prize-pip { border-radius: 2px; }
+  #opp-aux { gap: 4px; padding-bottom: 4px; }
+  .opp-aux-count { font-size: 12px; }
+  .opp-hand-count { font-size: 10px; }
+  .opp-deck-slot,
   .opp-discard {
     width: clamp(36px, 9vw, 52px);
     height: clamp(50px, 12.5vw, 72px);
   }
 
-  /* Hand count hidden — too little space */
-  .opp-hand-count { display: none; }
-
   /* ── Midline ── */
   #midline { padding: 1px 0; }
-  #midline-info { font-size: 9px; white-space: normal; text-align: center; max-width: 180px; }
+  #midline-info { font-size: 11px; white-space: normal; text-align: center; max-width: 240px; }
 
   /* ── Player zone ── */
   #player-field-col { gap: 4px; }
@@ -2328,11 +2308,11 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* ── Hand area: 3 rows max, scrollable ── */
   #bottom-bar { padding: 6px 8px 8px; gap: 4px; max-height: 35vh; }
-  .hand-label { font-size: 9px; }
+  .hand-label { font-size: 11px; }
   #hand-p1 { gap: 4px; max-height: 28vh; }
   .hand-card { width: 56px; }
-  .hand-card-name { font-size: 8px; }
-  .hand-card-sub { font-size: 8px; }
+  .hand-card-name { font-size: 10px; }
+  .hand-card-sub { font-size: 10px; }
 
   /* ── Action menu: bottom sheet on mobile ── */
   #action-menu {
@@ -2356,7 +2336,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     margin-bottom: 6px;
     min-height: 44px;
   }
-  .action-btn-sub { font-size: 9px; margin-top: 3px; }
+  .action-btn-sub { font-size: 11px; margin-top: 3px; }
 
   /* ── Modals ── */
   .modal-box {
@@ -2368,12 +2348,12 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #card-picker-modal .modal-box { width: 96vw !important; }
   #card-picker-grid { grid-template-columns: repeat(3, 1fr) !important; gap: 5px; max-height: 45vh; }
   .picker-card img { width: 100%; flex: 1 1 auto; min-height: 0; object-fit: contain; background: #111; border-radius: 4px; }
-  .picker-card-name { font-size: 9px; }
+  .picker-card-name { font-size: 11px; }
   .modal-title { font-size: 12px; }
   .modal-close-btn { font-size: 11px; padding: 10px 16px; min-height: 44px; }
   .modal-deck-item { padding: 12px 10px; min-height: 52px; }
   .d-name { font-size: 11px; }
-  .d-count { font-size: 9px; }
+  .d-count { font-size: 11px; }
 
   /* ── Overlays: clamp() in base CSS handles font scaling across screen sizes.
    *    On mobile we only need to tighten padding so the panel doesn't feel
@@ -2392,7 +2372,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #win-headline { font-size: 11px; }
   #win-player-name { font-size: 19px; }
   #win-reason { font-size: 10px; }
-  .win-btn { font-size: 9px; padding: 10px 16px; min-height: 44px; }
+  .win-btn { font-size: 11px; padding: 10px 16px; min-height: 44px; }
 
   /* ── Promote banner ── */
   #promote-banner { font-size: 11px; padding: 10px 14px; }
@@ -2401,14 +2381,14 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
   #card-detail-img { max-width: 70vw; }
 
   /* ── Sidebar tabs ── */
-  .sidebar-tab { font-size: 9px; padding: 12px 4px; min-height: 44px; }
-  .log-entry { font-size: 9px; }
+  .sidebar-tab { font-size: 11px; padding: 12px 4px; min-height: 44px; }
+  .log-entry { font-size: 11px; }
 
   /* ── Pokedex modal ── */
   #pokedex-box { padding: 14px; gap: 10px; }
   #pokedex-title { font-size: 12px; }
   .dex-card-img { width: 72px; }
-  .dex-btn { font-size: 9px; padding: 10px 16px; min-height: 44px; }
+  .dex-btn { font-size: 11px; padding: 10px 16px; min-height: 44px; }
 
   /* ── VS CPU panel ── */
   #cpu-difficulty-row { flex-wrap: wrap; gap: 6px; }
@@ -2442,15 +2422,15 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* ── Disable backdrop-filter on mobile for perf ── */
   #action-menu { backdrop-filter: none; }
-  #move-flash, #action-flash { backdrop-filter: none; }
+  #overlay-stage:has(.show) { backdrop-filter: none; }
 }
 
 /* Small phones (iPhone SE class): trade a little hand height and card size for
    a board that fits without scrolling */
 @media (max-width: 600px) and (max-height: 640px) {
   #field-body {
-    --active-h:  clamp(84px, min(31vw, 32cqh), 168px);
-    --card-h-sm: clamp(46px, min(17vw, 14cqh), 100px);
+    --active-h:  clamp(84px, min(60cqw, 30cqh), 240px);
+    --card-h-sm: clamp(46px, min(16cqw, 13cqh), 110px);
   }
   #bottom-bar { max-height: 30vh; }
   #hand-p1 { max-height: 23vh; }
@@ -2468,22 +2448,43 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
     padding: 4px 8px;
     gap: 4px;
     /* Larger height shares (the side columns are narrow here) and lower floors */
-    --active-h:     clamp(72px, 40cqh, 364px);
+    /* Opponent bench + active share ONE row here (see #opp-field-col below),
+       so the budget is opp active 26cqh + active 38cqh + bench 17cqh = 81cqh */
+    --active-h:     clamp(72px, min(60cqw, 36cqh), 364px);
     --active-w:     calc(var(--active-h) / 1.4);
-    --card-h-sm:    clamp(40px, 18cqh, 154px);
+    --card-h-sm:    clamp(36px, min(16.8cqw, 16cqh), 190px);
     --card-w-sm:    calc(var(--card-h-sm) / 1.4);
-    --prize-w:      clamp(16px, 5cqh, 62px);
+    --prize-w:      clamp(16px, min(5cqw, 5cqh), 62px);
     --prize-h:      calc(var(--prize-w) * 1.4);
-    --opp-active-h: clamp(48px, 22cqh, 168px);
+    --opp-active-h: clamp(48px, min(45cqw, 26cqh), 300px);
     --opp-active-w: calc(var(--opp-active-h) / 1.4);
-    --opp-bench-h:  clamp(32px, 12cqh, 90px);
+    --opp-bench-h:  clamp(32px, min(14cqw, 14cqh), 150px);
     --opp-bench-w:  calc(var(--opp-bench-h) / 1.4);
+    /* Side columns hold deck + discard SIDE BY SIDE here (a stacked pair is
+       taller than the active card on a landscape phone), so they are wider */
+    --side-w:       max(calc(3 * var(--prize-w) + 8px), calc(2 * var(--card-w-sm) + 58px));
   }
   #top-bar { padding: 4px 10px; }
   #phase-badge { display: none; }
-  #opponent-zone { padding: 4px 8px; gap: 6px; }
+  #opponent-zone, #player-zone { padding: 0 8px; gap: 6px; }
+  /* Bench beside active, mirroring nothing but saving ~40% of the zone height */
+  #opp-field-col { flex-direction: row; align-items: flex-end; justify-content: center; gap: 8px; }
+  #opp-left { width: auto; flex: 0 1 auto; }
+  #opp-active-row { width: auto; gap: 4px; }
+  #opp-prizes-panel, #opp-aux { padding-bottom: 2px; }
+  #opp-prizes-panel .panel-label { display: none; }
+  /* Deck + discard side by side; prizes 3×2 — keeps each side column no
+     taller than the active card beside it */
+  #player-aux, #opp-aux { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 4px; }
+  .opp-hand-count { flex-basis: 100%; justify-content: center; }
+  .prize-grid, .opp-prizes {
+    grid-template-columns: repeat(3, var(--prize-w));
+    grid-template-rows: repeat(2, var(--prize-h));
+    gap: 3px;
+  }
+  #midline-info { font-size: 10px; padding: 1px 8px; }
   #midline { padding: 0; }
-  #midline-info { font-size: 9px; }
+  #midline-info { font-size: 11px; }
   #player-zone, #player-field-col, .bench-row { gap: 4px; }
   #player-prizes-panel .panel-label { display: none; }
   #player-prizes-panel, #player-aux { padding-top: 2px; }
@@ -2491,7 +2492,7 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 
   /* Hand: a single horizontally-scrolling strip of small cards, no captions */
   #bottom-bar { padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px)); gap: 2px; max-height: none; }
-  .hand-label { font-size: 9px; }
+  .hand-label { font-size: 11px; }
   #hand-p1 {
     flex-wrap: nowrap;
     justify-content: flex-start;
@@ -2588,13 +2589,13 @@ body.skin-sheet .picker-card > img { display: none; }
 }
 .sheet-cell-stat {
   font-family: 'Menlo', 'Consolas', monospace;
-  font-size: clamp(7px, 0.85vw, 11px);
+  font-size: clamp(9px, 0.85vw, 11px);
   color: #5f6368;
   font-weight: 600;
   flex: 0 0 auto;
 }
 .sheet-cell-tag {
-  font-size: clamp(6px, 0.7vw, 9px);
+  font-size: clamp(9px, 0.7vw, 9px);
   letter-spacing: .06em;
   color: #80868b;
   text-transform: uppercase;
@@ -2659,7 +2660,7 @@ body.skin-sheet .active-row > .active-label {
   border: 1px solid var(--border);
   color: #5f6368;
   font-family: 'Menlo', 'Consolas', monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 1px;
   border-radius: 0;
@@ -2705,8 +2706,8 @@ body.skin-sheet .hand-card.selected {
   box-shadow: 0 0 0 2px var(--accent);
 }
 body.skin-sheet .hand-card-info { background: #ffffff; padding: 4px 5px 5px; }
-body.skin-sheet .hand-card-name { font-size: clamp(8px, 1vw, 12px); font-weight: 700; }
-body.skin-sheet .hand-card-sub  { font-size: clamp(7px, 0.85vw, 10px); }
+body.skin-sheet .hand-card-name { font-size: clamp(9px, 1vw, 12px); font-weight: 700; }
+body.skin-sheet .hand-card-sub  { font-size: clamp(9px, 0.85vw, 10px); }
 body.skin-sheet .hand-card-type-pip { border-radius: 1px; }
 
 /* Picker cards → cells (image hidden above; keep the name + meta) */
@@ -2741,22 +2742,24 @@ body.skin-sheet #field-body {
 
 /* Drop the grouped "card table" boxes — rows are just runs of cells now */
 body.skin-sheet #opponent-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   background: transparent;
   border: none;
   border-radius: 0;
   padding: 0;
   width: auto;
+  max-width: none;
   gap: 4px;
-  justify-content: flex-start;
-  flex-wrap: nowrap;
 }
+body.skin-sheet #opp-field-col { order: 1; align-items: flex-start; width: auto; gap: 4px; }
+body.skin-sheet #opp-prizes-panel { order: 2; }
+body.skin-sheet #opp-aux { order: 3; }
 body.skin-sheet #opp-left,
-body.skin-sheet #opp-right {
-  flex: 0 0 auto;
-  justify-content: flex-start;
-  gap: 4px;
-  overflow: visible;
-}
+body.skin-sheet #opp-active-row { justify-content: flex-start; width: auto; gap: 4px; overflow: visible; }
+body.skin-sheet #opp-prizes-panel,
+body.skin-sheet #opp-aux { flex-direction: row; align-items: center; padding: 0; gap: 4px; }
 body.skin-sheet .opp-bench { flex: 0 0 auto; gap: 4px; overflow: visible; }
 
 /* Player zone → stacked worksheet rows: active/bench, then prizes, then deck/discard */
@@ -2765,6 +2768,9 @@ body.skin-sheet #player-zone {
   flex-direction: column;
   align-items: flex-start;
   width: auto;
+  max-width: none;
+  padding: 0;
+  background: transparent;
   gap: 4px;
 }
 body.skin-sheet #player-prizes-panel { order: 2; }
@@ -2837,7 +2843,7 @@ body.skin-sheet .bench-row .zone-slot-empty { display: none; }
 /* Damage → an inline red negative value next to HP */
 .sheet-cell-dmg {
   font-family: 'Menlo', 'Consolas', monospace;
-  font-size: clamp(7px, 0.85vw, 11px);
+  font-size: clamp(9px, 0.85vw, 11px);
   font-weight: 700;
   color: #d93025;
   flex: 0 0 auto;
@@ -2862,7 +2868,7 @@ body.skin-sheet .energy-overlay .sheet-energy,
 body.skin-sheet .energy-overlay-bench .sheet-energy {
   width: 13px !important;
   height: 13px !important;
-  font-size: 8px !important;
+  font-size: 10px !important;
 }
 body.skin-sheet .zone-slot,
 body.skin-sheet .opp-bench-slot { margin-right: 0 !important; }
@@ -2880,6 +2886,53 @@ body.skin-sheet #midline-info { font-family: 'Menlo', 'Consolas', monospace; }
 body.skin-sheet #bottom-bar { align-items: flex-start; }
 body.skin-sheet .hand-label { align-self: flex-start; }
 body.skin-sheet #hand-p1 { justify-content: flex-start; }
+/* ── HP CHIP — current / max HP on every Pokémon in play ──────────────────
+   Damage dots stay for the tabletop feel; the chip is the at-a-glance read. */
+.hp-chip {
+  position: absolute;
+  top: 3px; left: 3px;
+  z-index: 5;
+  pointer-events: none;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: rgba(0,0,0,.78);
+  color: #fff;
+  letter-spacing: .3px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
+.hp-chip.hp-mid { color: #ffd166; }
+.hp-chip.hp-low { color: #ff6b6b; }
+#active-p1 .hp-chip, .opp-active-slot .hp-chip { font-size: 13px; padding: 4px 7px; }
+.opp-bench-slot .hp-chip { font-size: 10px; padding: 2px 4px; }
+body.skin-sheet .hp-chip { display: none; } /* sheet cells print HP inline */
+
+/* ── KEYBOARD FOCUS ───────────────────────────────────────── */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hand-card:focus-visible { transform: translateY(-6px); }
+
+/* ── DISABLED TOP-BAR BUTTON (END TURN when it isn't your turn) ── */
+.top-bar-btn:disabled { opacity: .4; cursor: default; pointer-events: none; }
+
+/* ── OVERLAY STAGE on short viewports: shrink so coin + flash fit stacked ── */
+@media (max-height: 520px) {
+  #overlay-stage { gap: 6px; }
+  #coin { width: 84px; height: 84px; }
+  #coin-overlay-panel { padding: 8px 14px; gap: 6px; }
+  #move-flash-inner, #action-flash-inner { padding: 8px 16px; gap: 3px; }
+}
+
+/* ── REDUCED MOTION ───────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .confetti-piece { display: none !important; }
+  /* Without the spin the coin must still land on the right face */
+  #coin { transform: rotateY(var(--coin-end-deg, 0deg)); }
+}
 </style>
 </head>
 <body>
@@ -2909,7 +2962,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       No account? <a onclick="setAuthMode('signup')">Create one</a>
     </div>
     <div style="text-align:center;margin-top:4px">
-      <a onclick="cancelLogin()" style="font-size:9px;color:var(--muted);cursor:pointer">← Back to guest</a>
+      <a onclick="cancelLogin()" style="font-size:11px;color:var(--muted);cursor:pointer">← Back to guest</a>
     </div>
   </div>
 </div>
@@ -2946,29 +2999,29 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
   <!-- RESUME GAME PANEL -->
   <div id="resume-panel" style="display:none;text-align:center;">
     <p style="font-size:11px;color:var(--accent);margin-bottom:12px">RESUME GAME</p>
-    <p style="font-size:9px;color:var(--muted);margin-bottom:16px">Choose which player you are, then select a game</p>
+    <p style="font-size:11px;color:var(--muted);margin-bottom:16px">Choose which player you are, then select a game</p>
     <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px">
       <button id="resume-as-p1" onclick="setResumeRole(1)"
-        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">
+        style="font-family:var(--font);font-size:11px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">
         Rejoin as P1
       </button>
       <button id="resume-as-p2" onclick="setResumeRole(2)"
-        style="font-family:var(--font);font-size:9px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">
+        style="font-family:var(--font);font-size:11px;padding:8px 16px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">
         Rejoin as P2
       </button>
     </div>
     <div id="resume-game-list" style="max-width:420px;margin:0 auto 16px;display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;">
-      <div style="font-size:9px;color:var(--muted)">Loading games...</div>
+      <div style="font-size:11px;color:var(--muted)">Loading games...</div>
     </div>
-    <button onclick="showLobby()" style="font-family:var(--font);font-size:8px;padding:6px 14px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;">← Back</button>
+    <button onclick="showLobby()" style="font-family:var(--font);font-size:10px;padding:6px 14px;background:transparent;border:1px solid var(--border);color:var(--muted);cursor:pointer;border-radius:4px;">← Back</button>
   </div>
 
   <!-- P1 WAITING ROOM -->
   <div id="waiting-panel" style="display:none;text-align:center;">
     <p style="font-size: 11px;color:var(--p1color);margin-bottom:16px">ROOM CREATED — YOU ARE P1</p>
     <div style="font-size: 11px;color:var(--muted);margin-bottom:8px">Share this link with Player 2:</div>
-    <div id="room-url-box" style="font-size: 9px;color:var(--accent);background:var(--surface2);border:1px solid var(--border2);padding:10px 14px;border-radius:4px;word-break:break-all;max-width:320px;margin:0 auto 10px;cursor:pointer;" onclick="copyRoomUrl()">...</div>
-    <div style="font-size: 9px;color:var(--muted);margin-bottom:16px">Room code: <span id="room-code-display" style="color:var(--accent);letter-spacing:3px"></span> &nbsp;(click link to copy)</div>
+    <div id="room-url-box" style="font-size: 11px;color:var(--accent);background:var(--surface2);border:1px solid var(--border2);padding:10px 14px;border-radius:4px;word-break:break-all;max-width:320px;margin:0 auto 10px;cursor:pointer;" onclick="copyRoomUrl()">...</div>
+    <div style="font-size: 11px;color:var(--muted);margin-bottom:16px">Room code: <span id="room-code-display" style="color:var(--accent);letter-spacing:3px"></span> &nbsp;(click link to copy)</div>
     <div style="font-size: 11px;color:var(--muted);margin-bottom:16px" id="waiting-status">⏳ Waiting for Player 2 to join...</div>
     <div class="setup-players" style="justify-content:center">
       <div class="setup-player p1" onclick="openLoadModal(1)">
@@ -2978,10 +3031,10 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       </div>
     </div>
     <div style="margin-top:8px">
-      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM DECK</button>
+      <button class="lobby-btn" style="font-size:11px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM DECK</button>
     </div>
     <button id="start-btn" onclick="startGame()" disabled style="margin-top:14px">START GAME</button>
-    <div id="setup-hint" style="font-size: 9px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
+    <div id="setup-hint" style="font-size: 11px;color:var(--muted);margin-top:8px">Both players must load decks first</div>
   </div>
 
   <!-- VS COMPUTER PANEL -->
@@ -3001,17 +3054,17 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       </div>
     </div>
     <div style="margin-top:8px;display:flex;gap:20px;justify-content:center">
-      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM</button>
-      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM</button>
+      <button class="lobby-btn" style="font-size:11px;padding:6px 12px" onclick="loadRandomDeck(1)">🎲 RANDOM</button>
+      <button class="lobby-btn" style="font-size:11px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM</button>
     </div>
     <button id="start-cpu-btn" onclick="startVsCpuGame()" disabled style="margin-top:18px;background:var(--accent);color:#000;border:none;padding:clamp(12px, 1.8vmin, 18px) clamp(36px, 5vmin, 56px);font-family:var(--font);font-size: clamp(14px, 2vmin, 20px);cursor:pointer;border-radius:4px;letter-spacing:1px">START GAME</button>
     <div id="cpu-difficulty-row" style="margin-top:12px;display:flex;gap:10px;justify-content:center;align-items:center">
-      <span style="font-size: 9px;color:var(--muted)">AI DIFFICULTY:</span>
-      <button class="lobby-btn" id="diff-easy" onclick="setAiDiff('easy')" style="padding:6px 14px;font-size: 9px;border-color:var(--ok);color:var(--ok)">EASY</button>
-      <button class="lobby-btn" id="diff-normal" onclick="setAiDiff('normal')" style="padding:6px 14px;font-size: 9px">NORMAL</button>
-      <button class="lobby-btn" id="diff-hard" onclick="setAiDiff('hard')" style="padding:6px 14px;font-size: 9px">HARD</button>
+      <span style="font-size: 11px;color:var(--muted)">AI DIFFICULTY:</span>
+      <button class="lobby-btn" id="diff-easy" onclick="setAiDiff('easy')" style="padding:6px 14px;font-size: 11px;border-color:var(--ok);color:var(--ok)">EASY</button>
+      <button class="lobby-btn" id="diff-normal" onclick="setAiDiff('normal')" style="padding:6px 14px;font-size: 11px">NORMAL</button>
+      <button class="lobby-btn" id="diff-hard" onclick="setAiDiff('hard')" style="padding:6px 14px;font-size: 11px">HARD</button>
     </div>
-    <div style="margin-top:12px"><button class="lobby-btn" style="font-size: 9px;color:var(--muted)" onclick="showLobby()">← BACK</button></div>
+    <div style="margin-top:12px"><button class="lobby-btn" style="font-size: 11px;color:var(--muted)" onclick="showLobby()">← BACK</button></div>
   </div>
 
   <!-- P2 JOIN PANEL -->
@@ -3021,7 +3074,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       style="font-family:var(--font);font-size: 16px;letter-spacing:4px;text-align:center;text-transform:uppercase;background:var(--surface2);border:1px solid var(--border2);color:var(--accent);padding:10px 16px;border-radius:4px;width:200px;outline:none;display:block;margin:0 auto 12px;">
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
       <button class="lobby-btn" onclick="joinRoom()">JOIN →</button>
-      <button class="lobby-btn" style="font-size: 9px;color:var(--muted)" onclick="showLobby()">← BACK</button>
+      <button class="lobby-btn" style="font-size: 11px;color:var(--muted)" onclick="showLobby()">← BACK</button>
     </div>
   </div>
 
@@ -3037,9 +3090,9 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       </div>
     </div>
     <div style="margin-top:8px">
-      <button class="lobby-btn" style="font-size:9px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM DECK</button>
+      <button class="lobby-btn" style="font-size:11px;padding:6px 12px" onclick="loadRandomDeck(2)">🎲 RANDOM DECK</button>
     </div>
-    <div style="font-size: 9px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
+    <div style="font-size: 11px;color:var(--muted);margin-top:12px" id="p1-ready-status"></div>
   </div>
 
 </div>
@@ -3059,56 +3112,77 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       <span id="phase-badge">DRAW</span>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
-      <button class="top-bar-btn" id="skin-toggle-btn" onclick="toggleSkin()" title="Switch to the spreadsheet skin">📊 BUSINESS TIME</button>
+      <button class="top-bar-btn quiet" id="skin-toggle-btn" onclick="toggleSkin()" title="Business Time: spreadsheet skin" aria-label="Business Time: spreadsheet skin">📊</button>
+    </div>
+
+    <!-- Promote banner — in the flow, below the top bar (never covers END TURN / LOG) -->
+    <div id="promote-banner" role="status" aria-live="assertive">
+      <div>
+        <div id="promote-banner-text">⚠ CHOOSE YOUR NEXT POKÉMON</div>
+        <div id="promote-banner-sub">Click a highlighted bench slot to promote to Active</div>
+      </div>
     </div>
 
     <!-- Field body -->
     <div id="field-body">
 
-      <!-- OPPONENT ZONE — horizontal bar, active centered -->
+      <!-- OPPONENT ZONE — a 180° copy of the player zone:
+           deck + discard | bench row → active row | prizes.
+           Side columns hug the midline; the bench is the far row, the active
+           card the near row. All ids are unchanged (the render code keys on them). -->
       <div id="opponent-zone">
 
-        <!-- Left: label + bench -->
-        <div id="opp-left">
-          <!-- Clairvoyance (Omanyte): opponent's hand face-up, above their bench -->
-          <div class="opp-hand-reveal" id="opp-hand-reveal" style="display:none"></div>
-          <span class="opp-label" id="opp-label">OPP</span>
-          <div class="opp-bench">
-            <div class="opp-bench-slot empty" id="bench-p2-0" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-1" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-2" onclick="event.stopPropagation();handleBenchClick(2,2,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-3" onclick="event.stopPropagation();handleBenchClick(2,3,event)"></div>
-            <div class="opp-bench-slot empty" id="bench-p2-4" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
-          </div>
-        </div>
-
-        <!-- Center: active (flex:0, naturally centered between the two flex:1 groups) -->
-        <div class="opp-active-slot" id="active-p2" onclick="event.stopPropagation();onActiveClick(2,event)">
-          <span class="slot-label">ACTIVE</span>
-        </div>
-
-        <!-- Right: prizes + deck + discard + hand count -->
-        <div id="opp-right">
-          <div class="opp-prizes" id="prizes-p2"></div>
+        <!-- Deck + discard + hand count — left column (mirror of the player's right column) -->
+        <div id="opp-aux">
+          <div class="opp-hand-count" title="Cards in opponent's hand">🂠 <span id="hand-label-p2">0</span></div>
           <div class="opp-aux-row">
-            <div class="opp-aux-pair">
-              <div id="deck-count-p2" class="opp-aux-count">0</div>
-              <div class="opp-deck-slot"></div>
-            </div>
-            <div class="opp-aux-pair">
-              <div id="discard-count-p2" class="opp-aux-count">0</div>
-              <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISC</span></div>
-            </div>
+            <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISCARD</span></div>
+            <div id="discard-count-p2" class="opp-aux-count">0</div>
           </div>
-          <div class="opp-hand-count">🂠 <span id="hand-label-p2">0</span></div>
+          <!-- Deck is the row nearest the midline, as it is for the player (true 180° copy) -->
+          <div class="opp-aux-row">
+            <div class="opp-deck-slot" title="Opponent's deck"></div>
+            <div id="deck-count-p2" class="opp-aux-count">0</div>
+          </div>
         </div>
 
-      </div>
+        <div id="opp-field-col">
+
+          <!-- Bench row — far from the midline. #opp-left keeps its id: the
+               Clairvoyance (Omanyte) reveal strip lives here, above the bench. -->
+          <div id="opp-left">
+            <div class="opp-hand-reveal" id="opp-hand-reveal" style="display:none"></div>
+            <div class="opp-bench">
+              <div class="opp-bench-slot empty" id="bench-p2-0" tabindex="0" role="button" aria-label="Opponent bench 1" onclick="event.stopPropagation();handleBenchClick(2,0,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-1" tabindex="0" role="button" aria-label="Opponent bench 2" onclick="event.stopPropagation();handleBenchClick(2,1,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-2" tabindex="0" role="button" aria-label="Opponent bench 3" onclick="event.stopPropagation();handleBenchClick(2,2,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-3" tabindex="0" role="button" aria-label="Opponent bench 4" onclick="event.stopPropagation();handleBenchClick(2,3,event)"></div>
+              <div class="opp-bench-slot empty" id="bench-p2-4" tabindex="0" role="button" aria-label="Opponent bench 5" onclick="event.stopPropagation();handleBenchClick(2,4,event)"></div>
+            </div>
+          </div>
+
+          <!-- Active row — nearest the midline -->
+          <div id="opp-active-row">
+            <span class="opp-label" id="opp-label">OPPONENT</span>
+            <div class="opp-active-slot" id="active-p2" tabindex="0" role="button" aria-label="Opponent active Pokémon" onclick="event.stopPropagation();onActiveClick(2,event)">
+              <span class="slot-label">ACTIVE</span>
+            </div>
+          </div>
+
+        </div><!-- /opp-field-col -->
+
+        <!-- Prizes — right column (mirror of the player's left column) -->
+        <div id="opp-prizes-panel">
+          <div class="opp-prizes" id="prizes-p2"></div>
+          <div class="panel-label">PRIZES</div>
+        </div>
+
+      </div><!-- /opponent-zone -->
 
       <!-- MIDLINE -->
       <div id="midline">
         <div class="midline-rule"></div>
-        <span id="midline-info">Load decks and press Start Game</span>
+        <span id="midline-info" role="status" aria-live="polite">Load decks and press Start Game</span>
         <div class="midline-rule"></div>
       </div>
 
@@ -3126,7 +3200,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
           <!-- Active row — hero card, closest to midline -->
           <div id="active-row">
             <span class="active-label">ACTIVE</span>
-            <div class="zone-slot" id="active-p1" onclick="event.stopPropagation();onActiveClick(1,event)">
+            <div class="zone-slot" id="active-p1" tabindex="0" role="button" aria-label="Your active Pokémon" onclick="event.stopPropagation();onActiveClick(1,event)">
               <div class="zone-slot-empty">Active<br>Pokémon</div>
             </div>
           </div>
@@ -3134,11 +3208,11 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
           <!-- Bench row — below active -->
           <div class="bench-row">
             <span class="bench-label">BENCH</span>
-            <div class="zone-slot" id="bench-p1-0" onclick="event.stopPropagation();handleBenchClick(1,0,event)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-1" onclick="event.stopPropagation();handleBenchClick(1,1,event)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-2" onclick="event.stopPropagation();handleBenchClick(1,2,event)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-3" onclick="event.stopPropagation();handleBenchClick(1,3,event)"><div class="zone-slot-empty">bench</div></div>
-            <div class="zone-slot" id="bench-p1-4" onclick="event.stopPropagation();handleBenchClick(1,4,event)"><div class="zone-slot-empty">bench</div></div>
+            <div class="zone-slot" id="bench-p1-0" tabindex="0" role="button" aria-label="Your bench 1" onclick="event.stopPropagation();handleBenchClick(1,0,event)"><div class="zone-slot-empty">Bench</div></div>
+            <div class="zone-slot" id="bench-p1-1" tabindex="0" role="button" aria-label="Your bench 2" onclick="event.stopPropagation();handleBenchClick(1,1,event)"><div class="zone-slot-empty">Bench</div></div>
+            <div class="zone-slot" id="bench-p1-2" tabindex="0" role="button" aria-label="Your bench 3" onclick="event.stopPropagation();handleBenchClick(1,2,event)"><div class="zone-slot-empty">Bench</div></div>
+            <div class="zone-slot" id="bench-p1-3" tabindex="0" role="button" aria-label="Your bench 4" onclick="event.stopPropagation();handleBenchClick(1,3,event)"><div class="zone-slot-empty">Bench</div></div>
+            <div class="zone-slot" id="bench-p1-4" tabindex="0" role="button" aria-label="Your bench 5" onclick="event.stopPropagation();handleBenchClick(1,4,event)"><div class="zone-slot-empty">Bench</div></div>
           </div>
 
         </div><!-- /player-field-col -->
@@ -3148,12 +3222,12 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
         <div id="player-aux">
           <div class="player-aux-row">
             <div id="deck-count-p1" class="player-aux-count">0</div>
-            <div class="player-deck-slot" onclick="drawCard(G.turn)"></div>
+            <div class="player-deck-slot" tabindex="0" role="button" aria-label="Your deck: draw a card" onclick="drawCard(G.turn)"></div>
           </div>
           <div class="player-aux-row">
             <div id="discard-count-p1" class="player-aux-count">0</div>
             <div class="player-discard-slot" id="discard-p1">
-              <span class="discard-placeholder">DISC</span>
+              <span class="discard-placeholder">DISCARD</span>
             </div>
           </div>
         </div>
@@ -3165,7 +3239,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
     <!-- Bottom hand bar -->
     <div id="bottom-bar">
       <div style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%">
-        <span class="hand-label" id="hand-label-p1">P1 HAND (0)</span>
+        <span class="hand-label" id="hand-label-p1">YOUR HAND (0)</span>
         <button id="hand-toggle-btn" onclick="toggleHandCollapse()" title="Show/hide hand">HIDE ▾</button>
       </div>
       <div id="hand-p1"></div>
@@ -3207,7 +3281,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
 <div class="modal-overlay" id="card-picker-modal">
   <div class="modal-box" style="width:460px;max-height:85vh">
     <div class="modal-title" id="card-picker-title">Pick a card</div>
-    <div id="card-picker-subtitle" style="font-size: 9px;color:var(--muted);text-align:center;margin-bottom:8px"></div>
+    <div id="card-picker-subtitle" style="font-size: 11px;color:var(--muted);text-align:center;margin-bottom:8px"></div>
     <div id="card-picker-grid" style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;overflow-y:auto;max-height:50vh;padding:4px"></div>
     <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
       <button class="modal-close-btn" id="card-picker-confirm" onclick="confirmCardPick()" style="background:var(--accent);color:#000;border-color:var(--accent)">CONFIRM</button>
@@ -3229,12 +3303,6 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
 <!-- Turn change flash -->
 <div id="turn-flash"><div id="turn-flash-inner"></div></div>
 
-<div id="promote-banner">
-  <div>
-    <div id="promote-banner-text">⚠ CHOOSE YOUR NEXT POKÉMON</div>
-    <div id="promote-banner-sub">Click a highlighted bench slot to promote to Active</div>
-  </div>
-</div>
 
 <!-- ══════════════════════════════════════════════ -->
 <!-- WIN SCREEN                                     -->
@@ -3287,11 +3355,25 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
 </div>
 
 <!-- Toast -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
-<!-- Turn change overlay -->
-<div id="turn-overlay">
-  <div id="turn-overlay-inner"></div>
+
+
+
+<!-- Overlay stage: coin flip + move/action flashes stack here (see CSS) -->
+<div id="overlay-stage" aria-live="polite">
+<!-- Coin flip overlay -->
+<div id="coin-overlay">
+  <div id="coin-overlay-panel">
+    <div id="coin-label"></div>
+    <div id="coin-wrap">
+      <div id="coin">
+        <div class="coin-face" id="coin-heads"></div>
+        <div class="coin-face" id="coin-tails"></div>
+      </div>
+    </div>
+    <div id="coin-result"></div>
+  </div>
 </div>
 
 <!-- Move flash overlay -->
@@ -3312,21 +3394,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
     <div id="action-flash-detail"></div>
   </div>
 </div>
-
-<!-- Coin flip overlay -->
-<div id="coin-overlay">
-  <div id="coin-overlay-panel">
-    <div id="coin-label"></div>
-    <div id="coin-wrap">
-      <div id="coin">
-        <div class="coin-face" id="coin-heads"></div>
-        <div class="coin-face" id="coin-tails"></div>
-      </div>
-    </div>
-    <div id="coin-result"></div>
-  </div>
 </div>
-
 
 <!-- ══════════════════════════════════════════════ -->
 <!-- FIREBASE SDK                                   -->
