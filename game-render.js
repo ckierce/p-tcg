@@ -33,11 +33,12 @@ function applySkin(skin) {
   if (btn) {
     // Icon + label in separate spans so narrow screens can show the icon alone
     btn.innerHTML = CURRENT_SKIN === 'sheet'
-      ? '<span class="btn-icon">🟢</span><span class="btn-label"> NORMAL</span>'
+      ? '<span class="btn-icon">🃏</span><span class="btn-label"> CARDS</span>'
       : '<span class="btn-icon">📊</span><span class="btn-label"> BUSINESS TIME</span>';
     btn.title = CURRENT_SKIN === 'sheet'
-      ? 'Switch back to the normal card skin'
-      : 'Switch to the spreadsheet skin';
+      ? 'Back to the card skin'
+      : 'Business Time: spreadsheet skin';
+    btn.setAttribute('aria-label', btn.title);
   }
   // Re-render so card faces / energy chips swap representation immediately.
   if (typeof G !== 'undefined' && G && typeof renderAll === 'function') {
@@ -126,11 +127,19 @@ function renderAll() {
   }
 }
 
+// The opponent's display name, used by every label that refers to them
+// (zone label, sidebar hand / prizes tabs) so the wording never drifts:
+// COMPUTER in vs-AI games, their trainer name when known, else PLAYER N.
+function oppDisplayName() {
+  const opp = (myRole === 2) ? 1 : 2;
+  if (typeof vsComputer !== 'undefined' && vsComputer) return 'COMPUTER';
+  const name = G?.players?.[opp]?.name;
+  return name ? String(name).toUpperCase() : `PLAYER ${opp}`;
+}
+
 function updatePerspectiveLabels() {
   if (myRole !== 2) return;
   // For P2: top zone shows P1 (opponent), bottom zone shows P2 (self)
-  const oppLabel = document.getElementById('opp-label');
-  if (oppLabel) oppLabel.textContent = 'PLAYER 1';
   const activeLabel = document.querySelector('.active-label');
   if (activeLabel) activeLabel.style.color = 'var(--p2color)';
   const deckBorder = document.querySelector('.player-deck-slot');
@@ -164,7 +173,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:10px">DISCARD</span>`;
+      discardEl.innerHTML = `<span class="discard-placeholder">DISCARD</span>`;
     }
     // Bottom hand label color
     const label1 = document.getElementById('hand-label-p1');
@@ -183,6 +192,8 @@ function renderField(player) {
     G._clairvoyanceActive = !setupHide && G.phase !== 'SETUP' && typeof isPowerActive === 'function' &&
       [G.players[bottomPlayer].active, ...G.players[bottomPlayer].bench].some(c => c && isPowerActive(c, 'Clairvoyance'));
     renderOppHandReveal(topPlayer);
+    const oppLabelEl = document.getElementById('opp-label');
+    if (oppLabelEl) oppLabelEl.textContent = oppDisplayName();
     const activeEl = document.getElementById('active-p2');
     activeEl.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
     if (p.active) {
@@ -272,7 +283,7 @@ function renderField(player) {
       const top = p.discard[p.discard.length - 1];
       discardEl.innerHTML = cardFace(top);
     } else {
-      discardEl.innerHTML = `<span style="font-size:10px">DISC</span>`;
+      discardEl.innerHTML = `<span class="discard-placeholder">DISCARD</span>`;
     }
   }
 }
@@ -284,7 +295,7 @@ function renderSlotP1(el, card) {
   el.classList.remove('status-asleep','status-paralyzed','status-poisoned','status-confused','status-burned');
   if (!card) {
     el.classList.remove('occupied');
-    el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'bench'}</div>`;
+    el.innerHTML = `<div class="zone-slot-empty">${el.id.includes('active') ? 'Active<br>Pokémon' : 'Bench'}</div>`;
     el.style.marginRight = ''; // clear any energy-pushed margin
     if (wasHighlighted) el.classList.add('highlight');
     return;
@@ -348,7 +359,7 @@ function renderHands() {
   const localHand = G.players[localPlayer].hand;
   const container1 = document.getElementById('hand-p1');
   const label1 = document.getElementById('hand-label-p1');
-  label1.textContent = `P${localPlayer} HAND (${localHand.length})`;
+  label1.textContent = `YOUR HAND (${localHand.length})`;
   label1.style.color = localPlayer === 2 ? 'var(--p2color)' : 'var(--p1color)';
 
   if (!localHand.length) {
@@ -426,7 +437,7 @@ function renderSidebarP2Hand() {
   const sidePlayer = (myRole === 2) ? 1 : 2;
   const sideHand = G.players[sidePlayer].hand;
   const sideColor = sidePlayer === 1 ? 'var(--p1color)' : 'var(--p2color)';
-  const label = myRole === 2 ? 'P1 HAND' : 'P2 HAND';
+  const label = `${oppDisplayName()} HAND`;
 
   // Show gate screen until player explicitly reveals
   if (!renderSidebarP2Hand._revealed) {
@@ -498,8 +509,8 @@ function renderPrizesTab() {
   const p2prizes = G.players[2].prizes;
   const myPrizes  = myRole === 2 ? p2prizes : p1prizes;
   const oppPrizes = myRole === 2 ? p1prizes : p2prizes;
-  const myLabel   = myRole === 2 ? 'YOUR PRIZES' : 'P1 PRIZES';
-  const oppLabel  = myRole === 2 ? 'OPP PRIZES'  : 'P2 PRIZES';
+  const myLabel   = 'YOUR PRIZES';
+  const oppLabel  = `${oppDisplayName()} PRIZES`;
   const myColor   = myRole === 2 ? 'var(--p2color)' : 'var(--p1color)';
   const oppColor  = myRole === 2 ? 'var(--p1color)' : 'var(--p2color)';
   content.innerHTML = `
