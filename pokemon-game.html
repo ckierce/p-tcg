@@ -946,6 +946,25 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 }
 .card-badge.defender  { background: rgba(91,156,246,.9); color: #fff; }
 .card-badge.pluspower { background: rgba(232,200,74,.9); color: #000; }
+/* Pokémon Power: full name, clipped with an ellipsis to the card width; small
+   bench cards show a star instead (the name would be wider than the card). */
+.card-badges { max-width: calc(100% - 6px); }
+.card-badge.power {
+  background: rgba(180,100,220,.9);
+  color: #fff;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-badge.power.suppressed { opacity: .4; text-decoration: line-through; }
+.card-badge.power .badge-glyph { display: none; }
+.opp-bench-slot .card-badge.power .badge-full,
+.bench-row .zone-slot .card-badge.power .badge-full { display: none; }
+.opp-bench-slot .card-badge.power .badge-glyph,
+.bench-row .zone-slot .card-badge.power .badge-glyph { display: inline; }
+/* Spreadsheet skin cells are wide enough for the name everywhere */
+body.skin-sheet .card-badge.power .badge-full { display: inline; }
+body.skin-sheet .card-badge.power .badge-glyph { display: none; }
 
 /* Active Pokémon — hero card, centered */
 #active-row {
@@ -1572,19 +1591,6 @@ body:not([data-phase="SETUP"]) .opp-bench .opp-bench-slot.empty:not(.highlight) 
 /* The panels take the tap themselves (so it does not fall through to a card);
    everywhere else on the stage stays click-through. See dismissFlashes(). */
 #move-flash-inner, #action-flash-inner, #turn-flash-inner { pointer-events: auto; cursor: pointer; }
-#move-flash-inner::after, #action-flash-inner::after {
-  content: 'tap to dismiss';
-  display: block;
-  margin-top: 2px;
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-  opacity: .8;
-}
-@media (hover: hover) and (pointer: fine) {
-  #move-flash-inner::after, #action-flash-inner::after { content: 'click to dismiss'; }
-}
 
 @keyframes moveFlashAnim {
   0%   { opacity: 0; transform: scale(0.75) translateY(-12px); }
