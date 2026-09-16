@@ -1614,6 +1614,7 @@ function receiveGameState(state) {
   const prevTurn = G.turn;
   const wasStarted = G.started;
   const wasSetup   = G.phase === 'SETUP';
+  const wasPromote = G.phase === 'PROMOTE';
 
   // Build incoming player snapshots
   const incomingP1 = enrichPlayer(state.players[1]);
@@ -1707,7 +1708,19 @@ function receiveGameState(state) {
   if (G.phase !== 'SETUP') {
     const endBtn = document.getElementById('end-turn-btn');
     if (endBtn) endBtn.textContent = 'END TURN';
-    if (wasSetup && typeof setMidline === 'function') setMidline('');
+  }
+  // The remote player's promotion is over: drop the bench highlights and the
+  // "choose a bench Pokémon" prompt this client put up for it.
+  if (wasPromote && G.phase !== 'PROMOTE' && typeof clearHighlights === 'function') clearHighlights();
+  // The midline prompt is only ever set by the client that ACTS, so the
+  // receiving side used to keep whatever it last showed ("Load decks…" through
+  // setup, "Player 2: choose a bench Pokémon…" after they had). Set it from
+  // the received phase instead, unless this client is mid-action.
+  if (typeof setMidline === 'function' && !G.pendingAction) {
+    if (G.phase === 'SETUP') setMidline('Place your Active Pokémon (and optional bench), then click READY');
+    else if (G.phase === 'PROMOTE' && G.pendingPromotion && G.pendingPromotion !== myRole) setMidline(`${oppDisplayName()} is choosing a new Active Pokémon…`);
+    else if (G.phase === 'PROMOTE') setMidline('Choose a bench Pokémon to promote to Active!');
+    else setMidline('');
   }
   // Show/hide promote banner based on incoming phase
   if (G.phase === 'PROMOTE' && G.pendingPromotion) {
@@ -1756,6 +1769,13 @@ function receiveGameState(state) {
     // Background nudge (OS notification + beep + title blink) if they've tabbed
     // away. notifyMyTurn() self-gates on visibility, so it's a no-op if focused.
     if (typeof notifyMyTurn === 'function') notifyMyTurn();
+  }
+  // Replay the opponent's latest non-attack banner (attach / trainer / evolve /
+  // retreat / promote) — attacks already replay via lastMoveFlash below.
+  if (myRole !== null && G.lastActionFlash && G.lastActionFlash.ts !== window._lastActionFlashTs) {
+    window._lastActionFlashTs = G.lastActionFlash.ts;
+    const af = G.lastActionFlash;
+    if (af.player !== myRole) showActionFlash(af.player, af.verb, af.subject, af.detail);
   }
   // Show opponent move flash
   if (myRole !== null && G.lastMoveFlash && G.lastMoveFlash.ts !== window._lastMoveFlashTs) {

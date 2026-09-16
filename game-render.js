@@ -133,22 +133,26 @@ function renderAll() {
 function oppDisplayName() {
   const opp = (myRole === 2) ? 1 : 2;
   if (typeof vsComputer !== 'undefined' && vsComputer) return 'COMPUTER';
-  const name = G?.players?.[opp]?.name;
+  const raw = G?.players?.[opp]?.name;
+  // "Guest" / "Player N" are placeholders, not names — fall back to PLAYER N
+  const name = raw && !/^(guest|player\s*\d)$/i.test(String(raw).trim()) ? raw : null;
   return name ? String(name).toUpperCase() : `PLAYER ${opp}`;
 }
 
+// How a player is referred to in banners from THIS client's point of view:
+// YOU / 🤖 COMPUTER / the opponent's display name / PLAYER N (hotseat).
+function playerLabel(player) {
+  if (myRole !== null && player === myRole) return 'YOU';
+  if (typeof vsComputer !== 'undefined' && vsComputer && player === 2) return '🤖 COMPUTER';
+  if (myRole !== null) return oppDisplayName();
+  return `PLAYER ${player}`;
+}
+
 function updatePerspectiveLabels() {
-  if (myRole !== 2) return;
-  // For P2: top zone shows P1 (opponent), bottom zone shows P2 (self)
-  const activeLabel = document.querySelector('.active-label');
-  if (activeLabel) activeLabel.style.color = 'var(--p2color)';
-  const deckBorder = document.querySelector('.player-deck-slot');
-  if (deckBorder) deckBorder.style.borderColor = 'var(--p2color)';
-  const deckCount = document.getElementById('deck-count-p1');
-  if (deckCount) deckCount.style.color = 'var(--p2color)';
-  // Flip active border color
-  const activeP1El = document.getElementById('active-p1');
-  if (activeP1El) { activeP1El.style.borderColor = 'var(--p2color)'; activeP1El.style.boxShadow = '0 4px 16px rgba(245,101,101,.15)'; }
+  // For P2: the bottom zone is P2 (red) and the TOP zone is P1 (blue). One
+  // body class drives both halves in CSS (see body.persp-p2 rules); the old
+  // inline styles only recoloured the bottom half, leaving both actives red.
+  document.body.classList.toggle('persp-p2', myRole === 2);
 }
 
 function renderField(player) {
@@ -550,6 +554,10 @@ function updateDeckCounts() {
 
 function updatePhase() {
   document.getElementById('phase-badge').textContent = G.phase;
+  // The bench-collapse CSS keys on this; it used to be set only by renderAll(),
+  // which the network receive path never calls, so P2's client kept the SETUP
+  // marker (and five empty bench placeholders) until it acted itself.
+  document.body.dataset.phase = G.phase || 'SETUP';
 }
 
 function updateTurnBadge() {
@@ -980,7 +988,7 @@ function showPromoteBanner(playerNum) {
   const isMe = myRole === null || myRole === playerNum;
   text.textContent = isMe
     ? `⚠ CHOOSE YOUR NEXT POKÉMON`
-    : `⚠ PLAYER ${playerNum} IS CHOOSING THEIR NEXT POKÉMON`;
+    : `⚠ ${playerLabel(playerNum)} IS CHOOSING THEIR NEXT POKÉMON`;
   sub.textContent = isMe
     ? 'Click a highlighted bench slot to promote to Active'
     : 'Waiting for opponent...';
@@ -1113,6 +1121,8 @@ function showTurnFlash(player) {
     const inner = document.getElementById('turn-flash-inner');
     const label = (vsComputer && player === 1) ? 'YOUR TURN'
                 : (vsComputer && player === 2) ? '🤖 COMPUTER\'S TURN'
+                : (myRole !== null && player === myRole) ? 'YOUR TURN'
+                : (myRole !== null) ? `${oppDisplayName()}'S TURN`
                 : `PLAYER ${player}'S TURN`;
     inner.textContent = label;
     inner.className = `p${player}`;
@@ -1276,7 +1286,7 @@ function showMoveFlash(attackingPlayer, attackerName, moveName, dmg, targetName,
 
     const isOwnAttack = myRole !== null && attackingPlayer === myRole;
     whoEl.textContent = isOwnAttack ? 'YOUR ATTACK'
-      : (vsComputer ? '🤖 COMPUTER ATTACKS' : `PLAYER ${attackingPlayer} ATTACKS`);
+      : `${playerLabel(attackingPlayer)} ATTACKS`;
     attackerEl.textContent = attackerName.toUpperCase();
     moveEl.textContent = moveName.toUpperCase();
     dmgEl.textContent = dmg > 0
@@ -1305,6 +1315,14 @@ function showBlockedFlash(attackingPlayer, attackerName, moveName, reason) {
 // same player-color border. Different animation (2.5s vs 3.5s) because
 // actions carry less information and don't need to linger as long.
 function showActionFlash(player, verb, subject, detail) {
+  // Record on the ACTING client only (like lastMoveFlash) so the opponent's
+  // client can replay attach / trainer / evolve / retreat / promote banners
+  // from the next state push. The ts watermark stops our own write echo
+  // from replaying it back to us.
+  if (typeof G !== 'undefined' && G && (myRole === null || player === myRole)) {
+    G.lastActionFlash = { player, verb, subject, detail: detail || '', ts: Date.now() };
+    if (typeof window !== 'undefined') window._lastActionFlashTs = G.lastActionFlash.ts;
+  }
   const DURATION = 2500;
   _queueFlash(() => {
     const el = document.getElementById('action-flash');
@@ -1313,7 +1331,7 @@ function showActionFlash(player, verb, subject, detail) {
     // For "YOU" we want base form: strip trailing S (PLAYS→PLAY, BENCHES→BENCH, RETREATS→RETREAT)
     const baseVerb = verb.replace(/ES$/i, '').replace(/S$/i, '');
     const displayVerb = isOwnAction ? baseVerb : verb;
-    const who = isOwnAction ? `YOU ${displayVerb}` : (vsComputer ? `🤖 COMPUTER ${displayVerb}` : `PLAYER ${player} ${displayVerb}`);
+    const who = isOwnAction ? `YOU ${displayVerb}` : `${playerLabel(player)} ${displayVerb}`;
     document.getElementById('action-flash-who').textContent = who;
     document.getElementById('action-flash-subject').textContent = (subject || '').toUpperCase();
     document.getElementById('action-flash-detail').textContent = detail || '';

@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
-<link rel="stylesheet" href="theme.css?v=1cce0d50da">
+<link rel="stylesheet" href="theme.css?v=0f2e21fcbb">
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -679,6 +679,21 @@ body.skin-sheet .opp-hand-reveal-card { width: 96px; height: 34px; }
   padding: 3px 12px;
   border-radius: 999px;
 }
+
+/* ── PLAYER 2 PERSPECTIVE ─────────────────────────────────────
+   As P2 the bottom half is yours (red) and the top half is P1 (blue). Set by
+   updatePerspectiveLabels(); overrides the default bottom=blue / top=red. */
+body.persp-p2 .active-label,
+body.persp-p2 .hand-label,
+body.persp-p2 .player-aux-count,
+body.persp-p2 #deck-count-p1 { color: var(--p2color); }
+body.persp-p2 .player-deck-slot { border-color: var(--p2color); }
+body.persp-p2 #active-p1 { border-color: var(--p2color); box-shadow: 0 4px 20px rgba(248,113,113,.2); }
+body.persp-p2 .opp-label,
+body.persp-p2 .opp-aux-count,
+body.persp-p2 .opp-active-slot .slot-label { color: var(--p1color); }
+body.persp-p2 .opp-deck-slot { border-color: var(--p1color); }
+body.persp-p2 .opp-active-slot { border-color: var(--p1color); box-shadow: 0 4px 16px rgba(106,166,248,.15); }
 
 /* ── PLAYER ZONE ──────────────────────────────────────────── */
 /* Three columns: prizes | active+bench | deck+discard. The side panels live in
@@ -3425,13 +3440,13 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=1cce0d50da"></script>
-<script src="game-render.js?v=1cce0d50da"></script>
-<script src="game-actions.js?v=1cce0d50da"></script>
-<script src="game-ai.js?v=1cce0d50da"></script>
+<script src="game-utils.js?v=0f2e21fcbb"></script>
+<script src="game-render.js?v=0f2e21fcbb"></script>
+<script src="game-actions.js?v=0f2e21fcbb"></script>
+<script src="game-ai.js?v=0f2e21fcbb"></script>
 
-<script src="pokemon-powers.js?v=1cce0d50da"></script>
-<script src="trainer-cards.js?v=1cce0d50da"></script>
-<script src="move-effects.js?v=1cce0d50da"></script>
-<script src="game-init.js?v=1cce0d50da"></script>
+<script src="pokemon-powers.js?v=0f2e21fcbb"></script>
+<script src="trainer-cards.js?v=0f2e21fcbb"></script>
+<script src="move-effects.js?v=0f2e21fcbb"></script>
+<script src="game-init.js?v=0f2e21fcbb"></script>
 </html>
