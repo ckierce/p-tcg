@@ -1161,19 +1161,19 @@ async function computeFinalDamage(player, opp, atk, dmg, myActive, oppActive, at
         }
       }
 
+      const selfKOdToo = myActive && (attackerSelfKOd || isKnockedOut(myActive));
       if (koResult === 'win') {
-        if (attackerSelfKOd && myActive) {
+        // Game already won by the attacker — the recoil KO is cosmetic here
+        if (selfKOdToo) {
           addLog(`${myActive.name} was also knocked out by recoil!`, true);
-          G.players[player].discard.push(myActive);
-          G.players[player].active = null;
+          discardSelfKOdActive(player, opp, myActive);
         }
         renderWhenIdle(); return { dmg, done: true };
       }
       if (koResult === 'promote') {
-        if (attackerSelfKOd && myActive) {
+        if (selfKOdToo) {
           addLog(`${myActive.name} was also knocked out by recoil!`, true);
-          G.players[player].discard.push(myActive);
-          G.players[player].active = null;
+          if (discardSelfKOdActive(player, opp, myActive) === 'win') { renderWhenIdle(); return { dmg, done: true }; }
         }
         renderWhenIdle(); return { dmg, done: true };
       }
@@ -1417,36 +1417,15 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
     }
   }
 
-  // Check if attacker KO'd itself (e.g. Selfdestruct, Explosion recoil)
-  if (attackerSelfKOd && myActive) {
+  // Attacker KO'd itself (Selfdestruct / Explosion recoil, or any self-damage
+  // that has reached its HP by now). checkKO(isSelf) discards the card, awards
+  // the OPPONENT a prize, checks the win and starts the promotion — the old
+  // hand-rolled version here never awarded the prize.
+  if (myActive && G.players[player].active === myActive && (attackerSelfKOd || isKnockedOut(myActive))) {
     addLog(`${myActive.name} was knocked out by its own attack!`, true);
-    G.players[player].discard.push(myActive);
-    G.players[player].active = null;
-    const myBenchLeft = G.players[player].bench.filter(s => s !== null);
-    if (myBenchLeft.length === 0) {
-      G.started = false;
-      showWinScreen(opp, `${myActive.name} KNOCKED ITSELF OUT`);
-      if (typeof pushGameState === 'function') pushGameState();
-      renderWhenIdle(); return true;
-    } else if (myBenchLeft.length === 1) {
-      const idx = G.players[player].bench.findIndex(s => s !== null);
-      G.players[player].active = G.players[player].bench[idx];
-      G.players[player].bench[idx] = null;
-      addLog(`${G.players[player].active.name} was automatically moved to Active!`, true);
-      // Fall through to renderAll/endTurn below
-    } else {
-      transitionPhase('PROMOTE', { pendingPromotion: player });
-      clearFlashQueue();
-      for (let i = 0; i < 5; i++) {
-        if (G.players[player].bench[i]) {
-          document.getElementById(`bench-p${player}-${i}`)?.classList.add('highlight');
-        }
-      }
-      setMidline(`Player ${player}: choose a bench Pokémon to promote to Active!`);
-      showPromoteBanner(player);
-      addLog(`Player ${player} must choose a new Active Pokémon.`, true);
-      renderWhenIdle(); return true; // done — endTurn fires inside resolvePromotion
-    }
+    const selfKo = checkKO(player, opp, myActive, true);
+    renderWhenIdle();
+    if (selfKo === 'win' || selfKo === 'promote') return true; // endTurn fires inside resolvePromotion
   }
 
 }
@@ -1790,6 +1769,19 @@ async function performAttack(player, atk) {
     if (effectBlocked === true) return;
   }
 
+  // ── Self-KO sweep ────────────────────────────────────────────────────────────
+  // Recoil applied by move-effects postAttack handlers (Thunderpunch / Thrash
+  // tails, …) lands after every earlier check. If the attacker's Active has
+  // now reached its HP, it is knocked out here: discard, prize to the
+  // opponent, win check, promotion. This was the "Electabuzz at 70/70 kept
+  // fighting" bug.
+  const meAfter = G.players[player].active;
+  if (G.started && meAfter && isKnockedOut(meAfter)) {
+    addLog(`${meAfter.name} was knocked out by its own attack!`, true);
+    const sweepKo = checkKO(player, opp, meAfter, true);
+    if (sweepKo === 'win' || sweepKo === 'promote') { renderWhenIdle(); return; }
+  }
+
   // Attack always ends the turn
   renderWhenIdle();
   _flashQueue.push({ fn: () => endTurn(), duration: 0 });
@@ -1855,6 +1847,32 @@ function koBenchAndPrize(ownerPlayerNum, benchIdx) {
   if (card.isDoll) { addLog(`${card.name} was discarded — no prize awarded.`); return null; }
   const prizeWinner = ownerPlayerNum === 1 ? 2 : 1;
   return awardPrizeAndCheckWin(prizeWinner, ownerPlayerNum);
+}
+
+// True when a card's damage has reached its HP (CARD_DATA fallback for HP, as
+// in checkKO). Used to catch self-inflicted knockouts — coin-gated recoil
+// (Thunderpunch / Thrash tails), confusion, Strikes Back — that no
+// pre-computed flag covers.
+function isKnockedOut(card) {
+  if (!card) return false;
+  let hp = parseInt(card.hp) || 0;
+  if (hp === 0 && card.id && typeof CARD_DATA !== 'undefined') hp = parseInt(CARD_DATA[card.id]?.hp) || 0;
+  return hp > 0 && (card.damage || 0) >= hp;
+}
+
+// Discard the attacker's own knocked-out Active (card + evolution stack +
+// energy) and award the opponent a prize. Used when the defender was ALSO
+// knocked out by the same attack, so the opponent's promotion is already in
+// progress; the attacker's own promotion is picked up by endTurn's safety net
+// once the opponent has chosen. Returns 'win' if the prize ended the game.
+function discardSelfKOdActive(player, opp, card) {
+  const owner = G.players[player];
+  owner.discard.push(card);
+  if (card.prevStages && card.prevStages.length) owner.discard.push(...card.prevStages);
+  if (card.attachedEnergy && card.attachedEnergy.length) owner.discard.push(...card.attachedEnergy);
+  if (owner.active === card) owner.active = null;
+  while (owner.bench.length < 5) owner.bench.push(null);
+  return awardPrizeAndCheckWin(opp, player);
 }
 
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
