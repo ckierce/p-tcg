@@ -129,8 +129,8 @@ function getActionsForCard(player, card, handIdx) {
       unplayableReason = 'Active Pokémon has no status condition';
     else if (/^full restore$/i.test(nm) && !hasAnyStatus(p.active))
       unplayableReason = 'Active Pokémon has no status condition';
-    else if (/^scoop up$/i.test(nm) && !myPokemon.some(s => s.subtypes?.includes('Basic') && !s.isDoll))
-      unplayableReason = 'No eligible Basic Pokémon';
+    else if (/^scoop up$/i.test(nm) && !(p.bench.some(s => s && !s.isDoll) || (p.active && !p.active.isDoll && p.bench.some(s => s))))
+      unplayableReason = p.active && !p.active.isDoll ? 'Needs a benched Pokémon to promote' : 'No eligible Pokémon';
     else if (/^switch$/i.test(nm) && !p.bench.some(s => s !== null))
       unplayableReason = 'No bench Pokémon to switch with';
     else if (/^gust of wind$/i.test(nm) && !oppP.bench.some(s => s !== null))

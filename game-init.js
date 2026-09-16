@@ -487,6 +487,10 @@ function handleEndTurnBtn() {
       doneSetup();
     }
   } else {
+    if (G.phase === 'PROMOTE') {
+      showToast(G.pendingPromotion === myRole ? 'Choose a bench Pokémon to promote first!' : 'Waiting for the opponent to choose a new Active.', true);
+      return;
+    }
     if (!G.players[G.turn].active) {
       showToast('You must have an Active Pokémon before ending your turn!', true);
       return;
@@ -1889,7 +1893,15 @@ function applyRoleVisibility() {
       endBtn.style.pointerEvents = canAct ? '' : 'none';
       endBtn.disabled = !canAct; // real disabled state: skipped by Tab, announced by screen readers
       const myPromote = G.phase === 'PROMOTE' && G.pendingPromotion === myRole;
-      if (myPromote) {
+      const oppPromote = G.phase === 'PROMOTE' && G.pendingPromotion && G.pendingPromotion !== myRole;
+      if (oppPromote) {
+        // You knocked out their Active on your turn: the turn cannot end until
+        // they have chosen a replacement, so the button is not a control now.
+        endBtn.textContent = vsComputer ? 'COMPUTER CHOOSING...' : 'OPPONENT CHOOSING...';
+        endBtn.style.opacity = '0.4';
+        endBtn.style.pointerEvents = 'none';
+        endBtn.disabled = true;
+      } else if (myPromote) {
         // Your knockout on the opponent's turn: the bench is the control now,
         // not this button — say so instead of "AI THINKING..." / "END TURN".
         endBtn.textContent = 'CHOOSE A POKÉMON';
@@ -1898,7 +1910,7 @@ function applyRoleVisibility() {
         endBtn.disabled = true;
       } else if (isAiTurn) {
         endBtn.textContent = 'AI THINKING...';
-      } else if (!endBtn.textContent || ['WAITING FOR P1', 'WAITING FOR P2', "I'M READY", 'STARTING...', 'BOTH READY', 'WAITING...', 'AI THINKING...', 'CHOOSE A POKÉMON'].includes(endBtn.textContent)) {
+      } else if (!endBtn.textContent || ['WAITING FOR P1', 'WAITING FOR P2', "I'M READY", 'STARTING...', 'BOTH READY', 'WAITING...', 'AI THINKING...', 'CHOOSE A POKÉMON', 'COMPUTER CHOOSING...', 'OPPONENT CHOOSING...'].includes(endBtn.textContent)) {
         endBtn.textContent = 'END TURN';
       }
     }
