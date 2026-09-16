@@ -1853,6 +1853,14 @@ function koBenchAndPrize(ownerPlayerNum, benchIdx) {
 // in checkKO). Used to catch self-inflicted knockouts — coin-gated recoil
 // (Thunderpunch / Thrash tails), confusion, Strikes Back — that no
 // pre-computed flag covers.
+// Midline prompt while `who` must promote — phrased for THIS client: the
+// promoting player is told to choose; the other player is told to wait.
+function promotePrompt(who) {
+  if (myRole === null) return `Player ${who}: choose a bench Pokémon to promote to Active!`;
+  if (who === myRole) return 'Choose a bench Pokémon to promote to Active!';
+  return `${typeof playerLabel === 'function' ? playerLabel(who) : 'PLAYER ' + who} is choosing a new Active Pokémon…`;
+}
+
 function isKnockedOut(card) {
   if (!card) return false;
   let hp = parseInt(card.hp) || 0;
@@ -1921,7 +1929,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
         for (let i = 0; i < 5; i++) {
           if (G.players[owner].bench[i]) document.getElementById(`bench-p${owner}-${i}`)?.classList.add('highlight');
         }
-        setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
+        setMidline(promotePrompt(owner));
         showPromoteBanner(owner);
         if (typeof pushGameState === 'function') pushGameState();
         return 'promote';
@@ -1946,7 +1954,7 @@ function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
         document.getElementById(`bench-p${owner}-${i}`)?.classList.add('highlight');
       }
     }
-    setMidline(`Player ${owner}: choose a bench Pokémon to promote to Active!`);
+    setMidline(promotePrompt(owner));
     showPromoteBanner(owner);
     addLog(`Player ${owner} must choose a new Active Pokémon.`, true);
     if (typeof pushGameState === 'function') pushGameState();
@@ -2140,7 +2148,7 @@ function endTurn() {
           document.getElementById(`bench-p${pNum}-${i}`)?.classList.add('highlight');
         }
       }
-      setMidline(`Player ${pNum}: choose a bench Pokémon to promote to Active!`);
+      setMidline(promotePrompt(pNum));
       showPromoteBanner(pNum);
       addLog(`Player ${pNum} must choose a new Active Pokémon.`, true);
       renderAll();
