@@ -6265,6 +6265,25 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       const surfer = mkId('basep-28', { attachedEnergy: [Wa, Wa] });
       assert('Surfing Pikachu: Surf is payable with 2 Water Energy on a Lightning Pokémon', run('canAffordAttack')(surfer.attachedEnergy, surfer.attacks[0].cost, surfer) === true);
       assert('Surfing Pikachu: Surf is NOT payable with Lightning Energy', run('canAffordAttack')([Li, Li], surfer.attacks[0].cost, surfer) === false);
+
+      // REGRESSION: self-inflicted recoil that reaches the attacker's HP must KO it.
+      // Electabuzz (70 HP) at 60 damage uses Thunderpunch, tails → 30 to the
+      // defender + 10 recoil = 70/70. It used to keep fighting at 70/70; the
+      // opponent also never got the prize.
+      run("flipCoin = function(){ return Promise.resolve(false); };");
+      G = freshG();
+      const ebuzz = mkBy('Electabuzz', 'Thunderpunch', { attachedEnergy: [Li, Li], damage: 60 });
+      const ebTarget = mk('Chansey');
+      G.players[1].active = ebuzz; G.players[2].active = ebTarget;
+      G.players[1].bench[0] = mk('Rattata');
+      const p2PrizesBefore = G.players[2].prizes.filter(Boolean).length;
+      await run('performAttack')(1, ebuzz.attacks.find(a => a.name === 'Thunderpunch'));
+      await settle();
+      assertEqual('Thunderpunch TAILS: 30 damage to the defender', ebTarget.damage, 30);
+      assert('Thunderpunch TAILS recoil at 70/70: Electabuzz is knocked out (in P1 discard, no longer Active)',
+        G.players[1].discard.includes(ebuzz) && G.players[1].active !== ebuzz);
+      assertEqual('Self-KO: the opponent takes a prize', G.players[2].prizes.filter(Boolean).length, p2PrizesBefore - 1);
+      assert('Self-KO: P1 must promote from the bench', G.phase === 'PROMOTE' && G.pendingPromotion === 1);
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });
