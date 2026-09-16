@@ -13,7 +13,9 @@
 #   4. Does `node game-tests.js` pass all tests?
 #   5. Show diff stat — what's actually about to ship.
 #
-# Then: commit + push. Token is injected at push time, never stored on disk.
+# Then: commit + push over the normal `origin` remote, using whatever git
+# credentials are already configured (e.g. the GitHub CLI login). No token
+# file is needed.
 #
 # Usage:
 #   ./push_to_github.sh                       # commit message defaults to "Update"
@@ -30,20 +32,16 @@ if [[ ! -d ".git" ]]; then
   exit 1
 fi
 
-# ── 2. Token resolution ───────────────────────────────────────────────────────
-TOKEN="${GITHUB_PAT:-$(cat ~/.p-tcg-token 2>/dev/null)}"
-if [[ -z "$TOKEN" ]]; then
-  echo "❌ No GitHub token found."
-  echo "   Set GITHUB_PAT env var, or put token in ~/.p-tcg-token"
+# ── 2. Remote check ───────────────────────────────────────────────────────────
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "❌ No 'origin' remote configured."
+  echo "   git remote add origin https://github.com/ckierce/p-tcg.git"
   exit 1
 fi
 
-REMOTE_URL_WITH_TOKEN="https://${TOKEN}@github.com/ckierce/p-tcg.git"
-
 # ── 3. Check local is in sync with remote ─────────────────────────────────────
 echo "→ Fetching latest from GitHub..."
-git fetch "$REMOTE_URL_WITH_TOKEN" main:refs/remotes/origin/main 2>&1 \
-  | grep -v "^From " || true
+git fetch origin main 2>&1 | grep -v "^From " || true
 
 LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "EMPTY")
 REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "EMPTY")
@@ -129,7 +127,7 @@ echo ""
 echo "── Pushing these commits to origin/main ──────────────────────────────────"
 git --no-pager log --oneline origin/main..HEAD
 echo ""
-git push "$REMOTE_URL_WITH_TOKEN" main
+git push origin main
 
 echo ""
 echo "✅ Pushed successfully."
