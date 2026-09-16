@@ -189,30 +189,71 @@ const TRAINER_EFFECTS = {
   },
 
   // ── Scoop Up ──────────────────────────────────────────────────────────────
-  // Return a Basic Pokémon to hand, discarding all its attachments.
+  // "Choose 1 of your Pokémon in play and return its Basic Pokémon card to your
+  // hand. Discard all other cards attached to it." Any of your Pokémon is a
+  // target (evolved ones return the Basic underneath and discard the evolution
+  // cards); the Active only if you have a benched Pokémon to promote, and the
+  // promotion happens right here so the scooped card can never be replayed as
+  // its own replacement. The card is only consumed once a target is chosen —
+  // cancelling the picker leaves Scoop Up in hand.
   'Scoop Up': async ({ player, p, consume }) => {
     const benchCount = p.bench.filter(s => s !== null).length;
     const targets = [];
-    if (p.active?.subtypes?.includes('Basic') && !p.active.isDoll && benchCount >= 1)
-      targets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null });
+    if (p.active && !p.active.isDoll && benchCount >= 1)
+      targets.push({ label: `Active: ${p.active.name}`, zone: 'active', idx: null, card: p.active });
     p.bench.forEach((b, i) => {
-      if (b?.subtypes?.includes('Basic') && !b.isDoll)
-        targets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i });
+      if (b && !b.isDoll) targets.push({ label: `Bench ${i+1}: ${b.name}`, zone: 'bench', idx: i, card: b });
     });
-    if (!targets.length) { showToast('No eligible Basic Pokémon to scoop!', true); return; }
+    if (!targets.length) {
+      showToast(p.active && !p.active.isDoll ? 'Scoop Up needs a benched Pokémon to promote!' : 'No eligible Pokémon to scoop!', true);
+      return;
+    }
+    const picked = await openCardPicker({
+      title: 'Scoop Up', subtitle: 'Choose a Pokémon — its Basic card returns to your hand',
+      cards: targets.map(t => ({ name: t.label, images: t.card.images || { small: '' } })), maxSelect: 1,
+    });
+    if (!picked || !picked.length) return; // cancelled: Scoop Up stays in hand
+    const { zone, idx, card: target } = targets[picked[0]];
+
+    // Active: pick the replacement FIRST, so the swap is atomic
+    let promoteIdx = null;
+    if (zone === 'active') {
+      const benchOpts = p.bench.map((b, i) => ({ b, i })).filter(x => x.b);
+      const pick2 = await openCardPicker({
+        title: 'Scoop Up', subtitle: 'Choose a benched Pokémon to promote to Active',
+        cards: benchOpts.map(x => x.b), maxSelect: 1,
+      });
+      promoteIdx = (pick2 && pick2.length) ? benchOpts[pick2[0]].i : benchOpts[0].i; // must promote — default to the first
+    }
+
     consume();
-    const doScoop = (zone, idx) => {
-      const target = zone === 'active' ? p.active : p.bench[idx];
-      p.discard.push(...(target.attachedEnergy || []));
-      target.attachedEnergy = []; target.damage = 0; clearAllStatus(target);
-      clearActiveOnlyEffects(target); // returned to hand → wipe lingering attack effects
-      p.hand.push(target);
-      if (zone === 'active') p.active = null; else p.bench[idx] = null;
-      addLog(`P${player} used Scoop Up — ${target.name} returned to hand.`, true);
-      renderAll();
-    };
-    const picked = await openCardPicker({ title: 'Scoop Up', subtitle: 'Choose a Pokémon to return to hand', cards: targets.map(t => ({ name: t.label, images: { small: '' } })), maxSelect: 1 });
-    if (picked && picked.length) doScoop(targets[picked[0]].zone, targets[picked[0]].idx);
+    // Everything attached goes to the discard: energy, plus the evolution
+    // cards on top of the Basic (prevStages[0] is the Basic; the rest and the
+    // top card are evolutions).
+    p.discard.push(...(target.attachedEnergy || []));
+    const stack = target.prevStages || [];
+    const basic = stack.length ? stack[0] : target;
+    const evolutions = stack.length ? [...stack.slice(1), target] : [];
+    for (const e of evolutions) {
+      const gone = { ...e, attachedEnergy: [], damage: 0, prevStages: undefined };
+      clearAllStatus(gone);
+      p.discard.push(gone);
+    }
+    const returned = { ...basic, attachedEnergy: [], damage: 0, prevStages: undefined };
+    clearAllStatus(returned);
+    clearActiveOnlyEffects(returned); // returned to hand → wipe lingering attack effects
+    p.hand.push(returned);
+    if (zone === 'active') {
+      p.active = p.bench[promoteIdx];
+      p.bench[promoteIdx] = null;
+      if (typeof clearLastAttack === 'function') clearLastAttack(player);
+      addLog(`P${player} used Scoop Up — ${basic.name} returned to hand; ${p.active.name} promoted to Active.`, true);
+    } else {
+      p.bench[idx] = null;
+      addLog(`P${player} used Scoop Up — ${basic.name} returned to hand.`, true);
+    }
+    if (evolutions.length) addLog(`Discarded ${evolutions.map(e => e.name).join(', ')} from ${basic.name}.`);
+    renderAll();
   },
 
   // ── Switch ────────────────────────────────────────────────────────────────
