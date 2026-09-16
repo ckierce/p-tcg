@@ -29,14 +29,11 @@ if [[ ! -d ".git" ]]; then
 fi
 
 # ── 2. Token resolution ───────────────────────────────────────────────────────
-TOKEN="${GITHUB_PAT:-$(cat ~/.p-tcg-token 2>/dev/null)}"
-if [[ -z "$TOKEN" ]]; then
-  echo "❌ No GitHub token found."
-  echo "   Set GITHUB_PAT env var, or put token in ~/.p-tcg-token"
+if ! git remote get-url origin >/dev/null 2>&1; then
+  echo "❌ No 'origin' remote configured."
+  echo "   git remote add origin https://github.com/ckierce/p-tcg.git"
   exit 1
 fi
-
-REMOTE_URL_WITH_TOKEN="https://${TOKEN}@github.com/ckierce/p-tcg.git"
 
 # ── 3. Refuse to pull if there are uncommitted local changes ──────────────────
 if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -55,7 +52,7 @@ fi
 
 # ── 4. Fetch and check what's incoming ────────────────────────────────────────
 echo "→ Fetching latest from GitHub..."
-git fetch "$REMOTE_URL_WITH_TOKEN" main:refs/remotes/origin/main 2>&1 \
+git fetch origin main 2>&1 \
   | grep -v "^From " || true
 
 LOCAL=$(git rev-parse HEAD)
