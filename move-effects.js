@@ -1201,11 +1201,20 @@ const MOVE_EFFECTS = {
       if (atk._defenderEffectsBlocked) chosenAtk._defenderEffectsBlocked = true;
       addLog(`${atk.name}: copying ${oppActive.name}'s ${chosenAtk.name}!`, true);
       const energyCount = (myActive?.attachedEnergy || []).length;
-      const coinDmg = await resolveCoinFlipDamage(chosenAtk, energyCount, myActive, player);
+      const copyEffect = getMoveEffect(chosenAtk);
+      // Mirror performAttack: a copied move that owns its coin flip in
+      // modifyDamage (Thunderpunch, Clamp, Thrash…) must NOT also go through the
+      // generic text-pattern flip, and modifyDamage is async so it must be
+      // awaited. Metronome used to do both wrong: Thunderpunch flipped twice
+      // (the first result thrown away) and `dmg` became a pending Promise, so
+      // `dmg > 0` was false and the copy dealt nothing.
+      const coinDmg = copyEffect?.modifyDamage ? null : await resolveCoinFlipDamage(chosenAtk, energyCount, myActive, player);
       let dmg = coinDmg !== null ? coinDmg : (parseInt((chosenAtk.damage || '0').replace(/[^0-9]/g,'')) || 0);
       // Apply damage scaling from dispatch table
-      const copyEffect = getMoveEffect(chosenAtk);
-      if (copyEffect?.modifyDamage) dmg = copyEffect.modifyDamage({ player, opp, atk: chosenAtk, dmg, myActive, oppActive }) ?? dmg;
+      if (copyEffect?.modifyDamage) {
+        const modified = await copyEffect.modifyDamage({ player, opp, atk: chosenAtk, dmg, myActive, oppActive });
+        if (modified !== null && modified !== undefined) dmg = modified;
+      }
       // Defender protection zeroes the copied damage (Agility/Barrier/Transparency).
       if (dmg > 0 && (oppActive.defenderFull || atk._defenderEffectsBlocked)) {
         addLog(`${atk.name}: ${oppActive.name} is fully protected — copied damage prevented.`);

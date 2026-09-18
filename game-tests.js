@@ -6449,6 +6449,32 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       assert('Surfing Pikachu: Surf is payable with 2 Water Energy on a Lightning Pokémon', run('canAffordAttack')(surfer.attachedEnergy, surfer.attacks[0].cost, surfer) === true);
       assert('Surfing Pikachu: Surf is NOT payable with Lightning Energy', run('canAffordAttack')([Li, Li], surfer.attacks[0].cost, surfer) === false);
 
+      // REGRESSION: Metronome copying a move that owns its coin flip (Thunderpunch).
+      // It used to run the generic text-pattern flip AND call the move's async
+      // modifyDamage without awaiting it: two flips, `dmg` a Promise, 0 damage.
+      run("__flips = 0; flipCoin = function(){ __flips++; return Promise.resolve(true); };");
+      G = freshG();
+      const clef = mkBy('Clefairy', 'Metronome', { attachedEnergy: [Li, Li, Li] });
+      const buzzH = mkBy('Electabuzz', 'Thunderpunch');
+      buzzH.attacks = buzzH.attacks.filter(a => a.name === 'Thunderpunch'); // single attack → copied directly
+      G.players[1].active = clef; G.players[2].active = buzzH;
+      await run('performAttack')(1, clef.attacks.find(a => a.name === 'Metronome'));
+      await settle(); await settle();
+      assertEqual('Metronome→Thunderpunch HEADS: exactly one coin flip', run('__flips'), 1);
+      assertEqual('Metronome→Thunderpunch HEADS: 40 damage to Electabuzz', buzzH.damage, 40);
+      assertEqual('Metronome→Thunderpunch HEADS: no recoil on Clefairy', clef.damage, 0);
+      run("__flips = 0; flipCoin = function(){ __flips++; return Promise.resolve(false); };");
+      G = freshG();
+      const clefT = mkBy('Clefairy', 'Metronome', { attachedEnergy: [Li, Li, Li] });
+      const buzzT = mkBy('Electabuzz', 'Thunderpunch');
+      buzzT.attacks = buzzT.attacks.filter(a => a.name === 'Thunderpunch');
+      G.players[1].active = clefT; G.players[2].active = buzzT;
+      await run('performAttack')(1, clefT.attacks.find(a => a.name === 'Metronome'));
+      await settle(); await settle();
+      assertEqual('Metronome→Thunderpunch TAILS: exactly one coin flip', run('__flips'), 1);
+      assertEqual('Metronome→Thunderpunch TAILS: 30 damage to Electabuzz', buzzT.damage, 30);
+      assertEqual('Metronome→Thunderpunch TAILS: Clefairy takes the 10 recoil', clefT.damage, 10);
+
       // REGRESSION: self-inflicted recoil that reaches the attacker's HP must KO it.
       // Electabuzz (70 HP) at 60 damage uses Thunderpunch, tails → 30 to the
       // defender + 10 recoil = 70/70. It used to keep fighting at 70/70; the
