@@ -1931,6 +1931,135 @@ section('REGRESSION: doneSetup drives AI setup + guards re-entrancy');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: a second room in the same tab starts from a blank lobby
+//
+// Bug: the waiting/joined panels are static DOM. After Play Again / Return to
+// Lobby, creating or joining a NEW room kept the previous room's "✓ deck loaded"
+// slots, the "Both decks loaded — P1 can start!" hint and an ENABLED start
+// button, while the new room record had no decks and the local decks had been
+// wiped by the G reset. Both players believed they were ready; START only ever
+// toasted "Player 2 hasn't loaded a deck yet!" until someone reloaded the page.
+// Fix: createRoom/joinRoom call resetRoomLobbyState(); checkBothReady drives
+// the button in both directions; startGame validates P1's own deck.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: room create/join resets stale lobby state');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync('./game-init.js', 'utf8');
+  // Fake DOM: id → element with textContent/disabled/classList/style.
+  const mkEl = () => ({ textContent: '', disabled: false, style: {}, _cls: new Set(),
+    classList: { add(c) { this._cls.add(c); }, remove(c) { this._cls.delete(c); }, contains(c) { return this._cls.has(c); } } });
+  const els = {};
+  const document = {
+    getElementById: id => (els[id] = els[id] || mkEl()),
+    querySelectorAll: () => [],
+  };
+  // Pull the two lobby functions out and run them against the fake DOM.
+  const cbr = src.match(/function checkBothReady\(data\) \{[\s\S]*?\n\}/);
+  const rst = src.match(/function resetRoomLobbyState\(\) \{[\s\S]*?\n\}/);
+  assert('game-init.js: checkBothReady found', !!cbr);
+  assert('game-init.js: resetRoomLobbyState found', !!rst);
+  if (cbr && rst) {
+    const G = { players: { 1: { deck: [1], deckData: {} }, 2: { deck: [1], deckData: {} } } };
+    const ctx = { document, G, setupReady: { 1: true, 2: true }, _pushPreservesReady: true,
+      _pendingSetupSnap: {}, _setupSnapHandler: () => {}, _preserveOwnPrivateZones: true };
+    const fn = new Function('document', 'G', 'setupReady', '_pushPreservesReady', '_pendingSetupSnap',
+      '_setupSnapHandler', '_preserveOwnPrivateZones',
+      cbr[0] + '\n' + rst[0] + '\nreturn { checkBothReady, resetRoomLobbyState, G, deckStatus: () => document.getElementById("p1-deck-status").textContent };');
+    const api = fn(ctx.document, ctx.G, ctx.setupReady, ctx._pushPreservesReady, ctx._pendingSetupSnap,
+      ctx._setupSnapHandler, ctx._preserveOwnPrivateZones);
+    // Simulate the previous room: both ready → button enabled.
+    api.checkBothReady({ p1Ready: true, p2Ready: true });
+    assert('previous room: both ready enables START', els['start-btn'].disabled === false);
+    // New room record with no decks must disable it again (used to stay enabled).
+    api.checkBothReady({ p1Ready: false, p2Ready: false });
+    assert('new room: checkBothReady DISABLES START when nobody is ready', els['start-btn'].disabled === true);
+    api.checkBothReady({ p1Ready: true, p2Ready: false });
+    assert('checkBothReady: P1 only → still disabled', els['start-btn'].disabled === true);
+    // Reset wipes the stale slot text, the hint, the button and the local decks.
+    document.getElementById('p1-deck-status').textContent = '✓ Double Poison (60 cards)';
+    document.getElementById('setup-hint').textContent = 'Both decks loaded — P1 can start!';
+    document.getElementById('p1-ready-status').textContent = '✅ Player 1 has loaded a deck';
+    document.getElementById('start-btn').disabled = false;
+    api.resetRoomLobbyState();
+    assert('resetRoomLobbyState: deck slot reads "No deck loaded"', els['p1-deck-status'].textContent === 'No deck loaded');
+    assert('resetRoomLobbyState: hint reset', els['setup-hint'].textContent === 'Both players must load decks first');
+    assert('resetRoomLobbyState: P2\'s "P1 has loaded a deck" line cleared', els['p1-ready-status'].textContent === '');
+    assert('resetRoomLobbyState: START disabled', els['start-btn'].disabled === true);
+    assert('resetRoomLobbyState: local decks emptied', api.G.players[1].deck.length === 0 && api.G.players[1].deckData === null);
+  }
+  // Wiring: both room entry points call the reset, and startGame checks P1's own deck.
+  const createBody = (src.match(/async function createRoom\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const joinBody   = (src.match(/async function _joinRoomInner\(code\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  assert('createRoom calls resetRoomLobbyState()', /resetRoomLobbyState\(\)/.test(createBody));
+  assert('joinRoom calls resetRoomLobbyState() after the room is found', /once\('value'\)[\s\S]*resetRoomLobbyState\(\)/.test(joinBody));
+  assert('createRoom detaches a previous room listener', /gameRef\.off\(\)/.test(createBody));
+  const startBody = (src.match(/async function _startGameInner\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  assert('startGame validates p1Ready + local P1 deck before dealing', /data\.p1Ready[\s\S]*G\.players\[1\]\.deck\.length/.test(startBody));
+  assert('startGame has a re-entrancy guard', /_startGameRunning/.test(src));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: reload during SETUP must not resurrect placed Pokémon in hand
+//
+// Bug: during SETUP the non-host (P2) only pushed setup_p2 = {active, bench}.
+// The shared `state` node — written by P1 — still held P2's ORIGINAL 7-card
+// deal. RESUME rebuilt P2 from `state`, so the Pokémon P2 had already placed
+// came back into hand while also sitting on the field: duplicate cards, and
+// they could be played a second time.
+// Fix: P2 pushes its whole slot (hand/deck/prizes/discard + `zones` marker);
+// mergeSetupSlot merges those zones when present; resumeGame restores the
+// player's own slot over the stale `state` copy.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('REGRESSION: SETUP reload restores the real hand (no duplicates)');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync('./game-init.js', 'utf8');
+  const pushM = src.match(/async function pushGameState\(\) \{([\s\S]*?)\n\}/);
+  assert('pushGameState found', !!pushM);
+  const pushBody = pushM ? pushM[1] : '';
+  const nonHost = pushBody.match(/\} else \{\s*\/\/ Non-host[\s\S]*?setupReady: !!setupReady\[myRole\]/);
+  assert('non-host SETUP push includes hand/deck/prizes/discard + zones marker',
+    !!nonHost && /hand: myP\.hand/.test(nonHost[0]) && /deck: myP\.deck/.test(nonHost[0])
+    && /prizes: myP\.prizes/.test(nonHost[0]) && /discard: myP\.discard/.test(nonHost[0]) && /zones: true/.test(nonHost[0]));
+  const resumeM = src.match(/function resumeGame\(code\) \{([\s\S]*?)\n\}/);
+  assert('resumeGame reads the whole room record (not just /state)', !!resumeM && /db\.ref\(`games\/\$\{code\}`\)\.once/.test(resumeM[1]));
+  assert('resumeGame restores own setup slot during SETUP', !!resumeM && /ownSlot[\s\S]*mergeSetupSlot\(role, ownSlot\)/.test(resumeM[1]));
+
+  // Functional: run mergeSetupSlot against a fake G with the stale deal and a
+  // real slot, and check the placed card is no longer in hand.
+  const mergeM = src.match(/function mergeSetupSlot\(playerNum, slotData\) \{([\s\S]*?)\n\}/);
+  assert('mergeSetupSlot found', !!mergeM);
+  if (mergeM) {
+    const mk = (uid, name) => ({ uid, name, supertype: 'Pokémon', subtypes: ['Basic'], attacks: [], images: {} });
+    const dealt = ['a','b','c','d','e','f','g'].map(u => mk(u, 'Card ' + u));
+    const G = { players: { 1: { hand: [], deck: [], active: null, bench: [null,null,null,null,null], prizes: [], discard: [] },
+                           2: { hand: dealt.slice(), deck: [mk('z','Z')], active: null, bench: [null,null,null,null,null], prizes: [], discard: [] } } };
+    const setupReady = { 1: false, 2: false };
+    const noop = () => {};
+    const fn = new Function('G', 'myRole', 'setupReady', 'enrichCard', 'renderField', 'updatePerspectiveLabels', 'maybeAutoAdvanceSetup',
+      'renderHands', 'renderPrizes', 'updateDeckCounts', 'initDragDrop',
+      mergeM[0] + '\nreturn mergeSetupSlot;');
+    const mergeSetupSlot = fn(G, 2, setupReady, c => c, noop, noop, noop, noop, noop, noop, noop);
+    // P2 placed 'a' as Active and 'b' on the bench; the slot carries the real hand.
+    const slot = { active: dealt[0], bench: [dealt[1]], hand: dealt.slice(2), deck: [mk('z','Z')],
+      prizes: [{ card: mk('p1','P'), revealed: false }], zones: true, setupReady: true };
+    mergeSetupSlot(2, slot);
+    const p2 = G.players[2];
+    const uids = [p2.active, ...p2.bench, ...p2.hand].filter(Boolean).map(c => c.uid);
+    assert('after merge: placed Active is not in hand', !p2.hand.some(c => c.uid === 'a'));
+    assert('after merge: benched card is not in hand', !p2.hand.some(c => c.uid === 'b'));
+    assertEqual('after merge: hand holds the 5 unplayed cards', p2.hand.length, 5);
+    assert('after merge: no duplicate uids across active/bench/hand', new Set(uids).size === uids.length);
+    assertEqual('after merge: prizes padded to 6 slots', p2.prizes.length, 6);
+    // A slot WITHOUT the zones marker (legacy shape) must leave private zones alone.
+    G.players[2].hand = dealt.slice();
+    mergeSetupSlot(2, { active: dealt[0], bench: [dealt[1]] });
+    assertEqual('legacy slot (no zones marker) does not touch the hand', G.players[2].hand.length, 7);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: Asleep Pokémon must be able to wake up (multi-status field bug)
 //
 // Bug: the Special Condition lives in `card.special` (`card.status` is only a

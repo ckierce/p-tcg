@@ -415,20 +415,53 @@ function hasBasic(hand) {
   return hand.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic'));
 }
 
+let _startGameRunning = false;
 async function startGame() {
+  // Re-entrancy guard: this awaits Firebase reads and a deck load, so a double
+  // click on START dealt hands and prizes twice from the same deck.
+  if (_startGameRunning || G.started) return;
+  _startGameRunning = true;
+  try {
+    await _startGameInner();
+  } finally {
+    _startGameRunning = false;
+  }
+}
+
+async function _startGameInner() {
   // In networked mode, P1 needs to load P2's deck from Firebase first
   if (myRole === 1 && gameRef) {
     const snap = await gameRef.once('value');
     const data = snap.val();
-    if (!data?.p2DeckName) { showToast("Player 2 hasn't loaded a deck yet!", true); return; }
+    if (!data) { showToast('Room no longer exists — create a new one.', true); return; }
+    // Our own deck must be loaded IN THIS ROOM (broadcast as p1Ready) and still
+    // held locally. A stale "✓ deck loaded" slot from a previous room used to
+    // pass straight through here and deal from an empty deck.
+    if (!data.p1Ready || !G.players[1].deckData || !G.players[1].deck.length) {
+      showToast('Load your deck first!', true);
+      checkBothReady(data);
+      return;
+    }
+    if (!data.p2Ready || !data.p2DeckName) {
+      showToast("Player 2 hasn't loaded a deck yet!", true);
+      checkBothReady(data);
+      return;
+    }
     if (!G.players[2].deckData) {
       // Load P2's deck silently
       showToast('Loading P2 deck...', false);
       const saved = loadingForPlayer;
       loadingForPlayer = 2;
-      await loadDeck(data.p2DeckFolder || '', data.p2DeckName);
+      await loadDeck(data.p2DeckFolder || '', data.p2DeckName, 2);
       loadingForPlayer = saved;
+      if (!G.players[2].deckData || !G.players[2].deck.length) {
+        showToast("Couldn't load Player 2's deck — ask them to load it again.", true);
+        return;
+      }
     }
+  } else if (!G.players[1].deck.length || !G.players[2].deck.length) {
+    showToast('Both players need a deck first!', true);
+    return;
   }
 
   let mulligans = { 1: 0, 2: 0 };
@@ -1229,9 +1262,11 @@ function showResumePanel() {
 
 function resumeGame(code) {
   const role = _resumeRole;
-  db.ref(`games/${code}/state`).once('value', snap => {
-    const s = snap.val();
+  db.ref(`games/${code}`).once('value', roomSnap => {
+    const room = roomSnap.val();
+    const s = room && room.state;
     if (!s) { showToast('Game not found!', true); return; }
+    if (gameRef) { try { gameRef.off(); } catch (e) {} }
     roomCode = code;
     myRole = role;
     gameRef = db.ref(`games/${code}`);
@@ -1243,6 +1278,17 @@ function resumeGame(code) {
     // resuming with a 4-card bench (Firebase strips trailing nulls, and the
     // old manual decode forgot to re-pad to 5).
     receiveGameState(s);
+    // Rejoining DURING setup: `state` is P1's view, and its copy of the NON-host's
+    // hand/deck is the original deal — the cards that player already placed are
+    // still in it. Our own setup slot is the authoritative copy of our zones
+    // (pushed on every placement), so restore from it before anything renders
+    // as playable. Also re-adopt our READY flag so the button matches Firebase.
+    const ownSlot = room[`setup_p${role}`];
+    if (G.phase === 'SETUP' && ownSlot && ownSlot.zones) {
+      mergeSetupSlot(role, ownSlot);
+      setupReady[role] = !!ownSlot.setupReady;
+      renderField(role);
+    }
     // Rejoining DURING setup needs the same slot-merge handling as the original
     // create/join listeners. The stored `state` snapshot is written by P1 and can
     // predate the opponent's placement, so on its own it leaves us with a null
@@ -1310,8 +1356,45 @@ function toggleHandCollapse() {
   btn.textContent = collapsed ? 'SHOW ▴' : 'HIDE ▾';
 }
 
+// ── Fresh-room reset ──────────────────────────────
+// The waiting/joined panels are static DOM that survives Play Again / Return
+// to Lobby, so a second room in the same tab inherited the previous room's
+// "✓ deck loaded" slots, "Both decks loaded — P1 can start!" hint, and an
+// ENABLED start button — while the new room record had no decks and the local
+// decks had been wiped by the G reset. Both players believed they were ready;
+// START only ever toasted "Player 2 hasn't loaded a deck yet!" and the fix was
+// to reload the page. Every room create/join now starts from a blank slate,
+// both in the DOM and in the local deck slots (a deck loaded for a previous
+// room was never broadcast to this one, so it must be re-picked).
+function resetRoomLobbyState() {
+  for (const p of [1, 2]) {
+    const pl = G.players[p];
+    pl.deck = []; pl.hand = []; pl.active = null; pl.bench = [null,null,null,null,null];
+    pl.prizes = []; pl.discard = []; pl.deckData = null;
+    const st = document.getElementById(`p${p}-deck-status`);
+    if (st) { st.textContent = 'No deck loaded'; st.style.color = ''; }
+    document.querySelectorAll(`.setup-player.p${p}`).forEach(el => el.classList.remove('loaded'));
+  }
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('waiting-status', '⏳ Waiting for Player 2 to join...');
+  set('setup-hint', 'Both players must load decks first');
+  set('joined-status', 'Waiting for Player 1 to start...');
+  set('p1-ready-status', '');
+  const startBtn = document.getElementById('start-btn');
+  if (startBtn) startBtn.disabled = true;
+  setupReady = { 1: false, 2: false };
+  _pushPreservesReady = false;
+  _pendingSetupSnap = null; _setupSnapHandler = null;
+  _preserveOwnPrivateZones = false;
+  if (typeof updateDeckCounts === 'function') { try { updateDeckCounts(); } catch (e) {} }
+}
+
 // ── Create room (P1) ──────────────────────────────
 async function createRoom() {
+  // Detach any listener from a previous room so its snapshots can't leak into
+  // this one (BACK from a waiting room, or a rematch in the same tab).
+  if (gameRef) { try { gameRef.off(); } catch (e) {} }
+  resetRoomLobbyState();
   myRole = 1;
   roomCode = generateCode();
   gameRef = db.ref(`games/${roomCode}`);
@@ -1374,14 +1457,28 @@ function showJoinPanel() {
   if (urlCode) document.getElementById('join-code-input').value = urlCode.toUpperCase();
 }
 
+let _joinInFlight = false;
 async function joinRoom() {
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
   if (code.length !== 6) { showToast('Enter a 6-character room code', true); return; }
-  roomCode = code;
-  gameRef = db.ref(`games/${roomCode}`);
-  const snap = await gameRef.once('value');
+  // The ?room= auto-join and a manual JOIN click can overlap; two joins in
+  // flight attached two listeners to the same room.
+  if (_joinInFlight) return;
+  _joinInFlight = true;
+  try { await _joinRoomInner(code); } finally { _joinInFlight = false; }
+}
+
+async function _joinRoomInner(code) {
+  const nextRef = db.ref(`games/${code}`);
+  const snap = await nextRef.once('value');
   if (!snap.val()) { showToast('Room not found!', true); return; }
 
+  // Same blank-slate rule as createRoom: drop the previous room's listener and
+  // lobby state before showing the joined panel for this one.
+  if (gameRef && gameRef !== nextRef) { try { gameRef.off(); } catch (e) {} }
+  roomCode = code;
+  gameRef = nextRef;
+  resetRoomLobbyState();
   myRole = 2;
   showPanel('joined-panel');
 
@@ -1433,12 +1530,19 @@ async function broadcastDeckReady(playerNum, deckName, folderKey) {
   await gameRef.update(update);
 }
 
+// Drive the START button from the live room record in BOTH directions. It used
+// to only ever enable, so a button enabled by a previous room stayed enabled.
 function checkBothReady(data) {
   const startBtn = document.getElementById('start-btn');
   if (!startBtn) return;
-  if (data.p1Ready && data.p2Ready) {
-    startBtn.disabled = false;
-    document.getElementById('setup-hint').textContent = 'Both decks loaded — P1 can start!';
+  const hint = document.getElementById('setup-hint');
+  const both = !!(data.p1Ready && data.p2Ready);
+  startBtn.disabled = !both;
+  if (hint) {
+    hint.textContent = both ? 'Both decks loaded — P1 can start!'
+      : !data.p1Ready && !data.p2Ready ? 'Both players must load decks first'
+      : !data.p1Ready ? 'Load your deck to start'
+      : 'Waiting for Player 2 to load a deck...';
   }
 }
 
@@ -1462,9 +1566,27 @@ function mergeSetupSlot(playerNum, slotData) {
   const hasActive = Object.prototype.hasOwnProperty.call(slotData, 'active');
   const hasBench  = Object.prototype.hasOwnProperty.call(slotData, 'bench');
   const hasReady  = Object.prototype.hasOwnProperty.call(slotData, 'setupReady');
+  const hasZones  = Object.prototype.hasOwnProperty.call(slotData, 'zones');
   if (hasActive) p.active = slotData.active ? enrichCard(slotData.active) : null;
   if (hasBench)  p.bench  = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
   if (hasReady && playerNum !== myRole) setupReady[playerNum] = !!slotData.setupReady;
+  // Private zones travel in the slot too (see pushGameState's non-host SETUP
+  // branch). Firebase drops empty arrays entirely, so a missing zone key means
+  // "empty" once the `zones` marker says the pusher included them at all.
+  // Merging them keeps the host's card counts honest during SETUP and lets a
+  // reload restore the player's own real hand instead of the stale deal.
+  const toArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+  const cards = v => toArr(v).filter(Boolean).map(c => enrichCard(c));
+  if (hasZones) {
+    p.hand    = cards(slotData.hand);
+    p.deck    = cards(slotData.deck);
+    p.discard = cards(slotData.discard);
+    p.prizes  = Array.from({ length: 6 }, (_, i) => { const pr = toArr(slotData.prizes)[i]; return pr ? { ...pr, card: enrichCard(pr.card) } : null; });
+    if (typeof renderHands === 'function') renderHands();
+    if (typeof renderPrizes === 'function') { renderPrizes(1); renderPrizes(2); }
+    if (typeof updateDeckCounts === 'function') updateDeckCounts();
+    if (typeof initDragDrop === 'function') initDragDrop();
+  }
   // Re-render just the field without pushing (we're receiving)
   renderField(1);
   renderField(2);
@@ -1560,11 +1682,22 @@ async function pushGameState() {
           setup_p1: { setupReady: !!setupReady[1] },
         });
       } else {
+        // Non-host: push our WHOLE slot, private zones included. P1 never
+        // touches our hand/deck during SETUP, but its `state` node still holds
+        // the original 7-card deal it dealt us — so a P2 reload that resumed
+        // from `state` got the placed Pokémon back in hand on top of the ones
+        // already on the field (duplicate cards). setup_p2 is the only place
+        // our real hand/deck exists server-side; resumeGame restores from it.
         const myP = G.players[myRole];
         await gameRef.update({
           [`setup_p${myRole}`]: serializeG({
             active: myP.active,
             bench: myP.bench,
+            hand: myP.hand,
+            deck: myP.deck,
+            prizes: myP.prizes,
+            discard: myP.discard,
+            zones: true, // marker: private zones included (empty arrays vanish in Firebase)
             setupReady: !!setupReady[myRole],
           })
         });
