@@ -1270,6 +1270,7 @@ function resumeGame(code) {
     roomCode = code;
     myRole = role;
     gameRef = db.ref(`games/${code}`);
+    rememberRoom(code, role);
     // Delegate state decoding to receiveGameState — it pads bench to 5,
     // pads prizes to 6, runs every card through enrichCard (which restores
     // attack text/cost lost in Firebase round-trip), and handles all the
@@ -1389,18 +1390,71 @@ function resetRoomLobbyState() {
   if (typeof updateDeckCounts === 'function') { try { updateDeckCounts(); } catch (e) {} }
 }
 
+// ── Room persistence across reloads ──────────────────────────────────────────
+// A reload used to throw P1 out of their room entirely (a new CREATE ROOM made
+// a new code, so P2 sat in the old room forever) and made P2 re-pick their
+// deck. The room code + role live in sessionStorage — per tab, survives a
+// reload, gone when the tab closes — and rejoinStoredRoom() re-enters the same
+// room in the same role on load: waiting/joined panel before the game starts
+// (re-loading the deck the room record says we picked), resumeGame() after.
+const ROOM_STORE_KEY = 'tcg.room';
+function rememberRoom(code, role) { try { sessionStorage.setItem(ROOM_STORE_KEY, JSON.stringify({ code, role })); } catch (e) {} }
+function forgetRoom() { try { sessionStorage.removeItem(ROOM_STORE_KEY); } catch (e) {} }
+function storedRoom() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(ROOM_STORE_KEY) || 'null');
+    return r && typeof r.code === 'string' && (r.role === 1 || r.role === 2) ? r : null;
+  } catch (e) { return null; }
+}
+
+// After a rejoin, the room record still says which deck we picked but the
+// local G was reset — load it again so the slot, p{n}Ready and G agree.
+function restoreOwnDeck(role, room) {
+  const name = room && room[`p${role}DeckName`];
+  if (!name || G.players[role].deckData) return;
+  return loadDeck(room[`p${role}DeckFolder`] || '', name, role);
+}
+
+async function rejoinStoredRoom() {
+  const r = storedRoom();
+  if (!r) return;
+  if (roomCode) return; // a ?room= link or a click already put us somewhere
+  try {
+    const snap = await db.ref(`games/${r.code}`).once('value');
+    const room = snap.val();
+    if (!room) { forgetRoom(); return; }          // room deleted (Play Again)
+    if (room.state) {
+      if (!room.state.started) { forgetRoom(); return; } // game over
+      setResumeRole(r.role);
+      resumeGame(r.code);
+      showToast(`Rejoined game ${r.code} as Player ${r.role}`, false, 'ok');
+      return;
+    }
+    if (r.role === 1) {
+      if (gameRef) { try { gameRef.off(); } catch (e) {} }
+      resetRoomLobbyState();
+      enterWaitingRoom(r.code);
+      G.players[1].name = room.p1Name || G.players[1].name;
+      showToast(`Back in room ${r.code} as Player 1`, false, 'ok');
+      await restoreOwnDeck(1, room);
+    } else {
+      await _joinRoomInner(r.code); // restores the deck itself
+    }
+  } catch (e) {
+    console.error('[rejoinStoredRoom] failed:', e);
+  }
+}
+
 // ── Create room (P1) ──────────────────────────────
 async function createRoom() {
   // Detach any listener from a previous room so its snapshots can't leak into
   // this one (BACK from a waiting room, or a rematch in the same tab).
   if (gameRef) { try { gameRef.off(); } catch (e) {} }
   resetRoomLobbyState();
-  myRole = 1;
-  roomCode = generateCode();
-  gameRef = db.ref(`games/${roomCode}`);
+  const code = generateCode();
 
   // Write initial room record
-  await gameRef.set({
+  await db.ref(`games/${code}`).set({
     created: Date.now(),
     ownerUid: currentUser ? currentUser.uid : null,
     p1Ready: false,
@@ -1414,6 +1468,16 @@ async function createRoom() {
 
   // Seed local G with our own name immediately
   G.players[1].name = trainerName || 'Player 1';
+  enterWaitingRoom(code);
+}
+
+// Become P1 of an existing room record: panel, share link, and the room
+// listener. Shared by createRoom (fresh record) and rejoinStoredRoom (reload).
+function enterWaitingRoom(code) {
+  myRole = 1;
+  roomCode = code;
+  gameRef = db.ref(`games/${roomCode}`);
+  rememberRoom(code, 1);
 
   showPanel('waiting-panel');
   const url = `${location.origin}${location.pathname}?room=${roomCode}`;
@@ -1480,13 +1544,17 @@ async function _joinRoomInner(code) {
   gameRef = nextRef;
   resetRoomLobbyState();
   myRole = 2;
+  rememberRoom(code, 2);
   showPanel('joined-panel');
 
-  // Write our name into the room, read P1's name back into local G
-  await gameRef.update({ p2Name: trainerName || 'Player 2' });
+  // Write our name into the room, read P1's name back into local G. On a
+  // reload auth may not have resolved yet, so don't overwrite a real name in
+  // the room with the 'Guest' placeholder.
   const roomData = snap.val() || {};
+  const myName = trainerName || 'Player 2';
+  if (!roomData.p2Name || myName !== 'Guest') await gameRef.update({ p2Name: myName });
   G.players[1].name = roomData.p1Name || 'Player 1';
-  G.players[2].name = trainerName || 'Player 2';
+  G.players[2].name = roomData.p2Name && myName === 'Guest' ? roomData.p2Name : myName;
 
   // Watch for game start and all P1 moves
   const _handleJoinSnapshot = (data) => {
@@ -1518,6 +1586,9 @@ async function _joinRoomInner(code) {
     if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleJoinSnapshot; return; }
     _handleJoinSnapshot(data);
   });
+
+  // Reload mid-lobby: the room still knows our deck — load it again.
+  await restoreOwnDeck(2, roomData);
 }
 
 // Called after P1 or P2 loads their deck — broadcast readiness
@@ -2077,7 +2148,15 @@ function applyRoleVisibility() {
 // breaks the next time, DevTools shows exactly where it stopped.
 (function checkUrlRoom() {
   const urlCode = new URLSearchParams(location.search).get('room');
-  if (!urlCode) { console.log('[checkUrlRoom] no ?room= in URL'); return; }
+  if (!urlCode) {
+    console.log('[checkUrlRoom] no ?room= in URL');
+    // No link — but this tab may have been in a room before the reload.
+    if (!storedRoom()) return;
+    const rejoin = () => setTimeout(() => { rejoinStoredRoom(); }, 300);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', rejoin);
+    else rejoin();
+    return;
+  }
   console.log('[checkUrlRoom] found ?room=' + urlCode);
 
   // Pre-fill the join input immediately so a manual click on "JOIN ROOM" works

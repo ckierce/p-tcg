@@ -2060,6 +2060,60 @@ section('REGRESSION: SETUP reload restores the real hand (no duplicates)');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: the room survives a reload (sessionStorage) for both players
+//
+// A P1 reload used to mean a brand-new room code (P2 stuck in the old room);
+// a P2 reload meant re-picking the deck. The room code + role are remembered
+// per tab; on load, rejoinStoredRoom() re-enters the same room in the same
+// role (lobby panel pre-game with the deck restored, resumeGame after start)
+// and Play Again / Return to Lobby forget it.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('FEATURE: room persists across reloads');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync('./game-init.js', 'utf8');
+  const rsrc = fs.readFileSync('./game-render.js', 'utf8');
+  // storedRoom() validates what it reads back.
+  const helpers = src.match(/const ROOM_STORE_KEY[\s\S]*?function storedRoom\(\) \{[\s\S]*?\n\}/);
+  assert('room storage helpers found', !!helpers);
+  if (helpers) {
+    const store = {};
+    const sessionStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
+    const api = new Function('sessionStorage', helpers[0] + '\nreturn { rememberRoom, forgetRoom, storedRoom };')(sessionStorage);
+    assert('storedRoom: nothing stored → null', api.storedRoom() === null);
+    api.rememberRoom('ABC123', 1);
+    assertEqual('rememberRoom/storedRoom round-trip: code', api.storedRoom().code, 'ABC123');
+    assertEqual('rememberRoom/storedRoom round-trip: role', api.storedRoom().role, 1);
+    store['tcg.room'] = '{"code":"X","role":3}';
+    assert('storedRoom: rejects an invalid role', api.storedRoom() === null);
+    store['tcg.room'] = 'not json';
+    assert('storedRoom: survives corrupt JSON', api.storedRoom() === null);
+    api.rememberRoom('ABC123', 2); api.forgetRoom();
+    assert('forgetRoom clears the entry', api.storedRoom() === null);
+  }
+  // Wiring.
+  const enter = (src.match(/function enterWaitingRoom\(code\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const join  = (src.match(/async function _joinRoomInner\(code\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const resume = (src.match(/function resumeGame\(code\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const rejoin = (src.match(/async function rejoinStoredRoom\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  assert('createRoom enters the waiting room via enterWaitingRoom', /enterWaitingRoom\(code\)/.test((src.match(/async function createRoom\(\) \{([\s\S]*?)\n\}/) || [])[1] || ''));
+  assert('enterWaitingRoom remembers the room as P1', /rememberRoom\(code, 1\)/.test(enter));
+  assert('joinRoom remembers the room as P2', /rememberRoom\(code, 2\)/.test(join));
+  assert('joinRoom restores the deck the room record names', /restoreOwnDeck\(2, roomData\)/.test(join));
+  assert('resumeGame remembers the room', /rememberRoom\(code, role\)/.test(resume));
+  assert('rejoinStoredRoom: deleted room → forget', /if \(!room\) \{ forgetRoom\(\); return; \}/.test(rejoin));
+  assert('rejoinStoredRoom: started game → resumeGame in the stored role', /setResumeRole\(r\.role\);\s*resumeGame\(r\.code\)/.test(rejoin));
+  assert('rejoinStoredRoom: pre-game P1 → enterWaitingRoom + restoreOwnDeck', /enterWaitingRoom\(r\.code\)[\s\S]*restoreOwnDeck\(1, room\)/.test(rejoin));
+  assert('rejoinStoredRoom: pre-game P2 → _joinRoomInner', /_joinRoomInner\(r\.code\)/.test(rejoin));
+  assert('rejoinStoredRoom does not override a ?room= link / existing room', /if \(roomCode\) return/.test(rejoin));
+  assert('checkUrlRoom triggers rejoinStoredRoom when there is no ?room=', /if \(!urlCode\) \{[\s\S]*?rejoinStoredRoom\(\)/.test(src));
+  const playAgainBody = (rsrc.match(/function playAgain\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const returnBody    = (rsrc.match(/function returnToLobby\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  assert('playAgain forgets the stored room', /forgetRoom\(\)/.test(playAgainBody));
+  assert('returnToLobby forgets the stored room', /forgetRoom\(\)/.test(returnBody));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: Asleep Pokémon must be able to wake up (multi-status field bug)
 //
 // Bug: the Special Condition lives in `card.special` (`card.status` is only a
