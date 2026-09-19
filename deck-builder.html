@@ -608,6 +608,34 @@ select:focus { border-color: var(--accent); }
 }
 .saved-deck-item .d-del:hover { background: rgba(245,101,101,.1); }
 .modal-close { width: 100%; }
+
+/* ── Import deck (paste JSON) ─────────────────────────────────────────────── */
+.import-help { font-size: 11px; color: var(--muted); line-height: 1.5; margin-bottom: 10px; }
+.import-help code { font-family: var(--font-mono, monospace); color: var(--text); font-size: 10px; }
+.import-textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 10px;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  outline: none;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+.import-textarea:focus { border-color: var(--accent); }
+.import-textarea.error { border-color: var(--danger); box-shadow: 0 0 0 2px rgba(248,113,113,.25); }
+.import-msg { font-size: 11px; line-height: 1.5; margin-bottom: 12px; min-height: 16px; white-space: pre-wrap; }
+.import-msg.warn { color: var(--danger); }
+.import-msg.ok { color: var(--ok); }
+.import-actions { display: flex; gap: 8px; }
+.import-actions .btn { flex: 1; text-align: center; }
+.import-actions .btn-primary { flex: 2; }
 .no-saved { color: var(--muted); font-size: 12px; text-align: center; padding: 20px; }
 
 /* ── MOBILE LIST ITEMS ───────────────────────────────────────────────────── */
@@ -954,6 +982,7 @@ select:focus { border-color: var(--accent); }
     </div>
     <div class="deck-actions">
       <button class="btn btn-ghost" onclick="clearDeck()">Clear</button>
+      <button class="btn btn-ghost" onclick="openImportModal()" title="Paste a deck as JSON">Import</button>
       <button class="btn btn-primary" onclick="saveDeck()">Save Deck</button>
     </div>
   </div>
@@ -969,6 +998,25 @@ select:focus { border-color: var(--accent); }
     </div>
     <div class="saved-deck-list" id="saved-deck-list"></div>
     <button class="btn btn-ghost modal-close" onclick="closeDecksModal()">Close</button>
+  </div>
+</div>
+
+<!-- Import Deck (paste JSON) Modal -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <h2>Import Deck from JSON</h2>
+    <div class="import-help">
+      Paste a deck as JSON. Accepted shapes: a saved deck export, a map like
+      <code>{"base1-1": 4, "Bill": 4}</code>, or a list like
+      <code>[{"name":"Pikachu","set":"base2","qty":4}]</code>.
+      Cards can be given by <code>id</code> or by <code>name</code>.
+    </div>
+    <textarea class="import-textarea" id="import-json" spellcheck="false" placeholder='{ "name": "My Deck", "cards": [ { "id": "base1-58", "qty": 4 }, { "name": "Bill", "qty": 4 } ] }' oninput="this.classList.remove('error')"></textarea>
+    <div class="import-msg" id="import-msg"></div>
+    <div class="import-actions">
+      <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="importDeckFromJSON()">Import</button>
+    </div>
   </div>
 </div>
 
@@ -1432,6 +1480,149 @@ function undoClear() {
   showToast('Deck restored');
 }
 
+// ─── IMPORT (paste JSON) ─────────────────────────────────────────────────────
+function openImportModal() {
+  const ta = document.getElementById('import-json');
+  ta.value = ''; ta.classList.remove('error');
+  setImportMsg('');
+  document.getElementById('import-modal').classList.add('show');
+  setTimeout(() => ta.focus(), 50);
+}
+function closeImportModal() {
+  document.getElementById('import-modal').classList.remove('show');
+}
+function setImportMsg(text, kind = '') {
+  const el = document.getElementById('import-msg');
+  el.textContent = text;
+  el.className = 'import-msg' + (kind ? ' ' + kind : '');
+}
+
+// Resolve a card reference (id, name, or name+set) against allCards.
+// Names are matched case-insensitively; when several sets share a name the
+// first hit wins (base sets come first in cards.json), unless `set` narrows it.
+function resolveImportCard(ref, setHint) {
+  if (ref == null) return null;
+  const key = String(ref).trim();
+  if (!key) return null;
+  const byId = allCards.find(c => c.id.toLowerCase() === key.toLowerCase());
+  if (byId) return byId;
+  const lname = key.toLowerCase();
+  let matches = allCards.filter(c => c.name.toLowerCase() === lname);
+  if (matches.length && setHint) {
+    const sh = String(setHint).trim().toLowerCase();
+    const bySet = matches.filter(c => {
+      const setId = c.id.split('-')[0].toLowerCase();
+      return setId === sh || (SET_NAMES[setId] || '').toLowerCase() === sh;
+    });
+    if (bySet.length) matches = bySet;
+  }
+  return matches[0] || null;
+}
+
+// Normalise any accepted JSON shape into [{ ref, set, qty }] plus an optional deck name.
+function parseDeckImport(text) {
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { throw new Error('Not valid JSON: ' + e.message.replace(/^JSON\.parse: /, '')); }
+
+  let name = null;
+  let items = [];
+  const qtyOf = o => {
+    const q = o.qty ?? o.count ?? o.quantity ?? o.copies ?? 1;
+    const n = parseInt(q, 10);
+    return Number.isFinite(n) ? n : NaN;
+  };
+  const pushEntry = (o) => {
+    if (typeof o === 'string') { items.push({ ref: o, qty: 1 }); return; }
+    if (Array.isArray(o)) { items.push({ ref: o[0], qty: parseInt(o[1] ?? 1, 10) }); return; }
+    if (o && typeof o === 'object') {
+      items.push({ ref: o.id ?? o.cardId ?? o.card ?? o.name, set: o.set ?? o.setId ?? null, qty: qtyOf(o) });
+    }
+  };
+
+  if (Array.isArray(data)) {
+    data.forEach(pushEntry);
+  } else if (data && typeof data === 'object') {
+    if (typeof data.name === 'string') name = data.name.trim() || null;
+    const list = data.cards ?? data.deck ?? data.list ?? null;
+    if (Array.isArray(list)) {
+      list.forEach(pushEntry);
+    } else if (list && typeof list === 'object') {
+      // Saved-deck export: { deck: { "<id>": { cardId, qty, ... } } } — or a plain id→qty map
+      for (const [k, v] of Object.entries(list)) {
+        if (v && typeof v === 'object') items.push({ ref: v.cardId ?? v.id ?? v.name ?? k, set: v.set ?? null, qty: qtyOf(v) });
+        else items.push({ ref: k, qty: parseInt(v, 10) });
+      }
+    } else {
+      // Plain map: { "base1-1": 4, "Bill": 4 }
+      for (const [k, v] of Object.entries(data)) {
+        if (['name', 'folder', 'savedAt'].includes(k)) continue;
+        if (typeof v === 'number' || typeof v === 'string') items.push({ ref: k, qty: parseInt(v, 10) });
+      }
+    }
+  } else {
+    throw new Error('JSON must be an object or an array.');
+  }
+
+  if (!items.length) throw new Error('No cards found in that JSON.');
+  return { name, items };
+}
+
+function importDeckFromJSON() {
+  const ta = document.getElementById('import-json');
+  const text = ta.value.trim();
+  if (!text) { setImportMsg('Paste some JSON first.', 'warn'); ta.classList.add('error'); ta.focus(); return; }
+  if (!allCards.length) { setImportMsg('Card list is still loading — try again in a moment.', 'warn'); return; }
+
+  let parsed;
+  try { parsed = parseDeckImport(text); }
+  catch (e) { setImportMsg(e.message, 'warn'); ta.classList.add('error'); return; }
+
+  const newDeck = {};
+  const unknown = [];
+  const clamped = [];
+  let total = 0;
+  let overflow = 0;
+
+  for (const it of parsed.items) {
+    const card = resolveImportCard(it.ref, it.set);
+    if (!card) { unknown.push(String(it.ref ?? '?')); continue; }
+    let qty = Number.isFinite(it.qty) ? it.qty : 1;
+    if (qty <= 0) continue;
+    const have = newDeck[card.id] ? newDeck[card.id].qty : 0;
+    const max = getMaxCopies(card);
+    if (have + qty > max) { clamped.push(`${card.name} → ${max}`); qty = max - have; }
+    if (total + qty > MAX_DECK) { overflow += (total + qty) - MAX_DECK; qty = MAX_DECK - total; }
+    if (qty <= 0) continue;
+    newDeck[card.id] = { card, qty: have + qty };
+    total += qty;
+  }
+
+  if (!total) {
+    setImportMsg('None of those cards matched anything in the card list.' + (unknown.length ? '\nUnknown: ' + unknown.join(', ') : ''), 'warn');
+    ta.classList.add('error');
+    return;
+  }
+
+  // Replace the current deck (undoable, same as Clear)
+  const hadCards = Object.keys(deck).length > 0;
+  if (hadCards) _clearedDeck = deck;
+  deck = newDeck;
+  if (parsed.name) {
+    const nameEl = document.getElementById('deck-name');
+    nameEl.value = parsed.name; nameEl.classList.remove('error');
+  }
+  renderDeck(); refreshGridState(); validateDeck(false);
+  closeImportModal();
+
+  const notes = [];
+  if (unknown.length) notes.push(`${unknown.length} unknown: ${unknown.slice(0, 3).join(', ')}${unknown.length > 3 ? '…' : ''}`);
+  if (clamped.length) notes.push(`${clamped.length} capped at max copies`);
+  if (overflow) notes.push(`${overflow} dropped over 60`);
+  const msg = `Imported ${total} card${total !== 1 ? 's' : ''}` + (notes.length ? ' — ' + notes.join('; ') : '');
+  showToast(msg, notes.length > 0, hadCards ? { label: 'Undo', fn: undoClear } : null, notes.length ? 7000 : 4000);
+}
+
 // ─── RENDER DECK ────────────────────────────────────────────────────────────
 function renderDeck() {
   const list = document.getElementById('deck-list');
@@ -1867,6 +2058,12 @@ function showToast(msg, isError = false, action = null, duration = 2200) {
 
 
 
+document.getElementById('import-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeImportModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('import-modal').classList.contains('show')) closeImportModal();
+});
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
 });
