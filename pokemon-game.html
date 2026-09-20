@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
-<link rel="stylesheet" href="theme.css?v=6f2a90e112">
+<link rel="stylesheet" href="theme.css?v=61e5082987">
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -143,6 +143,16 @@ h1, h2, h3 { font-family: var(--font-title); }
   text-decoration: none;
 }
 #login-mode-toggle a:hover { text-decoration: underline; }
+#login-forgot {
+  font-size: 11px;
+  text-align: center;
+  letter-spacing: .5px;
+  margin-top: -6px;
+}
+#login-forgot a { color: var(--muted); cursor: pointer; text-decoration: none; }
+#login-forgot a:hover { color: var(--accent); text-decoration: underline; }
+/* Password-reset confirmation reuses the error line, in a calm colour */
+#login-error.ok { color: var(--accent); }
 #login-name-row { display: none; }
 
 /* ── TRAINER / GUEST BADGES in lobby ──────────────────────── */
@@ -2979,6 +2989,9 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
     <div id="login-mode-toggle">
       No account? <a onclick="setAuthMode('signup')">Create one</a>
     </div>
+    <div id="login-forgot">
+      <a onclick="sendPasswordReset()">Forgot password?</a>
+    </div>
     <div style="text-align:center;margin-top:4px">
       <a onclick="cancelLogin()" style="font-size:11px;color:var(--muted);cursor:pointer">← Back to guest</a>
     </div>
@@ -3440,15 +3453,15 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=6f2a90e112"></script>
-<script src="game-render.js?v=6f2a90e112"></script>
-<script src="game-actions.js?v=6f2a90e112"></script>
-<script src="game-ai.js?v=6f2a90e112"></script>
+<script src="game-utils.js?v=61e5082987"></script>
+<script src="game-render.js?v=61e5082987"></script>
+<script src="game-actions.js?v=61e5082987"></script>
+<script src="game-ai.js?v=61e5082987"></script>
 
-<script src="pokemon-powers.js?v=6f2a90e112"></script>
-<script src="trainer-cards.js?v=6f2a90e112"></script>
-<script src="move-effects.js?v=6f2a90e112"></script>
-<script src="game-init.js?v=6f2a90e112"></script>
+<script src="pokemon-powers.js?v=61e5082987"></script>
+<script src="trainer-cards.js?v=61e5082987"></script>
+<script src="move-effects.js?v=61e5082987"></script>
+<script src="game-init.js?v=61e5082987"></script>
 
 <!-- Image cache: sw.js keeps card art, energy icons and coin faces in Cache
      Storage so they load instantly and survive deploys (GitHub Pages only

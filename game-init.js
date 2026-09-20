@@ -100,6 +100,8 @@ function setAuthMode(mode) {
   const submitBtn = document.getElementById('login-submit');
   const toggle    = document.getElementById('login-mode-toggle');
   const pwInput   = document.getElementById('login-password');
+  const forgot    = document.getElementById('login-forgot');
+  if (forgot) forgot.style.display = (mode === 'signup') ? 'none' : '';
   if (mode === 'signup') {
     nameRow.style.display = '';
     submitBtn.textContent = 'CREATE ACCOUNT →';
@@ -111,7 +113,39 @@ function setAuthMode(mode) {
     toggle.innerHTML = 'No account? <a onclick="setAuthMode(\'signup\')">Create one</a>';
     pwInput.placeholder = '••••••••';
   }
-  document.getElementById('login-error').textContent = '';
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  errEl.classList.remove('ok');
+}
+
+// "Forgot password?" — Firebase emails a reset link to the address in the
+// email field (the reset page itself is hosted by Firebase Auth). The message
+// is deliberately the same whether or not an account exists, so the form
+// can't be used to probe which emails are registered.
+async function sendPasswordReset() {
+  if (_authInFlight) return;
+  const email = document.getElementById('login-email').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.classList.remove('ok');
+  if (!email) { errEl.textContent = 'Enter your email above, then click Forgot password.'; return; }
+  _authInFlight = true;
+  errEl.textContent = 'Sending reset email…';
+  try {
+    await auth.sendPasswordResetEmail(email);
+    errEl.classList.add('ok');
+    errEl.textContent = `If an account exists for ${email}, a reset link is on its way. Check spam too.`;
+  } catch (e) {
+    // Email-enumeration protection off: Firebase reports unknown addresses.
+    // Show the same neutral message so the behaviour matches either setting.
+    if (e.code === 'auth/user-not-found') {
+      errEl.classList.add('ok');
+      errEl.textContent = `If an account exists for ${email}, a reset link is on its way. Check spam too.`;
+    } else {
+      errEl.textContent = friendlyAuthError(e.code);
+    }
+  } finally {
+    _authInFlight = false;
+  }
 }
 
 async function doLoginOrSignup() {
@@ -121,6 +155,7 @@ async function doLoginOrSignup() {
   const errEl    = document.getElementById('login-error');
   const btn      = document.getElementById('login-submit');
 
+  errEl.classList.remove('ok');
   if (!email || !password) { errEl.textContent = 'Enter email and password.'; return; }
 
   if (_authMode === 'signup') {
@@ -176,6 +211,8 @@ function friendlyAuthError(code) {
     case 'auth/invalid-email':       return 'Invalid email address.';
     case 'auth/email-already-in-use':return 'That email is already registered.';
     case 'auth/weak-password':       return 'Password must be at least 6 characters.';
+    case 'auth/missing-email':       return 'Enter your email address.';
+    case 'auth/network-request-failed': return 'Network error. Check your connection and try again.';
     default: return 'Sign in failed. Check your credentials.';
   }
 }
