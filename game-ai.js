@@ -131,6 +131,13 @@ async function startVsCpuGame() {
     p2Name: '🤖 Computer',
     p1DeckName: G.players[1].deckData?.name || null,
     p2DeckName: G.players[2].deckData?.name || null,
+    p1DeckFolder: G.players[1].deckData?.folderKey || '',
+    p2DeckFolder: G.players[2].deckData?.folderKey || '',
+    // Both decks were loaded BEFORE this room existed, so broadcastDeckReady()
+    // never ran. startGame() validates p1Ready/p2Ready on the room record, so
+    // without these flags a loaded deck still bounced with "Load your deck first!".
+    p1Ready: true,
+    p2Ready: true,
     state: null
   });
 

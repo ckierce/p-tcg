@@ -1997,6 +1997,14 @@ section('REGRESSION: room create/join resets stale lobby state');
   const startBody = (src.match(/async function _startGameInner\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
   assert('startGame validates p1Ready + local P1 deck before dealing', /data\.p1Ready[\s\S]*G\.players\[1\]\.deck\.length/.test(startBody));
   assert('startGame has a re-entrancy guard', /_startGameRunning/.test(src));
+  // VS Computer loads both decks before any room exists, so nothing broadcasts
+  // p1Ready/p2Ready. The AI room record must set them itself or the check above
+  // rejects a legitimately loaded deck ("Load your deck first!" bug, Sep 2026).
+  const aiSrc = fs.readFileSync(__dirname + '/game-ai.js', 'utf8');
+  const cpuBody = (aiSrc.match(/async function startVsCpuGame\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const aiRecord = (cpuBody.match(/gameRef\.set\(\{([\s\S]*?)\}\)/) || [])[1] || '';
+  assert('startVsCpuGame room record sets p1Ready: true', /p1Ready:\s*true/.test(aiRecord));
+  assert('startVsCpuGame room record sets p2Ready: true', /p2Ready:\s*true/.test(aiRecord));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
