@@ -2133,5 +2133,16 @@ window.addEventListener('resize', () => {
 
 fetchAllCards();
 </script>
+<!-- Image cache: sw.js keeps card art, energy icons and coin faces in Cache
+     Storage so they load instantly and survive deploys (GitHub Pages only
+     lets the browser cache them for 10 minutes). Registration is silent —
+     the page works identically without it, just with slower image loads. -->
+<script>
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
