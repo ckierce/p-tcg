@@ -127,6 +127,7 @@ async function startVsCpuGame() {
     created: Date.now(),
     ownerUid: currentUser ? currentUser.uid : null,
     isAiGame: true,
+    aiDifficulty,
     p1Name: trainerName || 'Player 1',
     p2Name: '🤖 Computer',
     p1DeckName: G.players[1].deckData?.name || null,

@@ -2033,6 +2033,20 @@ section('REGRESSION: SETUP reload restores the real hand (no duplicates)');
   const resumeM = src.match(/function resumeGame\(code\) \{([\s\S]*?)\n\}/);
   assert('resumeGame reads the whole room record (not just /state)', !!resumeM && /db\.ref\(`games\/\$\{code\}`\)\.once/.test(resumeM[1]));
   assert('resumeGame restores own setup slot during SETUP', !!resumeM && /ownSlot[\s\S]*mergeSetupSlot\(role, ownSlot\)/.test(resumeM[1]));
+  // REGRESSION: leaving a VS Computer game and resuming it left vsComputer=false,
+  // so the AI never took another turn after the human's next END TURN.
+  const resumeBody = resumeM ? resumeM[1] : '';
+  assert('resumeGame restores vsComputer from room.isAiGame', /room\.isAiGame[\s\S]*vsComputer = true/.test(resumeBody));
+  assert('resumeGame forces the human into seat 1 for AI games', /isAi[\s\S]*role = 1/.test(resumeBody));
+  assert('resumeGame restores aiPlayerNum for AI games', /aiPlayerNum = 2/.test(resumeBody));
+  assert('resumeGame restores AI difficulty from the room record', /room\.aiDifficulty/.test(resumeBody));
+  assert('resumeGame skips the room listener for AI games', /if \(isAi\) \{[\s\S]*resumeAiTurnIfPending[\s\S]*return;[\s\S]*\}[\s\S]*gameRef\.on\('value'/.test(resumeBody));
+  const kick = (src.match(/function resumeAiTurnIfPending\(\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  assert('resumeAiTurnIfPending kicks aiTakeTurn on the AI turn', /G\.turn === aiPlayerNum[\s\S]*aiTakeTurn\(\)/.test(kick));
+  assert('resumeAiTurnIfPending handles a pending AI promotion', /PROMOTE[\s\S]*aiDoPromotion\(\)/.test(kick));
+  assert('resumeAiTurnIfPending handles an unplaced AI during SETUP', /SETUP[\s\S]*aiDoSetup\(\)/.test(kick));
+  const aiSrcResume = fs.readFileSync(__dirname + '/game-ai.js', 'utf8');
+  assert('startVsCpuGame records aiDifficulty on the room', /isAiGame: true,\s*aiDifficulty,/.test(aiSrcResume));
 
   // Functional: run mergeSetupSlot against a fake G with the stale deal and a
   // real slot, and check the placed card is no longer in hand.

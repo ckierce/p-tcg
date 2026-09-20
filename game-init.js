@@ -1261,12 +1261,25 @@ function showResumePanel() {
 }
 
 function resumeGame(code) {
-  const role = _resumeRole;
+  let role = _resumeRole;
   db.ref(`games/${code}`).once('value', roomSnap => {
     const room = roomSnap.val();
     const s = room && room.state;
     if (!s) { showToast('Game not found!', true); return; }
     if (gameRef) { try { gameRef.off(); } catch (e) {} }
+    // VS Computer games persist to Firebase too (isAiGame), but returnToLobby /
+    // a reload cleared `vsComputer`. Resuming without restoring it left every
+    // AI hook (the endTurn wrapper in game-ai.js) inert, so the computer never
+    // took another turn after the human's next END TURN. The human is always
+    // P1 in an AI game regardless of the resume-panel role toggle.
+    const isAi = !!room.isAiGame;
+    if (isAi) {
+      role = 1;
+      vsComputer = true;
+      aiPlayerNum = 2;
+      aiThinking = false;
+      if (room.aiDifficulty && typeof setAiDiff === 'function') setAiDiff(room.aiDifficulty);
+    }
     roomCode = code;
     myRole = role;
     gameRef = db.ref(`games/${code}`);
@@ -1313,6 +1326,15 @@ function resumeGame(code) {
         receiveGameState(data.state);
       }
     };
+    if (isAi) {
+      // No remote peer: a fresh AI game never attaches a room listener (its
+      // pushes would just echo back mid-AI-turn and rebuild the card objects
+      // the AI is holding across awaits), so don't attach one here either.
+      // If we left while it was the computer's move, pick that move back up.
+      setTimeout(() => resumeAiTurnIfPending(), 900);
+      addLog(`Rejoined game ${code} vs Computer.`, true);
+      return;
+    }
     gameRef.on('value', snap => {
       const data = snap.val();
       // Mirror the create/join listeners: stash a snapshot that lands mid-write
@@ -1322,6 +1344,25 @@ function resumeGame(code) {
     });
     addLog(`P${role} rejoined game ${code}.`, true);
   });
+}
+
+// After resuming a VS Computer game, hand control back to the AI wherever the
+// saved state left it: mid-SETUP without an Active, a pending promotion, or
+// its own DRAW/MAIN turn. Anything else waits for the human as usual.
+function resumeAiTurnIfPending() {
+  if (!vsComputer || !G.started) return;
+  if (G.phase === 'SETUP') {
+    if (!G.players[aiPlayerNum].active && typeof aiDoSetup === 'function') aiDoSetup();
+    return;
+  }
+  if (G.phase === 'PROMOTE') {
+    if (G.pendingPromotion === aiPlayerNum && typeof aiDoPromotion === 'function') aiDoPromotion();
+    return;
+  }
+  if (G.turn === aiPlayerNum && typeof aiTakeTurn === 'function') {
+    aiThinking = false;
+    aiTakeTurn();
+  }
 }
 
 function generateCode() {
