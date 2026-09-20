@@ -70,6 +70,9 @@ auth.onAuthStateChanged(async user => {
       const recSnap = await db.ref(`users/${user.uid}/record`).once('value');
       const rec = recSnap.val() || { wins: 0, losses: 0 };
       document.getElementById('trainer-record').textContent = `W: ${rec.wins || 0} / L: ${rec.losses || 0}`;
+      // Mirror into the public leaderboard node so accounts created before
+      // the leaderboard existed appear on it the next time they sign in.
+      publishLeaderboardEntry(trainerName, rec);
     } catch (e) { /* rules may not allow read yet */ }
     document.getElementById('trainer-name-display').textContent = trainerName;
   } else {
@@ -171,6 +174,7 @@ async function doLoginOrSignup() {
       // Best-effort: persist trainer name + initial record
       try { await db.ref(`users/${cred.user.uid}/name`).set(name); } catch (e) {}
       try { await db.ref(`users/${cred.user.uid}/record`).set({ wins: 0, losses: 0 }); } catch (e) {}
+      publishLeaderboardEntry(name, { wins: 0, losses: 0 });
       // onAuthStateChanged handles the UI swap
     } catch (e) {
       errEl.textContent = friendlyAuthError(e.code);
@@ -230,9 +234,91 @@ async function recordResult(didWin) {
     await ref.set(rec);
     const badge = document.getElementById('trainer-record');
     if (badge) badge.textContent = `W: ${rec.wins} / L: ${rec.losses}`;
+    publishLeaderboardEntry(trainerName, rec);
   } catch (e) {
     console.warn('[recordResult] failed:', e);
   }
+}
+
+// ══════════════════════════════════════════════════
+// LEADERBOARD
+// ══════════════════════════════════════════════════
+// The private per-user record lives at users/{uid}/record, which other
+// clients can't read. The leaderboard is a separate, public mirror at
+// leaderboard/{uid} = { name, wins, losses, updatedAt } that each client
+// writes for ITS OWN uid only. Required Realtime Database rules:
+//
+//   "leaderboard": {
+//     ".read": true,
+//     "$uid": {
+//       ".write": "auth != null && auth.uid === $uid",
+//       ".validate": "newData.hasChildren(['name', 'wins', 'losses'])"
+//     }
+//   }
+//
+// Every call is best-effort: if the rules aren't in place yet, nothing
+// else changes and the panel explains what's missing.
+async function publishLeaderboardEntry(name, rec) {
+  if (!currentUser) return;
+  try {
+    await db.ref(`leaderboard/${currentUser.uid}`).set({
+      name: String(name || 'Trainer').slice(0, 20),
+      wins: Number(rec?.wins) || 0,
+      losses: Number(rec?.losses) || 0,
+      updatedAt: firebase.database.ServerValue.TIMESTAMP,
+    });
+  } catch (e) {
+    console.warn('[leaderboard] publish failed:', e?.code || e);
+  }
+}
+
+// Sort order: most wins, then best win rate, then fewest losses, then name.
+function sortLeaderboard(entries) {
+  const pct = e => (e.wins + e.losses) ? e.wins / (e.wins + e.losses) : 0;
+  return entries.sort((a, b) =>
+    (b.wins - a.wins) || (pct(b) - pct(a)) || (a.losses - b.losses) || a.name.localeCompare(b.name));
+}
+
+const LEADERBOARD_MAX_ROWS = 25;
+
+async function showLeaderboard() {
+  showPanel('leaderboard-panel');
+  const list = document.getElementById('leaderboard-list');
+  list.innerHTML = `<div class="lb-empty">Loading…</div>`;
+  let raw;
+  try {
+    raw = (await db.ref('leaderboard').once('value')).val() || {};
+  } catch (e) {
+    const denied = /permission/i.test(String(e?.code || e?.message || e));
+    list.innerHTML = `<div class="lb-empty">${denied
+      ? 'The leaderboard isn\'t enabled yet — the database rules need to allow reading <code>leaderboard</code>.'
+      : 'Couldn\'t load the leaderboard. Check your connection and try again.'}</div>`;
+    return;
+  }
+  const entries = Object.entries(raw).map(([uid, v]) => ({
+    uid,
+    name: String(v?.name || 'Trainer'),
+    wins: Number(v?.wins) || 0,
+    losses: Number(v?.losses) || 0,
+  })).filter(e => e.wins + e.losses > 0 || e.uid === currentUser?.uid);
+  if (!entries.length) {
+    list.innerHTML = `<div class="lb-empty">No games recorded yet. Sign in and win an online match to claim the top spot.</div>`;
+    return;
+  }
+  sortLeaderboard(entries);
+  const rows = entries.slice(0, LEADERBOARD_MAX_ROWS).map((e, i) => {
+    const games = e.wins + e.losses;
+    const pct = games ? Math.round(100 * e.wins / games) : 0;
+    const me = currentUser && e.uid === currentUser.uid;
+    return `<div class="lb-row${me ? ' lb-me' : ''}">
+      <span class="lb-rank">${i + 1}</span>
+      <span class="lb-name" title="${escapeHtml(e.name)}">${escapeHtml(e.name)}${me ? ' (you)' : ''}</span>
+      <span class="lb-wins">${e.wins}</span>
+      <span class="lb-losses">${e.losses}</span>
+      <span class="lb-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+  list.innerHTML = `<div class="lb-row lb-head"><span>#</span><span>TRAINER</span><span class="lb-wins">W</span><span class="lb-losses">L</span><span class="lb-pct">WIN%</span></div>${rows}`;
 }
 
 // ══════════════════════════════════════════════════
@@ -1249,8 +1335,8 @@ let _setupSnapHandler = null;
 let _preserveOwnPrivateZones = false;
 
 // ── Panel helpers ─────────────────────────────────
-function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
-function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
+function showLobby()     { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel','leaderboard-panel'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = id === 'lobby-panel' ? '' : 'none'; }); }
+function showPanel(id)   { ['lobby-panel','waiting-panel','join-panel','joined-panel','vs-computer-panel','resume-panel','leaderboard-panel'].forEach(i => { const el = document.getElementById(i); if(el) el.style.display = i === id ? '' : 'none'; }); }
 
 let _resumeRole = 1;
 function setResumeRole(role) {
