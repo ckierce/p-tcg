@@ -2136,6 +2136,55 @@ section('FEATURE: room persists across reloads');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// BUG: reopening a ?room= link on a STARTED game blanked the rejoiner's side
+//
+// Mobile Safari reloads a backgrounded tab, and P2 usually got there via the
+// share link, so the URL still carried ?room=CODE. checkUrlRoom() then ran the
+// JOIN flow: resetRoomLobbyState() blanked both players, the room listener's
+// first snapshot restored the live state, and restoreOwnDeck() finished last —
+// loadDeck() dropped a fresh shuffled 60-card deck onto G.players[2] and
+// cleared hand/active/bench/prizes. Screen: opponent fully rendered, own side
+// "deck 60, hand 0, no Active, no prizes", nothing clickable. Firebase's copy
+// of the game was fine the whole time (games N9Z3YO / 6X5349, 2026-09-22).
+// Fix: _joinRoomInner resumes a started game instead of joining it, and the
+// two deck loaders refuse to touch a running game's zones.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('BUG: ?room= reload on a started game must resume, not re-join');
+{
+  const fs = require('fs');
+  const src = fs.readFileSync('./game-init.js', 'utf8');
+  const join    = (src.match(/async function _joinRoomInner\(code\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const restore = (src.match(/function restoreOwnDeck\(role, room\) \{([\s\S]*?)\n\}/) || [])[1] || '';
+  const load    = (src.match(/async function loadDeck\(fKey, deckName[\s\S]*?\n\}/) || [])[0] || '';
+
+  const resumeIdx = join.indexOf('resumeGame(code)');
+  const resetIdx  = join.search(/\n  resetRoomLobbyState\(\);/); // the call, not the comment naming it
+  assert('_joinRoomInner routes a started game to resumeGame', resumeIdx !== -1);
+  assert('...gated on the room record having a started state', /roomData\.state && roomData\.state\.started[\s\S]*?resumeGame\(code\)/.test(join));
+  assert('...BEFORE resetRoomLobbyState() can blank the zones', resumeIdx !== -1 && resetIdx !== -1 && resumeIdx < resetIdx);
+  assert('...and returns without falling through to the join flow', /resumeGame\(code\);[\s\S]*?return;[\s\S]*?resetRoomLobbyState\(\)/.test(join));
+  assert('...in the seat this tab held (sessionStorage), defaulting to P2', /storedRoom\(\)[\s\S]*?stored\.code === code \? stored\.role : 2/.test(join));
+  assert('...and setResumeRole is told which seat', /setResumeRole\(role\);\s*resumeGame\(code\)/.test(join));
+  assert('restoreOwnDeck refuses to run on a started game', /if \(G\.started\) return;/.test(restore));
+  assert('loadDeck bails after its fetch if the room game started meanwhile', /snap\.val\(\)[\s\S]*?if \(G\.started && roomCode\)[\s\S]*?return;[\s\S]*?G\.players\[p\]\.deck = shuffle/.test(load));
+
+  // Behavioural check of the decision itself, with the same inputs the live
+  // code sees: a room record whose state is started, and sessionStorage that
+  // may or may not remember this tab's seat.
+  const decide = (roomData, stored, code) => {
+    if (!(roomData.state && roomData.state.started)) return 'join';
+    const role = stored && stored.code === code ? stored.role : 2;
+    return `resume:P${role}`;
+  };
+  assertEqual('pre-game room → join flow', decide({ p1Ready: true }, null, 'N9Z3YO'), 'join');
+  assertEqual('finished game (started:false) → join flow (unchanged behavior)', decide({ state: { started: false } }, null, 'N9Z3YO'), 'join');
+  assertEqual('started game, no memory → resume as P2 (join links are P2 links)', decide({ state: { started: true } }, null, 'N9Z3YO'), 'resume:P2');
+  assertEqual('started game, this tab was P2 → resume as P2', decide({ state: { started: true } }, { code: 'N9Z3YO', role: 2 }, 'N9Z3YO'), 'resume:P2');
+  assertEqual('started game, this tab was P1 (host opened own link) → resume as P1', decide({ state: { started: true } }, { code: 'N9Z3YO', role: 1 }, 'N9Z3YO'), 'resume:P1');
+  assertEqual('started game, memory is for a DIFFERENT room → resume as P2', decide({ state: { started: true } }, { code: 'OTHER1', role: 1 }, 'N9Z3YO'), 'resume:P2');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: Asleep Pokémon must be able to wake up (multi-status field bug)
 //
 // Bug: the Special Condition lives in `card.special` (`card.status` is only a

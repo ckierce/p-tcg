@@ -492,6 +492,9 @@ async function loadDeck(fKey, deckName, forPlayer = loadingForPlayer) {
     const snap = await db.ref(path).once('value');
     const d = snap.val();
     if (!d) { showToast('Deck not found', true); return; }
+    // The game in this room started while the deck was fetching (a rejoin
+    // racing P1's START). The zones below are live now — leave them alone.
+    if (G.started && roomCode) { console.warn('[loadDeck] game already started — not replacing live zones'); return; }
     const flat = [];
     for (const entry of Object.values(d.deck)) {
       const card = {
@@ -1575,6 +1578,10 @@ function storedRoom() {
 // local G was reset — load it again so the slot, p{n}Ready and G agree.
 function restoreOwnDeck(role, room) {
   const name = room && room[`p${role}DeckName`];
+  // Never reload a deck over a running game: if the room listener already
+  // delivered a started `state` (P1 hit START while we were rejoining), our
+  // zones are live and a fresh shuffle would wipe them.
+  if (G.started) return;
   if (!name || G.players[role].deckData) return;
   return loadDeck(room[`p${role}DeckFolder`] || '', name, role);
 }
@@ -1700,6 +1707,24 @@ async function _joinRoomInner(code) {
   const nextRef = db.ref(`games/${code}`);
   const snap = await nextRef.once('value');
   if (!snap.val()) { showToast('Room not found!', true); return; }
+  const roomData = snap.val() || {};
+
+  // The game in this room is already running — a ?room= link reopened on a
+  // started game (mobile Safari reloads a backgrounded tab, so this is every
+  // P2 who switched apps mid-game) or JOIN clicked on one. Joining is wrong
+  // here: resetRoomLobbyState() blanks our zones, the listener's first
+  // snapshot restores the live state, then restoreOwnDeck() lands a FRESH
+  // 60-card deck on top of it — our side rendered as deck 60 / hand 0 / no
+  // Active / no prizes with every action blocked. Resume instead, in the seat
+  // this tab held (a reload keeps sessionStorage); a bare join link is P2's.
+  if (roomData.state && roomData.state.started) {
+    const stored = storedRoom();
+    const role = stored && stored.code === code ? stored.role : 2;
+    setResumeRole(role);
+    resumeGame(code);
+    showToast(`Rejoined game ${code} as Player ${role}`, false, 'ok');
+    return;
+  }
 
   // Same blank-slate rule as createRoom: drop the previous room's listener and
   // lobby state before showing the joined panel for this one.
@@ -1714,7 +1739,6 @@ async function _joinRoomInner(code) {
   // Write our name into the room, read P1's name back into local G. On a
   // reload auth may not have resolved yet, so don't overwrite a real name in
   // the room with the 'Guest' placeholder.
-  const roomData = snap.val() || {};
   const myName = trainerName || 'Player 2';
   if (!roomData.p2Name || myName !== 'Guest') await gameRef.update({ p2Name: myName });
   G.players[1].name = roomData.p1Name || 'Player 1';
