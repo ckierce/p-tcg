@@ -1,0 +1,39 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "leaderboard": {
+      ".read": true,
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid && auth.provider !== 'anonymous'"
+      }
+    },
+
+    "games": {
+      ".read": true,
+      "$code": {
+        ".write": "auth != null",
+        ".validate": "$code.matches(/^[A-Z0-9]{4,12}$/)"
+      }
+    },
+
+    "decks": {
+      ".read": true,
+      "$folder": {
+        ".write": "auth != null && data.child('deck').exists() && !newData.exists() && (!data.child('owner').exists() || data.child('ownerProvider').val() === 'anonymous' || data.child('owner').val() === auth.uid)",
+        "$deck": {
+          ".write": "auth != null && (!data.exists() || !data.child('owner').exists() || data.child('ownerProvider').val() === 'anonymous' || data.child('owner').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['name', 'deck']) && newData.child('name').isString() && newData.child('name').val().length <= 60"
+        }
+      }
+    }
+  }
+}

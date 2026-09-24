@@ -700,6 +700,33 @@ function transitionPhase(phase, extras) {
   if (typeof updatePhase === 'function') updatePhase();
 }
 
+// ── Deck entries from Firebase → safe card objects ───────────────────────────
+// Saved decks live in a database whose URL ships in the client, so a deck's
+// stored fields (name, img, …) cannot be trusted: anyone could have edited
+// them, and several of those fields end up in innerHTML. Rebuild every card
+// from the bundled catalogue when its id is known; for an unknown id keep only
+// plain text and an image from a known host. Shared by the game's loadDeck
+// (and mirrored inline in the deck builder, which doesn't load this file).
+const SAFE_IMG_URL = /^(https:\/\/images\.pokemontcg\.io\/|card-images\/|assets\/)[\w./%-]+$/;
+function safeImageUrl(u) { return (typeof u === 'string' && SAFE_IMG_URL.test(u)) ? u : ''; }
+function plainText(s, max = 80) { return String(s ?? '').replace(/[<>"'&`]/g, '').slice(0, max); }
+function cardFromDeckEntry(entry, catalogue) {
+  const id = plainText(entry?.cardId || entry?.id || '', 40);
+  const full = catalogue ? catalogue[id] : null;
+  if (full) return { ...full, id };
+  const supertype = ['Pokémon', 'Trainer', 'Energy'].includes(entry?.supertype) ? entry.supertype : 'Trainer';
+  return {
+    id,
+    name: plainText(entry?.name, 60) || 'Unknown card',
+    supertype,
+    images: { small: safeImageUrl(entry?.img) },
+    subtypes: Array.isArray(entry?.subtypes) ? entry.subtypes.map(s => plainText(s, 20)) : [],
+    hp: plainText(entry?.hp || '0', 4),
+    attacks: Array.isArray(entry?.attacks) ? entry.attacks : [],
+    types: Array.isArray(entry?.types) ? entry.types.map(t => plainText(t, 20)) : [],
+  };
+}
+
 // ── First-turn evolution lock ─────────────────────────────────────────────────
 // Base Set rulebook: Pokémon put into play during setup count as played on
 // their owner's FIRST turn, so neither player may evolve on their first turn
@@ -732,6 +759,7 @@ if (typeof module !== 'undefined') {
   module.exports = {
     RULES, GAME_STATE_DEFAULTS,
     inPlayPokemonUids, evolvedThisTurnAfterEndTurn, evolveLockReason,
+    safeImageUrl, plainText, cardFromDeckEntry,
     energyValue, validateRetreatPayment, canAffordAttack, parseStatusEffects,
     padBench, isLegalRetreatStatus, invisibleWallBlocks,
     isValidDeckSize, countCopies,

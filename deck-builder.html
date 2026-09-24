@@ -927,7 +927,7 @@ select:focus { border-color: var(--accent); }
   .grid-section-header { font-size: 11px; }
 }
 </style>
-<link rel="stylesheet" href="theme.css?v=ce50d7e543">
+<link rel="stylesheet" href="theme.css?v=7721bcce29">
 </head>
 <body>
 
@@ -1088,6 +1088,7 @@ select:focus { border-color: var(--accent); }
 </nav>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
 // ─── FIREBASE ───────────────────────────────────────────────────────────────
@@ -1102,6 +1103,29 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
+// Same Firebase session as the game page (same origin): a trainer who signed
+// in there is signed in here too, and their decks get stamped with their uid.
+// Everyone else gets a silent anonymous identity so the database rules can
+// require `auth != null` for writes (see database.rules.json).
+const auth = firebase.auth();
+auth.onAuthStateChanged(user => { if (!user) auth.signInAnonymously().catch(() => {}); });
+
+// ─── HTML SAFETY ────────────────────────────────────────────────────────────
+// Deck names, folder names and stored card fields come from the database and
+// are rendered with innerHTML — always through these.
+function escapeHtml(str) {
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// For values passed inside onclick="fn('…')": encodeURIComponent leaves ' ( ) ! *
+// alone, and a quote would break out of the string — encode those too.
+function encArg(str) {
+  return encodeURIComponent(String(str ?? '')).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+// A stored card that isn't in the catalogue keeps only plain text and an image
+// from a known host (mirror of cardFromDeckEntry in game-utils.js).
+const SAFE_IMG_URL = /^(https:\/\/images\.pokemontcg\.io\/|card-images\/|assets\/)[\w./%-]+$/;
+function safeImageUrl(u) { return (typeof u === 'string' && SAFE_IMG_URL.test(u)) ? u : ''; }
+function plainText(s, max = 80) { return String(s ?? '').replace(/[<>"'&`]/g, '').slice(0, max); }
 
 // ─── STATE ──────────────────────────────────────────────────────────────────
 const SET_NAMES = { base1: 'Base', base2: 'Jungle', base3: 'Fossil', basep: 'Promo' };
@@ -1669,15 +1693,16 @@ function renderDeck() {
     html += `<div class="deck-group"><div class="deck-group-label">${label} (${groupTotal})</div>`;
     cards.forEach(({card, qty}) => {
       const img = card.images?.small;
+      const safeName = escapeHtml(card.name), safeId = encArg(card.id);
       html += `<div class="deck-card-row">
         ${img
-          ? `<img class="deck-card-img" src="${img}" alt="${card.name}" loading="lazy" decoding="async">`
+          ? `<img class="deck-card-img" src="${escapeHtml(img)}" alt="${safeName}" loading="lazy" decoding="async">`
           : `<div class="deck-card-img" style="display:flex;align-items:center;justify-content:center;font-size:16px;">${typeEmoji(card.supertype)}</div>`}
-        <span class="deck-card-name">${card.name}</span>
+        <span class="deck-card-name">${safeName}</span>
         <div class="qty-ctrl">
-          <button class="qty-btn" aria-label="Remove one ${card.name}" onclick="changeQty('${card.id}', -1)">−</button>
+          <button class="qty-btn" aria-label="Remove one ${safeName}" onclick="changeQty(decodeURIComponent('${safeId}'), -1)">−</button>
           <span class="qty-num" aria-label="${qty} in deck">${qty}</span>
-          <button class="qty-btn" aria-label="Add one ${card.name}" onclick="changeQty('${card.id}', 1)">+</button>
+          <button class="qty-btn" aria-label="Add one ${safeName}" onclick="changeQty(decodeURIComponent('${safeId}'), 1)">+</button>
         </div>
       </div>`;
     });
@@ -1802,6 +1827,11 @@ async function saveDeck() {
     name,
     folder: folderName,
     savedAt: Date.now(),
+    // Who saved it. database.rules.json lets only this uid overwrite or delete
+    // the deck when it was saved by a signed-in trainer; guest (anonymous)
+    // decks stay editable by anyone, as before.
+    owner: auth.currentUser?.uid || null,
+    ownerProvider: auth.currentUser ? (auth.currentUser.isAnonymous ? 'anonymous' : 'password') : null,
     deck: Object.fromEntries(Object.entries(deck).map(([id, {card, qty}]) => [
       id, {
         cardId: id, qty,
@@ -1874,7 +1904,7 @@ async function pickSaveFolder() {
         const row = document.createElement('button');
         const isSelected = f === selected;
         row.style.cssText = `display:flex;align-items:center;gap:10px;width:100%;background:${isSelected ? 'var(--surface2)' : 'transparent'};border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};border-radius:var(--radius);padding:9px 12px;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--text);text-align:left;transition:border-color .15s;`;
-        row.innerHTML = `<span style="color:var(--accent);font-size:14px;">📁</span> ${f}`;
+        row.innerHTML = `<span style="color:var(--accent);font-size:14px;">📁</span> ${escapeHtml(f)}`;
         row.addEventListener('click', () => { selected = f; newInput.value = ''; renderList(); });
         listWrap.appendChild(row);
       });
@@ -1972,9 +2002,9 @@ async function renderFolderList() {
     list.innerHTML = folderKeys.map(fKey => {
       const { displayName, decks } = folders[fKey];
       const icon = fKey === '_uncategorized' ? '📂' : '📁';
-      return `<div class="saved-deck-item" style="cursor:pointer" onclick="openFolder('${encodeURIComponent(fKey)}','${encodeURIComponent(displayName)}')">
+      return `<div class="saved-deck-item" style="cursor:pointer" onclick="openFolder('${encArg(fKey)}','${encArg(displayName)}')">
         <div>
-          <div class="d-name">${icon} ${displayName}</div>
+          <div class="d-name">${icon} ${escapeHtml(displayName)}</div>
           <div class="d-count">${decks.length} deck${decks.length !== 1 ? 's' : ''}</div>
         </div>
         <span style="color:var(--muted);font-size:18px">›</span>
@@ -2022,14 +2052,14 @@ async function openFolder(encodedFKey, encodedDisplayName) {
       const total = Object.values(d.deck).reduce((s,c)=>s+c.qty, 0);
       // For uncategorized, use the real Firebase key so delete targets the right path
       const isLegacy = !!d._firebaseKey;
-      const delFKey = isLegacy ? encodeURIComponent(d._firebaseKey) : encodeURIComponent(fKey);
+      const delFKey = isLegacy ? encArg(d._firebaseKey) : encArg(fKey);
       return `<div class="saved-deck-item">
         <div>
-          <div class="d-name">${d.name}</div>
+          <div class="d-name">${escapeHtml(d.name)}</div>
           <div class="d-count">${total} cards</div>
         </div>
-        <button class="d-load" onclick="loadDeck('${encodeURIComponent(fKey)}','${encodeURIComponent(d.name)}')">Load</button>
-        <button class="d-del"  onclick="confirmDelete(this,'${delFKey}','${encodeURIComponent(d.name)}',${isLegacy})" aria-label="Delete ${d.name}">Del</button>
+        <button class="d-load" onclick="loadDeck('${encArg(fKey)}','${encArg(d.name)}')">Load</button>
+        <button class="d-del"  onclick="confirmDelete(this,'${delFKey}','${encArg(d.name)}',${isLegacy})" aria-label="Delete ${escapeHtml(d.name)}">Del</button>
       </div>`;
     }).join('');
   } catch(e) {
@@ -2072,12 +2102,16 @@ async function loadDeck(encodedFKey, encodedName) {
     if (full) {
       deck[entry.cardId] = { card: full, qty: entry.qty };
     } else {
+      // Not in the catalogue: keep only plain text and a known-host image.
       deck[entry.cardId] = {
-        qty: entry.qty,
+        qty: Math.max(1, Math.min(MAX_DECK, parseInt(entry.qty) || 1)),
         card: {
-          id: entry.cardId, name: entry.name, supertype: entry.supertype,
-          images: { small: entry.img }, subtypes: entry.subtypes || [],
-          hp: entry.hp || '', attacks: entry.attacks || [], types: entry.types || []
+          id: plainText(entry.cardId, 40), name: plainText(entry.name, 60) || 'Unknown card',
+          supertype: ['Pokémon', 'Trainer', 'Energy'].includes(entry.supertype) ? entry.supertype : 'Trainer',
+          images: { small: safeImageUrl(entry.img) },
+          subtypes: Array.isArray(entry.subtypes) ? entry.subtypes.map(s => plainText(s, 20)) : [],
+          hp: plainText(entry.hp || '', 4), attacks: Array.isArray(entry.attacks) ? entry.attacks : [],
+          types: Array.isArray(entry.types) ? entry.types.map(t => plainText(t, 20)) : []
         }
       };
     }

@@ -50,7 +50,8 @@ let _authInFlight = false;
 let _authMode     = 'signin';
 
 auth.onAuthStateChanged(async user => {
-  if (user) {
+  // Anonymous sessions are guests: no badge, no record, no leaderboard entry.
+  if (user && !user.isAnonymous) {
     currentUser = user;
     _authInFlight = false;
     // Show lobby immediately — don't block on DB reads
@@ -83,6 +84,11 @@ auth.onAuthStateChanged(async user => {
     document.getElementById('setup-screen').style.display = '';
     document.getElementById('trainer-badge').style.display = 'none';
     document.getElementById('guest-badge').style.display = '';
+    // Guests still need a Firebase identity once the database rules require
+    // `auth != null` for writes (see database.rules.json). Anonymous sign-in is
+    // silent and needs no UI; if the Anonymous provider isn't enabled in the
+    // Firebase console this fails quietly and everything works as before.
+    if (!user) auth.signInAnonymously().catch(() => {});
   }
 });
 
@@ -497,17 +503,11 @@ async function loadDeck(fKey, deckName, forPlayer = loadingForPlayer) {
     if (G.started && roomCode) { console.warn('[loadDeck] game already started — not replacing live zones'); return; }
     const flat = [];
     for (const entry of Object.values(d.deck)) {
-      const card = {
-        id: entry.cardId,
-        name: entry.name,
-        supertype: entry.supertype,
-        images: { small: entry.img || '' },
-        subtypes: entry.subtypes || [],
-        hp: entry.hp || '0',
-        attacks: entry.attacks || [],
-        types: entry.types || []
-      };
-      for (let i = 0; i < entry.qty; i++) {
+      // Never trust stored card fields — rebuild from the catalogue (see
+      // cardFromDeckEntry in game-utils.js for why).
+      const card = cardFromDeckEntry(entry, CARD_DATA);
+      const qty = Math.max(0, Math.min(60, parseInt(entry.qty) || 0));
+      for (let i = 0; i < qty; i++) {
         flat.push(enrichCard({ ...card, uid: `${card.id}-${Math.random().toString(36).slice(2,7)}` }));
       }
     }
@@ -1382,13 +1382,15 @@ function showResumePanel() {
       const p1rem = Array.isArray(prizes1) ? prizes1.filter(p=>p).length : Object.values(prizes1).filter(p=>p).length;
       const p2rem = Array.isArray(prizes2) ? prizes2.filter(p=>p).length : Object.values(prizes2).filter(p=>p).length;
       const age = d.created ? Math.round((Date.now() - d.created) / 60000) : '?';
-      return `<div onclick="resumeGame('${code}')" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;cursor:pointer;text-align:left;transition:border-color .1s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      // Room codes and deck names come from the database: escape them, and
+      // pass the code through a data attribute rather than an inline handler.
+      return `<div data-code="${escapeHtml(code)}" onclick="resumeGame(this.dataset.code)" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:10px 14px;cursor:pointer;text-align:left;transition:border-color .1s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${code}</span>
+          <span style="font-family:var(--font);font-size:11px;color:var(--accent);letter-spacing:2px">${escapeHtml(code)}</span>
           <span style="font-size:10px;color:var(--muted)">${age}m ago</span>
         </div>
         <div style="font-size:11px;color:var(--text2);margin-top:4px">
-          🔵 ${d.p1DeckName||'?'} &nbsp;vs&nbsp; 🔴 ${d.p2DeckName||'?'}
+          🔵 ${escapeHtml(d.p1DeckName||'?')} &nbsp;vs&nbsp; 🔴 ${escapeHtml(d.p2DeckName||'?')}
         </div>
         <div style="font-size:10px;color:var(--muted);margin-top:3px">
           ${turnLabel} &nbsp;·&nbsp; P1 prizes: ${p1rem} left &nbsp;·&nbsp; P2 prizes: ${p2rem} left

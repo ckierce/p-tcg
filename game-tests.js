@@ -30,6 +30,7 @@ const {
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   buildEvolutionStackUnder, devolveTopStage,
   inPlayPokemonUids, evolvedThisTurnAfterEndTurn, evolveLockReason,
+  safeImageUrl, plainText, cardFromDeckEntry,
   // Multi-status helpers (added when status went from single-string to 3 slots)
   statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
   activeStatuses, statusFieldsFromLegacy,
@@ -6154,6 +6155,46 @@ section('PROMOS: devolveTopStage (Devolution Beam) is the inverse of buildEvolut
   assert('GAME_STATE_DEFAULTS includes lightScreen (Electabuzz Promo)', GAME_STATE_DEFAULTS.lightScreen === false);
   const c = { lightScreen: true }; clearActiveOnlyEffects(c);
   assert('clearActiveOnlyEffects clears lightScreen (benching ends it)', c.lightScreen === false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECURITY: saved-deck data is untrusted (the database URL is public)
+//
+// Card fields stored in Firebase used to be copied straight into card objects
+// and from there into innerHTML (hand, picker, log). A deck with a card named
+// "<img onerror=…>" would have run script on every client that loaded it.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('SECURITY: deck entries are rebuilt from the catalogue / sanitized');
+{
+  const catalogue = { 'base1-58': { id: 'base1-58', name: 'Pikachu', supertype: 'Pokémon', hp: '40', images: { small: 'card-images/base1-58.jpg' }, attacks: [{ name: 'Gnaw' }] } };
+  const known = cardFromDeckEntry({ cardId: 'base1-58', name: '<img src=x onerror=alert(1)>', img: 'javascript:alert(1)', hp: '999' }, catalogue);
+  assert('known id: name, image and hp come from the catalogue, not the stored entry', known.name === 'Pikachu' && known.images.small === 'card-images/base1-58.jpg' && known.hp === '40');
+  const unknown = cardFromDeckEntry({ cardId: 'zz-1', name: 'Evil <b>card</b>', supertype: 'Pokémon', img: 'javascript:alert(1)', subtypes: ['<x>'], types: ['Fire'] }, catalogue);
+  assert('unknown id: markup stripped from the name', unknown.name === 'Evil bcard/b');
+  assert('unknown id: non-http image dropped', unknown.images.small === '');
+  assert('unknown id: subtypes/types sanitized, supertype kept', unknown.subtypes[0] === 'x' && unknown.types[0] === 'Fire' && unknown.supertype === 'Pokémon');
+  assert('unknown supertype falls back to Trainer', cardFromDeckEntry({ cardId: 'zz-2', supertype: 'Hacker' }, catalogue).supertype === 'Trainer');
+  assert('safeImageUrl: known hosts pass', safeImageUrl('https://images.pokemontcg.io/base1/58.png') === 'https://images.pokemontcg.io/base1/58.png' && safeImageUrl('card-images/base1-58.jpg') === 'card-images/base1-58.jpg');
+  assert('safeImageUrl: other hosts / schemes / attribute breakouts are dropped', safeImageUrl('https://evil.example/x.png') === '' && safeImageUrl('x" onerror="alert(1)') === '' && safeImageUrl(null) === '');
+  assert('plainText: strips <>"\'&` and caps length', plainText('a<b>"c"&`d`', 5) === 'abcd');
+  assert('plainText: null → empty string', plainText(null) === '');
+
+  const fs = require('fs');
+  const render = fs.readFileSync('./game-render.js', 'utf8');
+  const logFn = render.slice(render.indexOf('function renderLog'), render.indexOf('function renderLog') + 900);
+  assert('renderLog escapes log messages (trainer/card names from the other client)', /escapeHtml\(e\.msg\)/.test(logFn));
+  assert('hand cards escape card names in innerHTML', /hand-card-name">\$\{escapeHtml\(card\.name\)\}/.test(render));
+  const init = fs.readFileSync('./game-init.js', 'utf8');
+  assert('resume list escapes room codes and deck names', /escapeHtml\(d\.p1DeckName/.test(init) && /data-code="\$\{escapeHtml\(code\)\}"/.test(init));
+  assert('game loadDeck rebuilds cards via cardFromDeckEntry', /cardFromDeckEntry\(entry, CARD_DATA\)/.test(init));
+  assert('guests are given an anonymous Firebase identity', /signInAnonymously\(\)/.test(init) && /user\.isAnonymous/.test(init));
+  const builder = fs.readFileSync('./deck-builder.html', 'utf8');
+  assert('deck builder escapes deck / folder names and encodes onclick arguments', /d-name">\$\{escapeHtml\(d\.name\)\}/.test(builder) && /encArg\(d\.name\)/.test(builder) && !/encodeURIComponent\(d\.name\)/.test(builder));
+  assert('deck builder stamps saved decks with their owner', /owner: auth\.currentUser\?\.uid/.test(builder));
+  const rules = JSON.parse(fs.readFileSync('./database.rules.json', 'utf8')).rules;
+  assert('rules: root is closed', rules['.read'] === false && rules['.write'] === false);
+  assert('rules: games and decks require a signed-in identity to write', /auth != null/.test(rules.games.$code['.write']) && /auth != null/.test(rules.decks.$folder.$deck['.write']));
+  assert('rules: users are private to their owner', /auth\.uid === \$uid/.test(rules.users.$uid['.read']));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

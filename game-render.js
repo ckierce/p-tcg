@@ -78,10 +78,10 @@ function typeTag(card) {
 //                 key stat as plain text (no image)
 function cardFace(card) {
   if (!card) return '';
-  if (CURRENT_SKIN !== 'sheet') {
-    return `<img src="${card.images?.small || ''}" alt="${card.name || ''}">`;
-  }
   const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s => s);
+  if (CURRENT_SKIN !== 'sheet') {
+    return `<img src="${esc(card.images?.small || '')}" alt="${esc(card.name || '')}">`;
+  }
   const name = esc(card.name || '');
   let accent, kind, stat = '';
   if (card.supertype === 'Energy') {
@@ -383,11 +383,11 @@ function renderHands() {
       const subText = card.supertype === 'Pokémon'
         ? `${pipHtml}${(card.subtypes || []).join(' ')} · ${card.hp || '?'}HP`
         : `${pipHtml}${card.supertype || ''}`;
-      return `<div class="hand-card" id="hand-card-${localPlayer}-${i}" tabindex="0" role="button" aria-label="${card.name}"
+      return `<div class="hand-card" id="hand-card-${localPlayer}-${i}" tabindex="0" role="button" aria-label="${escapeHtml(card.name)}"
         onclick="event.stopPropagation();selectHandCard(${localPlayer},${i},event)">
-        <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
+        <img class="hand-card-img" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(card.name)}">
         <div class="hand-card-info">
-          <div class="hand-card-name">${card.name}</div>
+          <div class="hand-card-name">${escapeHtml(card.name)}</div>
           <div class="hand-card-sub">${subText}</div>
         </div>
       </div>`;
@@ -473,9 +473,9 @@ function renderSidebarP2Hand() {
     sideHand.map((card, i) => {
       const imgSrc = card.images?.small || '';
       return `<div class="hand-card" id="hand-card-${sidePlayer}-${i}">
-        <img class="hand-card-img" src="${imgSrc}" alt="${card.name}">
+        <img class="hand-card-img" src="${escapeHtml(imgSrc)}" alt="${escapeHtml(card.name)}">
         <div class="hand-card-info">
-          <div class="hand-card-name">${card.name}</div>
+          <div class="hand-card-name">${escapeHtml(card.name)}</div>
           <div class="hand-card-sub">${card.supertype || ''}</div>
         </div>
       </div>`;
@@ -623,7 +623,9 @@ function renderLog() {
       html += `<div class="log-turn-header">— Turn ${e.turn} —</div>`;
       lastTurn = e.turn;
     }
-    html += `<div class="log-entry${e.important ? ' important' : ''}">${e.msg}</div>`;
+    // Log lines carry trainer names and card names from the other client —
+    // text, never markup.
+    html += `<div class="log-entry${e.important ? ' important' : ''}">${escapeHtml(e.msg)}</div>`;
   });
   html += '</div>';
   container.innerHTML = html;
@@ -957,6 +959,9 @@ function enrichCard(card) {
   }
   return {
     ...card,
+    // A known id is always shown with the catalogue's own name — the copy in a
+    // peer's state push or a saved deck is not ours to trust.
+    name: full.name || card.name,
     // Prefer the catalogue's image paths: cards.json now points at the local
     // card-images/ mirror, while decks saved earlier carry the slow remote URL.
     images: { ...(card.images || {}), ...(full.images || {}) },
@@ -1565,8 +1570,8 @@ async function openCardPicker({ title, subtitle, cards, maxSelect = 1, showDone 
       return `
         <div class="picker-card${isEnergy ? ' is-energy' : ''}" id="picker-card-${i}"
           onclick="event.stopPropagation();togglePickerCard(${i})">
-          <img src="${card.images?.small || ''}" alt="${card.name}">
-          <div class="picker-card-name">${card.name}</div>
+          <img src="${escapeHtml(card.images?.small || '')}" alt="${escapeHtml(card.name)}">
+          <div class="picker-card-name">${escapeHtml(card.name)}</div>
           ${energyHtml}${dmg}${status}
           <div class="sel-badge">✓</div>
         </div>
@@ -1669,8 +1674,8 @@ function showLassModal(snapshots, lassCaster) {
     } else {
       grid.innerHTML = cards.map(c => `
         <div class="lass-card">
-          <img src="${c.img}" alt="${c.name}" class="${c.isTrainer ? 'trainer-highlight' : ''}">
-          <div class="lass-card-name">${c.name}${c.isTrainer ? ' ✕' : ''}</div>
+          <img src="${escapeHtml(c.img)}" alt="${escapeHtml(c.name)}" class="${c.isTrainer ? 'trainer-highlight' : ''}">
+          <div class="lass-card-name">${escapeHtml(c.name)}${c.isTrainer ? ' ✕' : ''}</div>
         </div>`).join('');
     }
   }
