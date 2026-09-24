@@ -53,7 +53,7 @@ function getActionsForCard(player, card, handIdx) {
         const justEvolved = evolvedUids.includes(p.active.uid);
         const blocked = prehistoric || justEvolved;
         const tooltip = prehistoric ? 'Aerodactyl\u2019s Prehistoric Power prevents evolution'
-                       : justEvolved ? 'Cannot evolve again this turn' : null;
+                       : justEvolved ? evolveLockReason(G, p.active) : null;
         actions.push({
           label: `Evolve Active (${evolvesFrom} → ${card.name})`,
           fn: blocked ? null : () => evolve(player, handIdx, 'active', null),
@@ -67,7 +67,7 @@ function getActionsForCard(player, card, handIdx) {
           const justEvolved = evolvedUids.includes(b.uid);
           const blocked = prehistoric || justEvolved;
           const tooltip = prehistoric ? 'Aerodactyl\u2019s Prehistoric Power prevents evolution'
-                         : justEvolved ? 'Cannot evolve again this turn' : null;
+                         : justEvolved ? evolveLockReason(G, b) : null;
           actions.push({
             label: `Evolve Bench ${i+1} (${evolvesFrom} → ${card.name})`,
             fn: blocked ? null : () => evolve(player, handIdx, 'bench', i),
@@ -159,8 +159,19 @@ function getActionsForCard(player, card, handIdx) {
       unplayableReason = 'No bench Pokémon to choose';
     else if (/^pokémon trader$/i.test(nm) && (!p.hand.some((c,i) => i !== handIdx && c.supertype === 'Pokémon') || !p.deck.some(c => c.supertype === 'Pokémon')))
       unplayableReason = !p.deck.some(c => c.supertype === 'Pokémon') ? 'No Pokémon in deck' : 'No other Pokémon in hand to trade';
-    else if (/^pokémon breeder$/i.test(nm) && !p.hand.some((c,i) => i !== handIdx && c.subtypes?.includes('Stage 2')))
-      unplayableReason = 'No Stage 2 Pokémon in hand';
+    else if (/^pokémon breeder$/i.test(nm)) {
+      // Breeder's text: "only when you would be allowed to evolve that Pokémon
+      // anyway" — so besides a Stage 2 in hand it needs a matching Basic in
+      // play that isn't locked (placed this turn, or the first-turn rule).
+      const stage2s = p.hand.filter((c, i) => i !== handIdx && c.subtypes?.includes('Stage 2'));
+      const roots = typeof breederRootBasicName === 'function'
+        ? stage2s.map(s => breederRootBasicName(s, p)).filter(Boolean) : null;
+      const basics = roots ? myPokemon.filter(c => c.subtypes?.includes('Basic') && roots.includes(c.name)) : [];
+      if (!stage2s.length) unplayableReason = 'No Stage 2 Pokémon in hand';
+      else if (roots && !basics.length) unplayableReason = 'No matching Basic Pokémon in play';
+      else if (roots && basics.every(c => evolveLockReason(G, c)))
+        unplayableReason = (G.turnNum || 0) <= 2 ? "Can't evolve on your first turn" : 'That Basic was played this turn';
+    }
     else if (/^pokémon flute$/i.test(nm) && (!oppP.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) || oppP.bench.every(s => s !== null)))
       unplayableReason = !oppP.discard.some(c => c.supertype === 'Pokémon' && c.subtypes?.includes('Basic')) ? "No Basic Pokémon in opponent's discard" : "Opponent's bench is full";
     else if (/^devolution spray$/i.test(nm) && !myPokemon.some(s => s.subtypes?.includes('Stage 1') || s.subtypes?.includes('Stage 2')))
@@ -213,9 +224,9 @@ function evolve(player, handIdx, zone, benchIdx) {
   if (!target) { showToast('Target not found!', true); return; }
 
   // Guard: cannot evolve a Pokémon placed or evolved this turn
-  const evolvedUids = G.evolvedThisTurn || [];
-  if (evolvedUids.includes(target.uid)) {
-    showToast(`${target.name} was played this turn and cannot be evolved yet!`, true);
+  const lockReason = evolveLockReason(G, target);
+  if (lockReason) {
+    showToast(lockReason, true);
     return;
   }
 
@@ -2036,7 +2047,9 @@ function _finishEndTurn(prev) {
   G.shiftedThisTurn = false;
   G.stepInThisTurn = false;
   G.specialDeliveryThisTurn = [];
-  G.evolvedThisTurn = [];
+  // Keep the second player's SETUP Pokémon locked through their first turn
+  // (turnNum 2); every later turn starts with a clean list.
+  G.evolvedThisTurn = evolvedThisTurnAfterEndTurn(G);
 
   // ── Flag expiry at end of turn ──
   // `prev` = player whose turn just ENDED. `G.turn` = player whose turn is STARTING.

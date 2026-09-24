@@ -809,9 +809,9 @@ const TRAINER_EFFECTS = {
     );
 
     if (!validTargets.length) {
-      const hasBasic = allInPlay.some(c => c.name === rootBasicName);
-      showToast(hasBasic
-        ? `${rootBasicName} was played this turn and can't be evolved yet!`
+      const lockedBasic = allInPlay.find(c => c.name === rootBasicName);
+      showToast(lockedBasic
+        ? evolveLockReason(G, lockedBasic)
         : `No ${rootBasicName} in play to evolve into ${stage2.name}!`, true);
       return;
     }

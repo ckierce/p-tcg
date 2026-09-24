@@ -700,9 +700,38 @@ function transitionPhase(phase, extras) {
   if (typeof updatePhase === 'function') updatePhase();
 }
 
+// ── First-turn evolution lock ─────────────────────────────────────────────────
+// Base Set rulebook: Pokémon put into play during setup count as played on
+// their owner's FIRST turn, so neither player may evolve on their first turn
+// (turnNum 1 = the first player's, turnNum 2 = the second player's). doneSetup
+// seeds G.evolvedThisTurn with every Pokémon in play, and _finishEndTurn
+// re-seeds it with the second player's Pokémon when their first turn begins.
+// Every evolution path (hand menu, evolve(), Pokémon Breeder, the AI) already
+// consults G.evolvedThisTurn, so the lock needs no per-site changes.
+function inPlayPokemonUids(g, player) {
+  const p = g?.players?.[player];
+  if (!p) return [];
+  return [p.active, ...(p.bench || [])].filter(c => c && c.uid).map(c => c.uid);
+}
+// Value of G.evolvedThisTurn for the turn that is STARTING (call after G.turn
+// and G.turnNum have been advanced).
+function evolvedThisTurnAfterEndTurn(g) {
+  return (g.turnNum || 0) === 2 ? inPlayPokemonUids(g, g.turn) : [];
+}
+// Why `card` can't be evolved right now, or null when it can. Shared by the
+// hand-menu tooltip, evolve()'s toast and Pokémon Breeder's toast so the
+// wording matches: "first turn" during turns 1–2, "played this turn" after.
+function evolveLockReason(g, card) {
+  if (!card || !(g?.evolvedThisTurn || []).includes(card.uid)) return null;
+  return (g.turnNum || 0) <= 2
+    ? `${card.name} can't be evolved on your first turn!`
+    : `${card.name} was played this turn and can't be evolved yet!`;
+}
+
 if (typeof module !== 'undefined') {
   module.exports = {
     RULES, GAME_STATE_DEFAULTS,
+    inPlayPokemonUids, evolvedThisTurnAfterEndTurn, evolveLockReason,
     energyValue, validateRetreatPayment, canAffordAttack, parseStatusEffects,
     padBench, isLegalRetreatStatus, invisibleWallBlocks,
     isValidDeckSize, countCopies,

@@ -29,6 +29,7 @@ const {
   clearActiveOnlyEffects, isImmuneToAttackFrom, pounceReductionFor,
   GENDER_LINE_BASICS, genderLineBasicFor, breederRootMatches,
   buildEvolutionStackUnder, devolveTopStage,
+  inPlayPokemonUids, evolvedThisTurnAfterEndTurn, evolveLockReason,
   // Multi-status helpers (added when status went from single-string to 3 slots)
   statusSlot, setStatusSlot, clearAllStatus, hasAnyStatus,
   activeStatuses, statusFieldsFromLegacy,
@@ -6156,6 +6157,32 @@ section('PROMOS: devolveTopStage (Devolution Beam) is the inverse of buildEvolut
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGRESSION: no evolving on either player's first turn
+//
+// Craig's bug: "Pokémon Breeder is usable on the same turn as when Pokémon are
+// placed." Pokémon placed during SETUP were never added to G.evolvedThisTurn,
+// so the first player could Breeder (or evolve) them on turn 1. Base Set rule:
+// setup Pokémon count as played on their owner's first turn. doneSetup seeds
+// the lock for both players; _finishEndTurn keeps the second player's Pokémon
+// locked through turn 2 (their first turn) and clears everything after that.
+// ═══════════════════════════════════════════════════════════════════════════════
+section('First-turn evolution lock helpers (Pokémon Breeder on turn 1)');
+{
+  const g = { turn: 2, turnNum: 2, evolvedThisTurn: ['b'], players: {
+    1: { active: { uid: 'a', name: 'A' }, bench: [null, { uid: 'a2', name: 'A2' }, null, null, null] },
+    2: { active: { uid: 'b', name: 'B' }, bench: [null, null, null, null, null] } } };
+  assertEqual('inPlayPokemonUids: active + bench, holes skipped', inPlayPokemonUids(g, 1), ['a', 'a2']);
+  assertEqual('inPlayPokemonUids: unknown player → []', inPlayPokemonUids(g, 3), []);
+  assertEqual("turn 2 (second player's first turn): their in-play Pokémon stay locked", evolvedThisTurnAfterEndTurn(g), ['b']);
+  assertEqual('turn 3+: nothing carried over', evolvedThisTurnAfterEndTurn({ ...g, turnNum: 3 }), []);
+  assertEqual('missing turnNum (old saved state): nothing carried over', evolvedThisTurnAfterEndTurn({ ...g, turnNum: undefined }), []);
+  assert('evolveLockReason: unlocked card → null', evolveLockReason(g, g.players[1].active) === null);
+  assert('evolveLockReason: null card → null', evolveLockReason(g, null) === null);
+  assert('evolveLockReason: "first turn" wording on turns 1–2', /first turn/.test(evolveLockReason(g, g.players[2].active)));
+  assert('evolveLockReason: "played this turn" wording from turn 3', /played this turn/.test(evolveLockReason({ ...g, turnNum: 5 }, g.players[2].active)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGRESSION: bench damage still resolves when the main hit KOs the defender
 //
 // Craig's bug: "Blizzard doesn't do bench damage if it knocks out the opposing
@@ -6564,6 +6591,58 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         G.players[1].discard.includes(ebuzz) && G.players[1].active !== ebuzz);
       assertEqual('Self-KO: the opponent takes a prize', G.players[2].prizes.filter(Boolean).length, p2PrizesBefore - 1);
       assert('Self-KO: P1 must promote from the bench', G.phase === 'PROMOTE' && G.pendingPromotion === 1);
+
+      // ── REGRESSION: Buzzap KNOCKS OUT Electrode — the opponent takes a prize ──
+      // Craig's bug: "Buzzap knocks out Electrode so the opponent should get a
+      // prize." doBuzzap did a bare discard.push + slot = null, skipping the prize.
+      G = freshG();
+      const buzzTarget = mk('Chansey');
+      const electrode = mkBy('Electrode', 'Buzzap');
+      G.players[1].active = buzzTarget; G.players[1].bench[0] = electrode;
+      G.players[2].active = mk('Chansey');
+      const p2PrizesBeforeBuzzap = G.players[2].prizes.filter(Boolean).length;
+      await run('doBuzzap')(1, 0);
+      await settle();
+      assert('Buzzap: Electrode is Knocked Out (in P1 discard, bench slot empty)', G.players[1].discard.includes(electrode) && G.players[1].bench[0] === null);
+      assertEqual('Buzzap: the chosen Pokémon got 2 Energy', buzzTarget.attachedEnergy.length, 2);
+      assertEqual('Buzzap: the opponent takes a prize for the self-KO', G.players[2].prizes.filter(Boolean).length, p2PrizesBeforeBuzzap - 1);
+      assert('Buzzap: no promotion needed (bench KO) and the game goes on', G.phase === 'MAIN' && G.started === true);
+      G = freshG();
+      G.players[2].prizes = [{ card: {} }];
+      const electrode2 = mkBy('Electrode', 'Buzzap');
+      G.players[1].active = mk('Chansey'); G.players[1].bench[0] = electrode2;
+      G.players[2].active = mk('Chansey');
+      await run('doBuzzap')(1, 0);
+      await settle();
+      assert("Buzzap on the opponent's last prize ends the game for them", G.started === false && G.winner === 2);
+
+      // ── REGRESSION: no evolving on either player's first turn (Pokémon Breeder on turn 1) ──
+      run("flipCoin = function(){ return Promise.resolve(true); };"); // heads → P1 goes first
+      G = freshG();
+      G.phase = 'SETUP'; G.turn = 1; G.turnNum = 0; G.evolvedThisTurn = [];
+      const sqP1 = mk('Squirtle'), sqP2 = mk('Squirtle'), ratP2 = mk('Rattata');
+      G.players[1].active = sqP1; G.players[2].active = sqP2; G.players[2].bench[0] = ratP2;
+      G.players[1].deck = [mk('Bill'), mk('Bill')]; G.players[2].deck = [mk('Bill'), mk('Bill')];
+      const ftWartortle = mk('Wartortle'), ftBreeder = mk('Pokémon Breeder'), ftBlastoise = mk('Blastoise');
+      G.players[1].hand = [ftWartortle, ftBreeder, ftBlastoise];
+      await run('doneSetup')();
+      await settle();
+      assert('doneSetup: play started, P1 on turn 1', G.phase === 'MAIN' && G.turn === 1 && G.turnNum === 1);
+      assert('Turn 1: every SETUP Pokémon of BOTH players is locked', [sqP1, sqP2, ratP2].every(c => G.evolvedThisTurn.includes(c.uid)));
+      run('evolve')(1, G.players[1].hand.indexOf(ftWartortle), 'active', null);
+      assert('Turn 1: Squirtle → Wartortle is refused', G.players[1].active === sqP1 && G.players[1].hand.includes(ftWartortle));
+      const breederMenu = () => run('getActionsForCard')(1, ftBreeder, G.players[1].hand.indexOf(ftBreeder)).find(a => /Cannot play|Play Trainer/.test(a.label));
+      assert('Turn 1: Pokémon Breeder is greyed out with the first-turn reason', breederMenu() && /first turn/i.test(breederMenu().label));
+      run('endTurn')(); await settle();
+      assert("Turn 2 (P2's first turn): P2's SETUP Pokémon stay locked, P1's are released",
+        G.turn === 2 && G.turnNum === 2 && G.evolvedThisTurn.includes(sqP2.uid) && G.evolvedThisTurn.includes(ratP2.uid) && !G.evolvedThisTurn.includes(sqP1.uid));
+      run('endTurn')(); await settle();
+      assert('Turn 3: nothing is locked any more', G.turn === 1 && G.turnNum === 3 && G.evolvedThisTurn.length === 0);
+      assert('Turn 3: Pokémon Breeder is playable (Squirtle in play, Blastoise in hand)', breederMenu() && breederMenu().label === 'Play Trainer');
+      // Breeder with a Stage 2 whose Basic is NOT in play stays unplayable, with a useful reason.
+      G.players[1].hand = [ftBreeder, mk('Charizard')];
+      const noBasic = run('getActionsForCard')(1, ftBreeder, 0).find(a => /Cannot play|Play Trainer/.test(a.label));
+      assert('Breeder: no matching Basic in play → "No matching Basic"', noBasic && /No matching Basic/.test(noBasic.label));
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });

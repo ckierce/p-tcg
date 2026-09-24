@@ -686,6 +686,10 @@ async function doneSetup() {
   G.turn = firstPlayer;
   G.turnNum = 1;
   G.energyPlayedThisTurn = false;
+  // Neither player may evolve on their first turn: everything placed during
+  // SETUP counts as played on that turn (see inPlayPokemonUids in game-utils).
+  // Seeding here (on the host) reaches P2 through the state push below.
+  G.evolvedThisTurn = [...inPlayPokemonUids(G, 1), ...inPlayPokemonUids(G, 2)];
   // Clear the SETUP ready flags now that we've left SETUP — they're meaningless
   // outside the setup phase, and the auto-advance guard needs to be cleared so
   // a future game (e.g. via playAgain) can use it fresh.
@@ -1428,6 +1432,7 @@ function resumeGame(code) {
       mergeSetupSlot(role, ownSlot);
       setupReady[role] = !!ownSlot.setupReady;
       renderField(role);
+      refreshSetupReadyUI(false); // button + midline show the re-adopted flag
     }
     // Rejoining DURING setup needs the same slot-merge handling as the original
     // create/join listeners. The stored `state` snapshot is written by P1 and can
@@ -1828,6 +1833,7 @@ function mergeSetupSlot(playerNum, slotData) {
   const hasZones  = Object.prototype.hasOwnProperty.call(slotData, 'zones');
   if (hasActive) p.active = slotData.active ? enrichCard(slotData.active) : null;
   if (hasBench)  p.bench  = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
+  const readyChanged = hasReady && playerNum !== myRole && setupReady[playerNum] !== !!slotData.setupReady;
   if (hasReady && playerNum !== myRole) setupReady[playerNum] = !!slotData.setupReady;
   // Private zones travel in the slot too (see pushGameState's non-host SETUP
   // branch). Firebase drops empty arrays entirely, so a missing zone key means
@@ -1850,6 +1856,14 @@ function mergeSetupSlot(playerNum, slotData) {
   renderField(1);
   renderField(2);
   updatePerspectiveLabels();
+  // The opponent's READY flag flipped: update our button/midline and say so.
+  if (readyChanged) {
+    refreshSetupReadyUI(false);
+    if (typeof showToast === 'function') {
+      const who = typeof oppDisplayName === 'function' ? oppDisplayName() : `Player ${playerNum}`;
+      showToast(setupReady[playerNum] ? `${who} is ready!` : `${who} is no longer ready.`, false, setupReady[playerNum] ? 'ok' : '');
+    }
+  }
   // After the merge, P1 may now have both ready flags true → auto-advance
   maybeAutoAdvanceSetup();
 }
@@ -1900,8 +1914,35 @@ function toggleSetupReady() {
     _pushPreservesReady = false;
   }
   renderField(myRole);
+  refreshSetupReadyUI(true);
   // If we're P1 and just set our flag, opponent may already be ready
   maybeAutoAdvanceSetup();
+}
+
+// ── Make the SETUP handshake visible on THIS client ──────────────────────────
+// renderField() only redraws the cards; the button's text and colour live in
+// applyRoleVisibility, which the ready toggle never called — so P2 clicked
+// I'M READY and nothing on screen changed ("did that register? has P1 hit
+// start?"). Called after our own toggle (announce = true → toast), when the
+// opponent's flag arrives via mergeSetupSlot, and when a field change resets
+// our flag in pushGameState. Sets the button, the midline and a toast so all
+// three agree on who is ready.
+function refreshSetupReadyUI(announce) {
+  if (G.phase !== 'SETUP' || !G.started || myRole === null || vsComputer) return;
+  const opp = myRole === 1 ? 2 : 1;
+  const oppName = typeof oppDisplayName === 'function' ? oppDisplayName() : `Player ${opp}`;
+  const me = !!setupReady[myRole], them = !!setupReady[opp];
+  const myBtn = myRole === 1 ? 'DONE SETUP' : "I'M READY";
+  if (typeof applyRoleVisibility === 'function') applyRoleVisibility();
+  let line;
+  if (me && them) line = '✅ Both players ready — starting…';
+  else if (me)    line = `✅ You're ready — waiting for ${oppName} to finish setup…`;
+  else if (them)  line = `${oppName} is ready — place your Pokémon, then click ${myBtn}`;
+  else            line = `Place your Active Pokémon (and optional bench), then click ${myBtn}`;
+  if (typeof setMidline === 'function') setMidline(line);
+  if (announce && typeof showToast === 'function') {
+    showToast(me ? `You're ready! Waiting for ${oppName}…` : `Ready cancelled — click ${myBtn} when you're set.`, !me, me ? 'ok' : '');
+  }
 }
 
 // ── Push state to Firebase ────────────────────────
@@ -1914,8 +1955,12 @@ async function pushGameState() {
   if (G.phase === 'SETUP' && G.started && myRole !== null && !_pushPreservesReady) {
     if (setupReady[myRole]) {
       setupReady[myRole] = false;
-      // Re-render the button so P1/P2 sees their flag was reset
-      try { renderField(myRole); } catch (e) {}
+      // Re-render the button so P1/P2 sees their flag was reset, and say why.
+      try {
+        renderField(myRole);
+        refreshSetupReadyUI(false);
+        showToast(`You changed your setup — click ${myRole === 1 ? 'DONE SETUP' : "I'M READY"} again when you're done.`, true);
+      } catch (e) {}
     }
   }
   isWriting = true;
@@ -2277,6 +2322,8 @@ function applyRoleVisibility() {
       const oppRole    = myRole === 1 ? 2 : 1;
       const oppReady   = !!setupReady[oppRole];
       const isMultiplayer = myRole !== null && !vsComputer;
+      // Green "ready" look while OUR flag is up — the click has registered.
+      endBtn.classList.toggle('ready', isMultiplayer && myReady);
       if (!isMultiplayer) {
         // Single-player / vsComputer — original DONE SETUP behavior
         endBtn.textContent = 'DONE SETUP';
@@ -2288,8 +2335,8 @@ function applyRoleVisibility() {
         endBtn.style.pointerEvents = 'none';
       } else if (myReady && !oppReady) {
         // We're ready, opponent isn't — clicking again un-readies us
-        endBtn.textContent = `WAITING FOR P${oppRole}`;
-        endBtn.style.opacity = '0.7';
+        endBtn.textContent = `✓ READY — WAITING FOR P${oppRole}`;
+        endBtn.title = 'Click again to cancel ready';
       } else if (!myReady && oppReady) {
         // Opponent is ready, we aren't — prompt us to confirm
         endBtn.textContent = myRole === 1 ? 'DONE SETUP' : "I'M READY";
@@ -2298,6 +2345,8 @@ function applyRoleVisibility() {
         endBtn.textContent = myRole === 1 ? 'DONE SETUP' : "I'M READY";
       }
     } else {
+      endBtn.classList.remove('ready');
+      endBtn.title = '';
       const isAiTurn = vsComputer && G.turn === 2;
       const canAct = !isAiTurn && (G.turn === myRole ||
                      (G.phase === 'PROMOTE' && G.pendingPromotion === myRole));
@@ -2322,7 +2371,7 @@ function applyRoleVisibility() {
         endBtn.disabled = true;
       } else if (isAiTurn) {
         endBtn.textContent = 'AI THINKING...';
-      } else if (!endBtn.textContent || ['WAITING FOR P1', 'WAITING FOR P2', "I'M READY", 'STARTING...', 'BOTH READY', 'WAITING...', 'AI THINKING...', 'CHOOSE A POKÉMON', 'COMPUTER CHOOSING...', 'OPPONENT CHOOSING...'].includes(endBtn.textContent)) {
+      } else if (!endBtn.textContent || ['WAITING FOR P1', 'WAITING FOR P2', '✓ READY — WAITING FOR P1', '✓ READY — WAITING FOR P2', "I'M READY", 'STARTING...', 'BOTH READY', 'WAITING...', 'AI THINKING...', 'CHOOSE A POKÉMON', 'COMPUTER CHOOSING...', 'OPPONENT CHOOSING...'].includes(endBtn.textContent)) {
         endBtn.textContent = 'END TURN';
       }
     }

@@ -413,9 +413,11 @@ async function doBuzzap(player, benchIdx) {
   target.attachedEnergy = target.attachedEnergy || [];
   target.attachedEnergy.push({ ...energyCard, uid: `buzzap-a-${Date.now()}` }, { ...energyCard, uid: `buzzap-b-${Date.now()}` });
 
-  p.discard.push(electrode);
-  p.bench[benchIdx] = null;
-  addLog(`P${player} used Buzzap! — ${electrode.name} sacrificed to give ${target.name} 2 ${chosenType} Energy!`, true);
+  addLog(`P${player} used Buzzap! — ${electrode.name} is Knocked Out to give ${target.name} 2 ${chosenType} Energy!`, true);
+  // Buzzap's text KNOCKS OUT Electrode, so the opponent takes a prize exactly
+  // as for any other KO. Route through koBenchAndPrize (discard + stack +
+  // energy + prize + win check) instead of a bare discard that skipped the prize.
+  if (koBenchAndPrize(player, benchIdx) === 'win') return;
   renderAll();
 }
 
