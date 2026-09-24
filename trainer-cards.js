@@ -874,6 +874,13 @@ async function playTrainer(player, handIdx, targetHint = null) {
   const card = p.hand[handIdx];
   if (!card) return;
   const name = card.name;
+  // Only Trainer cards belong here: the unimplemented-trainer fallback below
+  // discards whatever it is handed, so a Pokémon or Energy routed in by a
+  // stale drag target must bounce, not vanish.
+  if (card.supertype !== 'Trainer') {
+    showToast(`${name} is not a Trainer card!`, true);
+    return;
+  }
 
   // Headache block — opponent can't play Trainer cards this turn
   if (typeof isTrainerBlocked === 'function' && isTrainerBlocked(player)) {

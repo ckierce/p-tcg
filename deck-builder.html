@@ -68,6 +68,17 @@ header h1 span {
   letter-spacing: 1px;
   margin-right: 4px;
 }
+.unsaved-pill {
+  font-family: var(--font-title);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.unsaved-pill[hidden] { display: none; }
 .deck-summary strong {
   color: var(--accent);
   display: block;
@@ -916,7 +927,7 @@ select:focus { border-color: var(--accent); }
   .grid-section-header { font-size: 11px; }
 }
 </style>
-<link rel="stylesheet" href="theme.css?v=1b431bf106">
+<link rel="stylesheet" href="theme.css?v=ce50d7e543">
 </head>
 <body>
 
@@ -926,8 +937,9 @@ select:focus { border-color: var(--accent); }
     <div class="deck-summary" id="deck-summary">
       <strong>0 / 60</strong> cards
     </div>
+    <span class="unsaved-pill" id="unsaved-pill" hidden title="This deck differs from its last save">● Unsaved</span>
     <button class="btn btn-ghost hide-mobile" id="mydecks-btn" onclick="openDecksModal()">My Decks</button>
-    <a href="pokemon-game.html" class="btn btn-primary" style="text-decoration:none">▶ Go to Game</a>
+    <a href="pokemon-game.html" class="btn btn-primary" style="text-decoration:none" onclick="return goToGame(event)">▶ Go to Game</a>
   </div>
 </header>
 
@@ -965,7 +977,7 @@ select:focus { border-color: var(--accent); }
   <div class="deck-panel">
     <div class="deck-header">
       <div class="deck-name-row">
-        <input type="text" class="deck-name-input" id="deck-name" value="" placeholder="DECK NAME" aria-label="Deck name" oninput="this.classList.remove('error')">
+        <input type="text" class="deck-name-input" id="deck-name" value="" placeholder="DECK NAME" aria-label="Deck name" oninput="this.classList.remove('error');updateUnsavedPill()">
       </div>
       <div class="deck-stats">
         <div class="stat-box"><div class="stat-val" id="stat-poke">0</div><div class="stat-lbl">Pokémon</div></div>
@@ -1016,6 +1028,19 @@ select:focus { border-color: var(--accent); }
     <div class="import-actions">
       <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
       <button class="btn btn-primary" onclick="importDeckFromJSON()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Unsaved changes — goToGame() opens this when the deck differs from its last save -->
+<div class="modal-overlay" id="leave-modal" role="dialog" aria-modal="true" aria-labelledby="leave-title">
+  <div class="modal">
+    <h2 id="leave-title">Unsaved changes</h2>
+    <div class="import-help" id="leave-msg">This deck hasn't been saved. If you leave now, it will be lost.</div>
+    <div class="import-actions" style="flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="closeLeaveModal()">Cancel</button>
+      <button class="btn btn-ghost" onclick="leaveWithoutSaving()">Leave without saving</button>
+      <button class="btn btn-primary" onclick="saveAndGo()">Save &amp; Go to Game</button>
     </div>
   </div>
 </div>
@@ -1678,7 +1703,53 @@ function updateHeader() {
   summary.innerHTML = `<strong>${total} / 60</strong>cards`;
   summary.className = 'deck-summary' + (total >= MAX_DECK ? ' full' : '');
   updateMobileBadge();
+  updateUnsavedPill();
 }
+
+// ─── UNSAVED-CHANGES GUARD ──────────────────────────────────────────────────
+// A deck is "dirty" when its cards, counts or name differ from the last save
+// or load. Three layers, the usual pattern for editors: an Unsaved pill in the
+// header, a Save / Leave / Cancel dialog on Go to Game, and the browser's own
+// beforeunload prompt for close / refresh / back. An empty deck is never dirty
+// (Clear is undoable and nothing would be lost).
+let _savedSnapshot = JSON.stringify({ name: '', cards: [] });
+let _leaveConfirmed = false;
+function deckSnapshot() {
+  const name = (document.getElementById('deck-name')?.value || '').trim();
+  const cards = Object.entries(deck).map(([id, e]) => [id, e.qty]).sort((a, b) => a[0].localeCompare(b[0]));
+  return JSON.stringify({ name, cards });
+}
+function isDeckDirty() {
+  return Object.keys(deck).length > 0 && deckSnapshot() !== _savedSnapshot;
+}
+function markDeckSaved() { _savedSnapshot = deckSnapshot(); updateUnsavedPill(); }
+function updateUnsavedPill() {
+  const el = document.getElementById('unsaved-pill');
+  if (el) el.hidden = !isDeckDirty();
+}
+function goToGame(e) {
+  if (e) e.preventDefault();
+  if (!isDeckDirty()) { _leaveConfirmed = true; location.href = 'pokemon-game.html'; return false; }
+  const name = (document.getElementById('deck-name').value || '').trim();
+  document.getElementById('leave-msg').textContent = name
+    ? `"${name}" has unsaved changes. If you leave now, they will be lost.`
+    : 'This deck hasn\'t been saved. If you leave now, it will be lost.';
+  document.getElementById('leave-modal').classList.add('show');
+  return false;
+}
+function closeLeaveModal() { document.getElementById('leave-modal').classList.remove('show'); }
+function leaveWithoutSaving() { _leaveConfirmed = true; location.href = 'pokemon-game.html'; }
+async function saveAndGo() {
+  closeLeaveModal();
+  // saveDeck explains itself when it doesn't save (no name, empty deck, or a
+  // cancelled folder picker) — in that case we simply stay on the page.
+  if (await saveDeck()) { _leaveConfirmed = true; location.href = 'pokemon-game.html'; }
+}
+window.addEventListener('beforeunload', e => {
+  if (_leaveConfirmed || !isDeckDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 // ─── VALIDATE ───────────────────────────────────────────────────────────────
 function validateDeck(showResult) {
@@ -1709,20 +1780,21 @@ let lastUsedFolder = '';        // remembered across saves
 
 function fbKey(str) { return str.replace(/[.#$[\]]/g, '_'); }
 
+// Resolves true when the deck was written, false when it wasn't (and says why).
 async function saveDeck() {
   const name = document.getElementById('deck-name').value.trim();
   if (!name || name.toLowerCase() === 'my deck' || name.toLowerCase() === 'new deck') {
     showToast('Please give your deck a name before saving!', true);
     document.getElementById('deck-name').classList.add('error');
     document.getElementById('deck-name').focus();
-    return;
+    return false;
   }
-  if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return; }
+  if (!Object.keys(deck).length) { showToast('Deck is empty!', true); return false; }
 
   // Show custom folder picker modal instead of browser prompt
   const folderName = await pickSaveFolder();
-  if (folderName === null) return; // cancelled
-  if (!folderName.trim()) { showToast('Please choose or create a folder!', true); return; }
+  if (folderName === null) return false; // cancelled
+  if (!folderName.trim()) { showToast('Please choose or create a folder!', true); return false; }
   lastUsedFolder = folderName;
 
   showToast('Saving…');
@@ -1746,6 +1818,8 @@ async function saveDeck() {
   };
   await db.ref(`decks/${fbKey(folderName)}/${fbKey(name)}`).set(deckData);
   showToast(`"${name}" saved to ${folderName}!`);
+  markDeckSaved();
+  return true;
 }
 
 // Custom folder picker — returns folder name string or null if cancelled
@@ -2011,6 +2085,7 @@ async function loadDeck(encodedFKey, encodedName) {
   document.getElementById('deck-name').value = name;
   lastUsedFolder = d.folder || fKey;
   renderDeck(); refreshGridState(); validateDeck(false);
+  markDeckSaved(); // a freshly loaded deck matches its save
   closeDecksModal();
   showToast(`"${name}" loaded!`);
 }
@@ -2066,6 +2141,12 @@ document.addEventListener('keydown', e => {
 });
 document.getElementById('decks-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeDecksModal();
+});
+document.getElementById('leave-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeLeaveModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('leave-modal').classList.contains('show')) closeLeaveModal();
 });
 
 // Enter / Space activates the card tiles (role="button" divs) like a click

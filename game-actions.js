@@ -703,6 +703,21 @@ async function handleBenchClick(player, slotIdx, evt) {
   }
 }
 
+// Discard piles: the top card can be looked at any time, either side.
+// `slot` is the on-screen slot (1 = bottom, 2 = top); P2's perspective swaps
+// them, exactly as onActiveClick / handleBenchClick remap their slots.
+function onDiscardClick(slot, evt) {
+  const player = myRole === 2 ? (slot === 1 ? 2 : 1) : slot;
+  const pile = G.players[player]?.discard || [];
+  if (!pile.length) { showToast('That discard pile is empty.', true); return; }
+  const top = pile[pile.length - 1];
+  const src = top.images?.large || top.images?.small || '';
+  const actions = [];
+  if (src) actions.push({ label: `View Card (${top.name})`, fn: () => { closeActionMenu(); showCardDetail(src); } });
+  actions.push({ label: `${pile.length} card${pile.length === 1 ? '' : 's'} in this discard pile`, disabled: true, fn: () => {} });
+  showActionMenu(`${playerLabel(player)} — DISCARD`, actions, evt);
+}
+
 function cancelAction() {
   G.pendingAction = null;
   clearHighlights();

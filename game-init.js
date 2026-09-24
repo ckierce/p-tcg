@@ -761,15 +761,27 @@ function drawCard(player, auto = false) {
 // PLAY CARDS
 // ══════════════════════════════════════════════════
 function selectHandCard(player, handIdx, evt) {
-  if (G.phase === 'PROMOTE') {
-    showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true); return;
-  }
   // Role guard: only act on your own hand
   if (myRole !== null && player !== myRole) {
     showToast(`Those are Player ${player}'s cards!`, true); return;
   }
+  const handCard = G.players[player].hand[handIdx];
+  if (!handCard) return;
+  // Off-turn or mid-promotion: nothing can be played, but the card can still
+  // be read — a menu with the reason and View Card instead of a bare toast.
+  const viewOnly = (why) => {
+    const src = handCard.images?.large || handCard.images?.small || '';
+    const actions = [{ label: why, disabled: true, fn: () => {} }];
+    if (src) actions.push({ label: 'View Card', fn: () => { closeActionMenu(); showCardDetail(src); } });
+    showActionMenu(handCard.name, actions, evt);
+  };
+  if (G.phase === 'PROMOTE') {
+    viewOnly(G.pendingPromotion === player ? 'Choose a new Active Pokémon first' : `${playerLabel(G.pendingPromotion)} must choose a new Active first`);
+    return;
+  }
   if (G.phase !== 'SETUP' && G.turn !== player) {
-    showToast(`It's Player ${G.turn}'s turn!`, true); return;
+    viewOnly(`It's ${playerLabel(G.turn)}'s turn — view only`);
+    return;
   }
   // Clear any stale pending action (e.g. abandoned energy attach) before building new actions
   if (G.pendingAction) {
@@ -1094,6 +1106,18 @@ function addTouchDrag(el, player, handIdx) {
 }
 
 function executeDrop(dtype, dropEl, player, handIdx) {
+  // The drop type must match the card actually being dragged. A stale
+  // highlight (or a mis-targeted touch drop) must never route a card through
+  // the wrong play path — an Energy handed to playTrainer was discarded by
+  // its unimplemented-trainer fallback ("my Double Colorless vanished").
+  const dropped = G.players[player]?.hand?.[handIdx];
+  if (!dropped) return;
+  const expects = { valid: 'Pokémon', evolve: 'Pokémon', energy: 'Energy', trainer: 'Trainer', heal: 'Trainer' }[dtype];
+  const isFossilOrDoll = /mysterious fossil|clefairy doll/i.test(dropped.name) && dropped.supertype === 'Trainer';
+  if (!expects || !(dropped.supertype === expects || (dtype === 'valid' && isFossilOrDoll))) {
+    showToast(`Can't play ${dropped.name} there.`, true);
+    return;
+  }
   // Determine zone and benchIdx from element id
   const id = dropEl.id || dropEl.closest('[id]')?.id || '';
   let zone = 'active', benchIdx = null;
@@ -1217,8 +1241,11 @@ function highlightSlot(id, type) {
 }
 
 function clearDragHighlights() {
-  document.querySelectorAll('.drag-valid, .drag-valid-evolve, .drag-valid-energy, .drag-valid-heal').forEach(el => {
-    el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal');
+  // Every highlight class highlightSlot() can set must be swept here. The
+  // trainer class used to be missing, so a slot stayed a "trainer" drop target
+  // after a Potion drag and later swallowed an Energy card (see executeDrop).
+  document.querySelectorAll('.drag-valid, .drag-valid-evolve, .drag-valid-energy, .drag-valid-heal, .drag-valid-trainer').forEach(el => {
+    el.classList.remove('drag-valid', 'drag-valid-evolve', 'drag-valid-energy', 'drag-valid-heal', 'drag-valid-trainer');
     delete el.dataset.dragType;
   });
 }
@@ -1243,29 +1270,10 @@ function wireDropTarget(el, zone, benchIdx) {
     const handIdx = _dragHandIdx;
     const player  = _dragPlayer;
     onHandDragEnd(); // clear state before action (action may re-render)
-
-    if (dtype === 'valid') {
-      const droppedCard = G.players[player].hand[handIdx];
-      const isFossilOrDollDrop = droppedCard && /mysterious fossil|clefairy doll/i.test(droppedCard.name) && droppedCard.supertype === 'Trainer';
-      if (isFossilOrDollDrop) {
-        // Route through playTrainer which handles Fossil/Doll placement
-        playTrainer(player, handIdx);
-      } else if (zone === 'active') {
-        playAsActive(player, handIdx);
-      } else {
-        startBenchPlay(player, handIdx);
-      }
-    } else if (dtype === 'evolve') {
-      evolve(player, handIdx, zone, benchIdx);
-    } else if (dtype === 'energy') {
-      const isWaterEnergy = /water/i.test(G.players[player].hand[handIdx]?.name || '');
-      const rainDance = rainDanceActive(player) && isWaterEnergy;
-      if (zone === 'active') attachEnergy(player, handIdx, 'active', null, rainDance);
-      else attachEnergy(player, handIdx, 'bench', benchIdx, rainDance);
-    } else if (dtype === 'heal') {
-      // Route heal trainers directly through playTrainer
-      playTrainer(player, handIdx);
-    }
+    // One drop implementation for mouse and touch (executeDrop): the old inline
+    // copy here had drifted — it never handled the 'trainer' drop type, so a
+    // mouse-dragged Potion/Defender silently did nothing.
+    executeDrop(dtype, el, player, handIdx);
   });
 }
 

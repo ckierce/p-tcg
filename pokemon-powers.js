@@ -384,11 +384,13 @@ async function doCurse(player, gengarCard) {
 }
 
 // Electrode — Buzzap
-// Sacrifice Electrode to add 2 Lightning energy to another Pokémon.
+// Knock Out Electrode (Active or bench — benchIdx null = the Active) to give
+// another of your Pokémon 2 Energy of a chosen type.
 async function doBuzzap(player, benchIdx) {
   if (isMukActive()) { showToast("Muk's Toxic Gas suppresses Buzzap!", true); return; }
   const p = G.players[player];
-  const electrode = p.bench[benchIdx];
+  const fromActive = benchIdx === null || benchIdx === undefined;
+  const electrode = fromActive ? p.active : p.bench[benchIdx];
   if (!isPowerActive(electrode, 'Buzzap')) { showToast('No Buzzap Electrode!', true); return; }
 
   const targets = [
@@ -417,7 +419,14 @@ async function doBuzzap(player, benchIdx) {
   // Buzzap's text KNOCKS OUT Electrode, so the opponent takes a prize exactly
   // as for any other KO. Route through koBenchAndPrize (discard + stack +
   // energy + prize + win check) instead of a bare discard that skipped the prize.
-  if (koBenchAndPrize(player, benchIdx) === 'win') return;
+  if (fromActive) {
+    // Active Electrode: a regular Active knockout — set its damage to full HP
+    // and let checkKO do the discard, the prize and the PROMOTE prompt (the
+    // Pokémon that just received the Energy is guaranteed to be on the bench).
+    const hp = parseInt(electrode.hp) || parseInt(CARD_DATA[electrode.id]?.hp) || 0;
+    electrode.damage = Math.max(electrode.damage || 0, hp);
+    if (checkKO(player, player === 1 ? 2 : 1, electrode, true) === 'win') return;
+  } else if (koBenchAndPrize(player, benchIdx) === 'win') return;
   renderAll();
 }
 
@@ -728,9 +737,11 @@ function getFieldActionExtras(player, zone, benchIdx, card) {
     actions.push({ label: '🎵 Metronome (Clefable)', fn: () => doMetronome(player) });
   }
 
-  // Electrode — Buzzap: only from bench slot, only Electrode's own card
-  if (zone === 'bench' && isPowerActive(card, 'Buzzap')) {
-    actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, benchIdx); } });
+  // Electrode — Buzzap: Active OR bench. The card text ("Knock Out Electrode
+  // and attach it to 1 of your other Pokémon") has no zone restriction; an
+  // Active Electrode is simply a normal Active knockout followed by promotion.
+  if ((zone === 'bench' || zone === 'active') && isPowerActive(card, 'Buzzap')) {
+    actions.push({ label: '⚡ Buzzap! (Electrode)', fn: () => { closeActionMenu(); doBuzzap(player, zone === 'active' ? null : benchIdx); } });
   }
 
   // Slowbro — Strange Behavior: show on Slowbro's card

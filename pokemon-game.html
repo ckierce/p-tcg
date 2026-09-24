@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
-<link rel="stylesheet" href="theme.css?v=1b431bf106">
+<link rel="stylesheet" href="theme.css?v=ce50d7e543">
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -376,6 +376,9 @@ h1, h2, h3 { font-family: var(--font-title); }
   color: #000;
 }
 .top-bar-btn.primary:hover { opacity: .85; }
+/* Discard piles open a View Card menu for their top card (onDiscardClick) */
+.opp-discard, .player-discard-slot { cursor: pointer; }
+.opp-discard:hover, .player-discard-slot:hover { border-color: var(--accent); }
 /* SETUP handshake: our READY flag is up and recorded — green, pulsing while
    we wait for the opponent. Clicking again cancels. */
 .top-bar-btn.primary.ready {
@@ -3222,7 +3225,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
         <div id="opp-aux">
           <div class="opp-hand-count" title="Cards in opponent's hand">🂠 <span id="hand-label-p2">0</span></div>
           <div class="opp-aux-row">
-            <div class="opp-discard" id="discard-p2"><span class="discard-placeholder">DISCARD</span></div>
+            <div class="opp-discard" id="discard-p2" tabindex="0" role="button" aria-label="Opponent discard pile — view top card" onclick="event.stopPropagation();onDiscardClick(2,event)"><span class="discard-placeholder">DISCARD</span></div>
             <div id="discard-count-p2" class="opp-aux-count">0</div>
           </div>
           <!-- Deck is the row nearest the midline, as it is for the player (true 180° copy) -->
@@ -3312,7 +3315,7 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
           </div>
           <div class="player-aux-row">
             <div id="discard-count-p1" class="player-aux-count">0</div>
-            <div class="player-discard-slot" id="discard-p1">
+            <div class="player-discard-slot" id="discard-p1" tabindex="0" role="button" aria-label="Your discard pile — view top card" onclick="event.stopPropagation();onDiscardClick(1,event)">
               <span class="discard-placeholder">DISCARD</span>
             </div>
           </div>
@@ -3508,15 +3511,15 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=1b431bf106"></script>
-<script src="game-render.js?v=1b431bf106"></script>
-<script src="game-actions.js?v=1b431bf106"></script>
-<script src="game-ai.js?v=1b431bf106"></script>
+<script src="game-utils.js?v=ce50d7e543"></script>
+<script src="game-render.js?v=ce50d7e543"></script>
+<script src="game-actions.js?v=ce50d7e543"></script>
+<script src="game-ai.js?v=ce50d7e543"></script>
 
-<script src="pokemon-powers.js?v=1b431bf106"></script>
-<script src="trainer-cards.js?v=1b431bf106"></script>
-<script src="move-effects.js?v=1b431bf106"></script>
-<script src="game-init.js?v=1b431bf106"></script>
+<script src="pokemon-powers.js?v=ce50d7e543"></script>
+<script src="trainer-cards.js?v=ce50d7e543"></script>
+<script src="move-effects.js?v=ce50d7e543"></script>
+<script src="game-init.js?v=ce50d7e543"></script>
 
 <!-- Image cache: sw.js keeps card art, energy icons and coin faces in Cache
      Storage so they load instantly and survive deploys (GitHub Pages only

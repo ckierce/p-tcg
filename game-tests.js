@@ -6643,6 +6643,74 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       G.players[1].hand = [ftBreeder, mk('Charizard')];
       const noBasic = run('getActionsForCard')(1, ftBreeder, 0).find(a => /Cannot play|Play Trainer/.test(a.label));
       assert('Breeder: no matching Basic in play → "No matching Basic"', noBasic && /No matching Basic/.test(noBasic.label));
+
+      // ── Buzzap from the ACTIVE slot: a normal Active KO — prize, then promote ──
+      // Card text: "Knock Out Electrode and attach it to 1 of your other Pokémon"
+      // has no zone restriction; the menu used to offer it on the bench only.
+      G = freshG();
+      const activeElectrode = mkBy('Electrode', 'Buzzap');
+      const buzzBench = mk('Chansey');
+      G.players[1].active = activeElectrode; G.players[1].bench[0] = buzzBench;
+      G.players[2].active = mk('Chansey');
+      const p2PrizesBeforeActiveBuzzap = G.players[2].prizes.filter(Boolean).length;
+      assert('Buzzap: offered on an ACTIVE Electrode', run('getFieldActionExtras')(1, 'active', null, activeElectrode).some(a => /Buzzap/.test(a.label)));
+      await run('doBuzzap')(1, null);
+      await settle();
+      assert('Active Buzzap: Electrode is Knocked Out (in discard, Active empty)', G.players[1].discard.includes(activeElectrode) && G.players[1].active === null);
+      assertEqual('Active Buzzap: the bench Pokémon got 2 Energy', buzzBench.attachedEnergy.length, 2);
+      assertEqual('Active Buzzap: the opponent takes a prize', G.players[2].prizes.filter(Boolean).length, p2PrizesBeforeActiveBuzzap - 1);
+      assert('Active Buzzap: P1 must promote from the bench', G.phase === 'PROMOTE' && G.pendingPromotion === 1);
+      G = freshG();
+      const loneElectrode = mkBy('Electrode', 'Buzzap');
+      G.players[1].active = loneElectrode; G.players[2].active = mk('Chansey');
+      await run('doBuzzap')(1, null);
+      await settle();
+      assert('Active Buzzap with no other Pokémon: refused (Electrode stays Active)', G.players[1].active === loneElectrode);
+
+      // ── REGRESSION: a stale "trainer" drop target discarded a dragged Energy ──
+      // Craig's bug: dragging Double Colorless after an Energy had already been
+      // attached made the card vanish. clearDragHighlights never swept the
+      // trainer highlight, the touch drop then routed the Energy through
+      // playTrainer, whose unimplemented-trainer fallback discards its card.
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      const dce = mk('Double Colorless Energy');
+      G.players[1].hand = [dce];
+      G.energyPlayedThisTurn = true;
+      await run('executeDrop')('trainer', { id: 'active-p1', dataset: {}, closest: () => null }, 1, 0);
+      await settle();
+      assert('Stale trainer drop target: DCE stays in hand, not discarded', G.players[1].hand[0] === dce && !G.players[1].discard.includes(dce));
+      await run('playTrainer')(1, 0);
+      await settle();
+      assert('playTrainer refuses a non-Trainer card outright', G.players[1].hand[0] === dce && !G.players[1].discard.includes(dce));
+      run('attachEnergy')(1, 0, 'active', null, false);
+      assert('attachEnergy after this turn\'s Energy: DCE stays in hand, nothing attached', G.players[1].hand[0] === dce && (G.players[1].active.attachedEnergy || []).length === 0);
+      const initSrc = require('fs').readFileSync('./game-init.js', 'utf8');
+      const sweep = initSrc.slice(initSrc.indexOf('function clearDragHighlights'), initSrc.indexOf('function wireDropTarget'));
+      assert('clearDragHighlights sweeps the trainer highlight too', /drag-valid-trainer/.test(sweep));
+      const mouseDrop = initSrc.slice(initSrc.indexOf("el.addEventListener('drop'"), initSrc.indexOf('// VS COMPUTER MODE'));
+      assert('mouse drop and touch drop share executeDrop (no drifted inline copy)', /executeDrop\(/.test(mouseDrop) && !/attachEnergy\(/.test(mouseDrop));
+
+      // ── View Card off-turn (hand) and on the discard piles ──
+      run("__menu = null; showActionMenu = function(title, actions){ __menu = { title, actions }; };");
+      G = freshG();
+      G.turn = 2; // not P1's turn
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      const offTurnCard = mk('Bill');
+      G.players[1].hand = [offTurnCard];
+      run('selectHandCard')(1, 0, {});
+      const offTurnMenu = run('__menu');
+      assert('Off-turn hand click: menu offers View Card (and nothing playable)', offTurnMenu && offTurnMenu.actions.some(a => a.label === 'View Card') && !offTurnMenu.actions.some(a => /Play Trainer/.test(a.label)));
+      assert('Off-turn hand click: the card was not played', G.players[1].hand[0] === offTurnCard);
+      run("__menu = null;");
+      G.players[2].discard = [mk('Squirtle'), mk('Rattata')];
+      run('onDiscardClick')(2, {});
+      const discardMenu = run('__menu');
+      assert('Discard pile click: View Card for the TOP card (Rattata)', discardMenu && discardMenu.actions.some(a => /View Card \(Rattata\)/.test(a.label)));
+      run("__menu = null;");
+      G.players[1].discard = [];
+      run('onDiscardClick')(1, {});
+      assert('Empty discard pile click: no menu', run('__menu') === null);
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });
