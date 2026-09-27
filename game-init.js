@@ -547,6 +547,7 @@ async function startGame() {
   // click on START dealt hands and prizes twice from the same deck.
   if (_startGameRunning || G.started) return;
   _startGameRunning = true;
+  if (typeof undoSeal === 'function') undoSeal(); // a new game starts with a clean slate
   try {
     await _startGameInner();
   } finally {
@@ -661,6 +662,7 @@ function handleEndTurnBtn() {
 
 async function doneSetup() {
   if (!G.players[1].active) { showToast('Player 1 must place an Active Pokémon first!', true); return; }
+  if (typeof undoSeal === 'function') undoSeal();
 
   // vsComputer: the AI places its Active ~800ms after the game starts. If the
   // human clicks DONE SETUP before that timer fires, P2.active is still null and
@@ -749,6 +751,7 @@ function drawCard(player, auto = false) {
     pushGameState();
     return;
   }
+  if (typeof undoSeal === 'function') undoSeal(); // the drawn card is new information
   const card = p.deck.shift();
   p.hand.push(card);
   if (!auto) addLog(`Player ${player} drew a card.`);
@@ -1839,8 +1842,12 @@ function mergeSetupSlot(playerNum, slotData) {
   const hasBench  = Object.prototype.hasOwnProperty.call(slotData, 'bench');
   const hasReady  = Object.prototype.hasOwnProperty.call(slotData, 'setupReady');
   const hasZones  = Object.prototype.hasOwnProperty.call(slotData, 'zones');
-  if (hasActive) p.active = slotData.active ? enrichCard(slotData.active) : null;
-  if (hasBench)  p.bench  = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
+  // A `zones` push carries the WHOLE slot, so a missing active/bench key means
+  // "empty" (Firebase drops nulls and empty arrays), not "unchanged". Without
+  // this, an undo that takes the Active back into the hand during SETUP never
+  // reached the other client — it kept showing the un-placed Pokémon.
+  if (hasActive || hasZones) p.active = slotData.active ? enrichCard(slotData.active) : null;
+  if (hasBench  || hasZones) p.bench  = Array.from({ length: 5 }, (_, i) => { const c = (slotData.bench || [])[i]; return c ? enrichCard(c) : null; });
   const readyChanged = hasReady && playerNum !== myRole && setupReady[playerNum] !== !!slotData.setupReady;
   if (hasReady && playerNum !== myRole) setupReady[playerNum] = !!slotData.setupReady;
   // Private zones travel in the slot too (see pushGameState's non-host SETUP
@@ -2060,6 +2067,9 @@ function receiveGameState(state) {
   const wasStarted = G.started;
   const wasSetup   = G.phase === 'SETUP';
   const wasPromote = G.phase === 'PROMOTE';
+  // The incoming state replaces G wholesale; any snapshot we hold predates it
+  // and would rewind the opponent's move along with ours.
+  if (typeof undoSeal === 'function') undoSeal();
 
   // Build incoming player snapshots
   const incomingP1 = enrichPlayer(state.players[1]);

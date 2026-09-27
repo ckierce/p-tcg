@@ -891,6 +891,9 @@ async function playTrainer(player, handIdx, targetHint = null) {
     addLog(`P${player} tried to play ${name} but is blocked by Headache!`, true);
     return;
   }
+  // Trainers draw, search, shuffle, flip and peek — even a cancelled one may
+  // have shown deck cards in a picker, so nothing before it can be rewound.
+  if (typeof undoSeal === 'function') undoSeal();
 
   // Helper: remove card from hand and discard it — flash only fires on actual play
   const consume = () => {

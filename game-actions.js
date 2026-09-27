@@ -20,6 +20,161 @@
 //   isMyTurn, isTrainerBlocked, openCardPicker
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════
+// UNDO
+// ══════════════════════════════════════════════════
+// Snapshot-based undo for the local player's own reversible actions: playing
+// a Pokémon, evolving, attaching energy, retreating, moving/discarding a bench
+// card. Anything that reveals hidden information (a draw, a coin flip, a
+// Trainer, a Pokémon Power, an attack, a KO, a turn change, an opponent's
+// state push) SEALS the stack — it is cleared — so an undo can never rewind
+// past a reveal and show the player something they weren't meant to know
+// (e.g. the top of their deck after Professor Oak).
+//
+// The whole of G is snapshotted, so undoing restores the log, flags such as
+// energyPlayedThisTurn / evolvedThisTurn, and the flash records too. In a
+// networked game the restored state is pushed like any other action, so the
+// opponent's board rewinds with ours and their log shows the "undid" line.
+const UNDO_MAX = 20;
+let _undoStack = [];
+
+function _undoActor() {
+  if (typeof myRole !== 'undefined' && myRole !== null) return myRole;
+  return G.turn;
+}
+
+// True when `player` is a human acting from THIS client — the only actions
+// that belong on the undo stack. AI moves and the remote opponent's moves
+// are never ours to rewind.
+function _undoIsLocalHuman(player) {
+  if (typeof vsComputer !== 'undefined' && vsComputer &&
+      typeof aiPlayerNum !== 'undefined' && player === aiPlayerNum) return false;
+  if (typeof myRole !== 'undefined' && myRole !== null && player !== myRole) return false;
+  return true;
+}
+
+function _undoClone(g) {
+  try { return structuredClone(g); } catch (e) { return JSON.parse(JSON.stringify(g)); }
+}
+
+// Record a snapshot of G *before* `player` performs `label`. Call at the top
+// of a reversible action, after its guards have passed (so a refused action
+// never leaves a stale entry behind).
+function undoSnapshot(player, label) {
+  if (!G || !G.started) return;
+  if (G.phase !== 'MAIN' && G.phase !== 'SETUP') return;
+  if (!_undoIsLocalHuman(player)) return;
+  if (G.phase === 'MAIN' && G.turn !== player) return;
+  _undoStack.push({ player, label, state: _undoClone(G) });
+  if (_undoStack.length > UNDO_MAX) _undoStack.splice(0, _undoStack.length - UNDO_MAX);
+  if (typeof updateUndoBtn === 'function') updateUndoBtn();
+}
+
+// Forget every snapshot. Called wherever hidden information is revealed or
+// control passes to someone else.
+function undoSeal() {
+  if (_undoStack.length) _undoStack = [];
+  if (typeof updateUndoBtn === 'function') updateUndoBtn();
+}
+
+function canUndo() {
+  if (!_undoStack.length) return false;
+  if (!G || !G.started) return false;
+  const top = _undoStack[_undoStack.length - 1];
+  if (top.player !== _undoActor()) return false;
+  if (G.phase === 'MAIN' && G.turn !== top.player) return false;
+  if (G.phase !== 'MAIN' && G.phase !== 'SETUP') return false;
+  if (typeof aiThinking !== 'undefined' && aiThinking) return false;
+  if (typeof _performAttackLocked !== 'undefined' && _performAttackLocked) return false;
+  return true;
+}
+
+function undoLabel() {
+  return _undoStack.length ? _undoStack[_undoStack.length - 1].label : '';
+}
+
+function undoLastAction() {
+  if (!canUndo()) {
+    if (typeof showToast === 'function') showToast('Nothing to undo.', true);
+    return false;
+  }
+  const entry = _undoStack.pop();
+  // A half-finished pick (bench slot for an energy / retreat target) is
+  // abandoned along with whatever it was for.
+  if (typeof closeActionMenu === 'function') closeActionMenu();
+  if (typeof clearFlashQueue === 'function') clearFlashQueue(true);
+  G = entry.state;
+  G.pendingAction = null;
+  if (typeof clearHighlights === 'function') clearHighlights();
+  if (typeof setMidline === 'function') setMidline(''); // phase default, not the MAIN-phase hint
+  addLog(`Player ${entry.player} undid: ${entry.label}.`, true);
+  if (typeof showActionFlash === 'function') showActionFlash(entry.player, 'UNDOES', entry.label, '');
+  if (typeof showToast === 'function') showToast(`Undid: ${entry.label}`, false, 'ok');
+  if (typeof updateUndoBtn === 'function') updateUndoBtn();
+  renderAll();
+  return true;
+}
+
+// ══════════════════════════════════════════════════
+// RESIGN
+// ══════════════════════════════════════════════════
+// Concede the game: the opponent wins immediately. In a networked game the
+// state push carries winner + reason, so the opponent's client shows the win
+// screen from receiveGameState's `!G.started && wasStarted` branch.
+function resignGame(player) {
+  if (!G || !G.started) return false;
+  if (G.phase === 'SETUP') { if (typeof showToast === 'function') showToast('The game hasn\'t started yet.', true); return false; }
+  const resigner = player || _undoActor();
+  if (!_undoIsLocalHuman(resigner)) return false;
+  const winner = resigner === 1 ? 2 : 1;
+  undoSeal();
+  if (typeof closeActionMenu === 'function') closeActionMenu();
+  if (typeof clearFlashQueue === 'function') clearFlashQueue(true);
+  G.pendingAction = null;
+  if (typeof clearHighlights === 'function') clearHighlights();
+  if (typeof hidePromoteBanner === 'function') hidePromoteBanner();
+  addLog(`Player ${resigner} resigned. Player ${winner} wins!`, true);
+  G.started = false;
+  showWinScreen(winner, `PLAYER ${resigner} RESIGNED`);
+  if (typeof pushGameState === 'function') pushGameState();
+  renderAll();
+  return true;
+}
+
+// Ask before conceding. Uses the same overlay style as the number picker so
+// it reads as part of the game, not a browser dialog.
+function confirmResign() {
+  if (!G || !G.started || G.phase === 'SETUP') {
+    if (typeof showToast === 'function') showToast('No game in progress.', true);
+    return;
+  }
+  const resigner = _undoActor();
+  if (!_undoIsLocalHuman(resigner)) return;
+  const winner = resigner === 1 ? 2 : 1;
+  const who = typeof playerLabel === 'function' ? playerLabel(winner) : `Player ${winner}`;
+  const existing = document.getElementById('resign-confirm');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'resign-confirm';
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="resign-confirm-title">
+      <div class="confirm-title" id="resign-confirm-title">🏳 RESIGN?</div>
+      <div class="confirm-text">${escapeHtml(who)} will win this game. This can't be undone.</div>
+      <div class="confirm-actions">
+        <button class="win-btn" id="resign-cancel-btn">KEEP PLAYING</button>
+        <button class="win-btn danger" id="resign-ok-btn">RESIGN</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#resign-cancel-btn').addEventListener('click', close);
+  overlay.querySelector('#resign-ok-btn').addEventListener('click', () => { close(); resignGame(resigner); });
+  overlay.addEventListener('keydown', e => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+  overlay.querySelector('#resign-cancel-btn').focus();
+}
+
 function getActionsForCard(player, card, handIdx) {
   const p = G.players[player];
   const actions = [];
@@ -204,6 +359,7 @@ function playAsActive(player, handIdx) {
     return;
   }
   const p = G.players[player];
+  undoSnapshot(player, `play ${p.hand[handIdx]?.name || 'Pokémon'} as Active`);
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.active = card;
@@ -237,6 +393,7 @@ function evolve(player, handIdx, zone, benchIdx) {
   }
 
   // All guards passed — now remove card from hand
+  undoSnapshot(player, `evolve ${target.name} into ${p.hand[handIdx]?.name || 'Pokémon'}`);
   const evoCard = p.hand.splice(handIdx, 1)[0];
 
   // Carry over damage, energy from the base pokemon (status is cleared)
@@ -275,6 +432,7 @@ function startBenchPlay(player, handIdx) {
   const p = G.players[player];
   const freeSlot = p.bench.findIndex(s => s === null);
   if (freeSlot === -1) { showToast('Bench is full!', true); return; }
+  undoSnapshot(player, `bench ${p.hand[handIdx]?.name || 'Pokémon'}`);
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.bench[freeSlot] = card;
@@ -295,6 +453,7 @@ function playToBench(player, slotIdx) {
   if (G.players[player].bench[slotIdx] !== null) return;
   const { handIdx } = G.pendingAction;
   const p = G.players[player];
+  undoSnapshot(player, `bench ${p.hand[handIdx]?.name || 'Pokémon'}`);
   const card = p.hand.splice(handIdx, 1)[0];
   card.damage = 0; card.attachedEnergy = []; clearAllStatus(card);
   p.bench[slotIdx] = card;
@@ -317,6 +476,11 @@ function attachEnergy(player, handIdx, target, benchIdx = null, isRainDance = fa
     showToast('Rain Dance only works on Water Pokémon!', true);
     p.hand.splice(handIdx, 0, energy); return;
   }
+  // Snapshot the pre-attach state: put the energy back first so the snapshot
+  // is exactly what the player saw before clicking.
+  p.hand.splice(handIdx, 0, energy);
+  undoSnapshot(player, `attach ${energy.name} to ${targetCard.name}`);
+  p.hand.splice(handIdx, 1);
   if (!targetCard.attachedEnergy) targetCard.attachedEnergy = [];
   targetCard.attachedEnergy.push(energy);
   if (!isRainDance) G.energyPlayedThisTurn = true;
@@ -380,6 +544,7 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
   // Move bench pokemon to active if active is empty
   if (zone !== 'active' && !p.active) {
     actions.push({ label: 'Move to Active', fn: () => {
+      undoSnapshot(player, `move ${card.name} to Active`);
       p.active = card; p.bench[benchIdx] = null;
       addLog(`P${player} moved ${card.name} to Active.`);
       renderAll(); closeActionMenu();
@@ -453,7 +618,12 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
   // Must be outside the active-only block so bench powers (Step In, Buzzap, etc.) work.
   if (G.turn === player && G.phase === 'MAIN' && (myRole === null || player === myRole)) {
     if (typeof getFieldActionExtras === 'function') {
-      actions.push(...getFieldActionExtras(player, zone, benchIdx, card));
+      // Powers shuffle, flip, search and peek — none of them can be rewound.
+      actions.push(...getFieldActionExtras(player, zone, benchIdx, card).map(a => {
+        if (a.disabled || typeof a.fn !== 'function') return a;
+        const fn = a.fn;
+        return { ...a, fn: (...args) => { undoSeal(); return fn(...args); } };
+      }));
     }
   }
 
@@ -463,6 +633,7 @@ function showFieldActionMenu(player, zone, benchIdx, evt) {
       label: `Discard ${card.name}`,
       danger: true,
       fn: () => {
+        undoSnapshot(player, `discard ${card.name}`);
         p.bench[benchIdx] = null;
         p.discard.push(card);
         addLog(`P${player} discarded ${card.name} from the bench.`, true);
@@ -553,6 +724,7 @@ async function executeRetreat(player, benchIdx) {
   const _baseRetreat = p.active.convertedRetreatCost || 0;
   const _retreatDiscount = typeof retreatCostReduction === 'function' ? retreatCostReduction(player) : 0;
   const retreatCost = Math.max(0, _baseRetreat - _retreatDiscount);
+  undoSnapshot(player, `retreat ${p.active.name}`);
 
   // ── Energy discard for retreat ───────────────────────────────────────────
   // Player chooses which energy cards to discard. The total energy VALUE of
@@ -800,6 +972,7 @@ function showCoinAnimation(label, heads, opts = {}) {
 function flipCoin(label, opts = {}) {
   // opts.persistent: keep overlay open after resolving (caller closes via closeCoinOverlay())
   // opts.flipNum / opts.totalFlips: show "Flip X of Y" when in a multi-flip sequence
+  undoSeal(); // a flip result is information — nothing before it can be rewound
   const heads = Math.random() < 0.5;
   if (!G.coinFlipLog) G.coinFlipLog = [];
   const _flipTs = Date.now();
@@ -1461,6 +1634,7 @@ let _performAttackLocked = false;
 async function performAttack(player, atk) {
   if (_performAttackLocked) { showToast('Action in progress — please wait.', true); return 'locked'; }
   _performAttackLocked = true;
+  undoSeal();
   try {
   const opp = player === 1 ? 2 : 1;
   const myActive = G.players[player].active;
@@ -1910,6 +2084,7 @@ function discardSelfKOdActive(player, opp, card) {
 }
 
 function checkKO(attackingPlayer, defendingPlayer, card, isSelf) {
+  undoSeal(); // a KO takes a prize (revealed) and may end the game
   // Resolve HP: prefer card.hp, fall back to CARD_DATA lookup, then enrichCard full data
   let hp = parseInt(card.hp) || 0;
   if (hp === 0 && card.id) {
@@ -1994,6 +2169,7 @@ function resolvePromotion(player, benchIdx) {
   const p = G.players[player];
   const chosen = p.bench[benchIdx];
   if (!chosen) return;
+  undoSeal();
   p.active = chosen;
   p.bench[benchIdx] = null;
   // Ensure bench is always exactly 5 slots — defensive pad after any swap
@@ -2189,6 +2365,7 @@ function endTurn() {
   // prompt that was dismissed without resolving) and must not freeze the
   // next turn — or the next game on the same page — with "Action in progress".
   _performAttackLocked = false;
+  undoSeal();
   const prev = G.turn;
   // Flip turn now so that if a poison/burn KO triggers PROMOTE and returns early,
   // G.turn is already correct and the game doesn't freeze on the attacker's turn.

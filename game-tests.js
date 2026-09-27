@@ -6882,6 +6882,139 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       G.players[1].discard = [];
       run('onDiscardClick')(1, {});
       assert('Empty discard pile click: no menu', run('__menu') === null);
+
+      // ══════════════════════════════════════════════════════════════════════
+      // UNDO — snapshot before a reversible action, sealed by any reveal
+      // ══════════════════════════════════════════════════════════════════════
+      console.log('\n── UNDO / RESIGN ─────────────────────────────────────────────');
+      run("__menu = null; showActionMenu = function(title, actions){ __menu = { title, actions }; };");
+      run('undoSeal(); vsComputer = false; myRole = null;');
+      const Fire = { name: 'Fire Energy', supertype: 'Energy', uid: 'e-fire-1' };
+      // Attach energy, then undo: energy back in hand, once-per-turn flag reset.
+      G = freshG();
+      G.players[1].active = mk('Charmander'); G.players[2].active = mk('Chansey');
+      G.players[1].hand = [Fire];
+      assert('Undo: nothing to undo at turn start', run('canUndo')() === false);
+      run('attachEnergy')(1, 0, 'active');
+      assert('Undo: energy attached', G.players[1].active.attachedEnergy.length === 1 && G.energyPlayedThisTurn === true);
+      assert('Undo: attach is undoable', run('canUndo')() === true && /attach Fire Energy/.test(run('undoLabel')()));
+      assert('Undo: attach rewound', run('undoLastAction')() === true);
+      G = H.G; // undo replaces G wholesale
+      assert('Undo: energy back in hand, flag cleared', G.players[1].hand.length === 1 && G.players[1].hand[0].uid === 'e-fire-1' && G.players[1].active.attachedEnergy.length === 0 && G.energyPlayedThisTurn === false);
+      assert('Undo: log records the undo', /undid: attach Fire Energy/.test(G.log[G.log.length - 1].msg));
+      assert('Undo: stack empty afterwards', run('canUndo')() === false);
+      assert('Undo: can attach again after the undo', (run('attachEnergy')(1, 0, 'active'), H.G.energyPlayedThisTurn === true));
+
+      // Two actions, undone in reverse order (bench, then evolve).
+      run('undoSeal();'); G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      const charm = mk('Charmander'), charmeleon = mk('Charmeleon');
+      G.players[1].hand = [charm, charmeleon];
+      G.turnNum = 5; G.evolvedThisTurn = [];
+      run('startBenchPlay')(1, 0);
+      G = H.G;
+      // Benched this turn → can't evolve yet; pretend it was there last turn.
+      G.evolvedThisTurn = [];
+      run('evolve')(1, 0, 'bench', 0);
+      G = H.G;
+      assert('Undo: evolved on the bench', G.players[1].bench[0].name === 'Charmeleon' && G.players[1].hand.length === 0);
+      assert('Undo: label is the evolve', /evolve Charmander into Charmeleon/.test(run('undoLabel')()));
+      run('undoLastAction')(); G = H.G;
+      assert('Undo #1: Charmeleon back in hand, Charmander on bench', G.players[1].bench[0].name === 'Charmander' && G.players[1].hand.length === 1 && G.players[1].hand[0].name === 'Charmeleon');
+      assert('Undo: label is now the bench play', /bench Charmander/.test(run('undoLabel')()));
+      run('undoLastAction')(); G = H.G;
+      assert('Undo #2: Charmander back in hand, bench empty', G.players[1].bench[0] === null && G.players[1].hand.length === 2);
+      assert('Undo: stack exhausted', run('canUndo')() === false && run('undoLastAction')() === false);
+
+      // A Trainer seals: the earlier attach is no longer undoable.
+      run('undoSeal();'); G = freshG();
+      G.players[1].active = mk('Charmander'); G.players[2].active = mk('Chansey');
+      G.players[1].hand = [{ ...Fire, uid: 'e-fire-2' }, mk('Bill')];
+      G.players[1].deck = [mk('Rattata'), mk('Rattata'), mk('Rattata')];
+      run('attachEnergy')(1, 0, 'active');
+      assert('Seal: attach undoable before the Trainer', run('canUndo')() === true);
+      await run('playTrainer')(1, 0);
+      await settle();
+      G = H.G;
+      assert('Seal: Bill drew 2', G.players[1].hand.length === 2);
+      assert('Seal: Trainer sealed the stack (deck order stays hidden)', run('canUndo')() === false);
+
+      // A draw seals; ending the turn seals.
+      run('undoSeal();'); G = freshG();
+      G.players[1].active = mk('Charmander'); G.players[2].active = mk('Chansey');
+      G.players[1].hand = [{ ...Fire, uid: 'e-fire-3' }];
+      run('attachEnergy')(1, 0, 'active');
+      run('undoSnapshot')(1, 'probe');
+      assert('Seal: snapshot recorded', run('canUndo')() === true);
+      run('drawCard')(1, true);
+      assert('Seal: a draw seals', run('canUndo')() === false);
+      run('undoSnapshot')(1, 'probe');
+      run('endTurn')();
+      G = H.G;
+      assert('Seal: ending the turn seals', run('canUndo')() === false && G.turn === 2);
+
+      // Off-turn / wrong-seat snapshots are refused.
+      run('undoSeal();'); G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      G.turn = 2;
+      run('undoSnapshot')(1, 'off-turn');
+      assert('Undo: no snapshot for a player whose turn it is not', run('canUndo')() === false);
+      run('myRole = 1;');
+      G.turn = 2;
+      run('undoSnapshot')(2, 'opponent move');
+      assert('Undo: no snapshot for the remote opponent\'s move', run('canUndo')() === false);
+      G.turn = 1;
+      run('undoSnapshot')(1, 'mine');
+      assert('Undo: own move on own turn is undoable (networked)', run('canUndo')() === true);
+      run('receiveGameState')(JSON.parse(JSON.stringify(G)));
+      assert('Undo: an incoming state push seals', run('canUndo')() === false);
+      run('myRole = null;');
+
+      // vs Computer: the AI's moves never land on the stack; the human's do.
+      run('vsComputer = true;'); H.setAiPlayer(2);
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      G.turn = 2;
+      run('undoSnapshot')(2, 'ai move');
+      assert('Undo vs AI: computer move not recorded', run('canUndo')() === false);
+      G.turn = 1;
+      run('undoSnapshot')(1, 'human move');
+      assert('Undo vs AI: human move recorded', run('canUndo')() === true);
+      run('undoSeal(); vsComputer = false;');
+
+      // ── RESIGN ──
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      run('undoSnapshot')(1, 'something');
+      assert('Resign: returns true', run('resignGame')(1) === true);
+      G = H.G;
+      assert('Resign: game over, opponent wins', G.started === false && G.winner === 2 && G.winReason === 'PLAYER 1 RESIGNED');
+      assert('Resign: logged', /Player 1 resigned/.test(G.log[G.log.length - 1].msg));
+      assert('Resign: undo unavailable after the game ends', run('canUndo')() === false);
+      assert('Resign: cannot resign twice', run('resignGame')(1) === false);
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      G.turn = 2;
+      run('resignGame')(2); G = H.G;
+      assert('Resign: P2 resigning hands the win to P1', G.started === false && G.winner === 1 && G.winReason === 'PLAYER 2 RESIGNED');
+      // Networked: only the local seat may resign, and never for the opponent.
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      run('myRole = 1;');
+      assert('Resign: cannot resign on the opponent\'s behalf', run('resignGame')(2) === false && H.G.started === true);
+      G.turn = 2; // opponent's turn — resigning is still allowed
+      assert('Resign: allowed off-turn for your own seat', run('resignGame')(1) === true && H.G.winner === 2);
+      run('myRole = null;');
+      // Setup phase: nothing to concede yet.
+      G = freshG(); G.phase = 'SETUP';
+      assert('Resign: refused during SETUP', run('resignGame')(1) === false && H.G.started === true);
+      // vs Computer: the human resigns, the computer wins.
+      run('vsComputer = true;'); H.setAiPlayer(2);
+      G = freshG();
+      G.players[1].active = mk('Chansey'); G.players[2].active = mk('Chansey');
+      assert('Resign vs AI: computer cannot be resigned for', run('resignGame')(2) === false);
+      assert('Resign vs AI: human resigns, computer wins', run('resignGame')(1) === true && H.G.winner === 2);
+      run('vsComputer = false; undoSeal();');
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });

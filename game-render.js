@@ -554,10 +554,24 @@ function updateDeckCounts() {
 
 function updatePhase() {
   document.getElementById('phase-badge').textContent = G.phase;
+  updateUndoBtn();
   // The bench-collapse CSS keys on this; it used to be set only by renderAll(),
   // which the network receive path never calls, so P2's client kept the SETUP
   // marker (and five empty bench placeholders) until it acted itself.
   document.body.dataset.phase = G.phase || 'SETUP';
+}
+
+// UNDO button: enabled only while the local player has a rewindable action
+// on the stack (see undoSnapshot / undoSeal in game-actions.js). Hidden with
+// the rest of the in-game controls during SETUP so the bar isn't crowded
+// before there's anything to undo.
+function updateUndoBtn() {
+  const btn = document.getElementById('undo-btn');
+  if (!btn) return;
+  const ok = typeof canUndo === 'function' && canUndo();
+  btn.disabled = !ok;
+  btn.title = ok ? `Undo: ${undoLabel()}` : 'Nothing to undo';
+  btn.setAttribute('aria-label', btn.title);
 }
 
 function updateTurnBadge() {
@@ -1301,6 +1315,15 @@ if (typeof document !== 'undefined') {
     const did = dismissFlashes() | (typeof skipCoinFlip === 'function' && skipCoinFlip());
     if (did) e.preventDefault();
   });
+  // Ctrl/Cmd+Z rewinds the last reversible action (same rules as the UNDO button).
+  document.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || (e.key !== 'z' && e.key !== 'Z')) return;
+    if (e.target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    if (document.getElementById('game-board')?.offsetParent === null) return;
+    if (typeof canUndo !== 'function' || !canUndo()) return;
+    e.preventDefault();
+    undoLastAction();
+  });
 }
 
 // Keyboard activation for the board's clickable <div>s (slots, hand cards).
@@ -1461,6 +1484,7 @@ function showWinScreen(winnerNum, reason) {
 }
 
 function playAgain() {
+  if (typeof undoSeal === 'function') undoSeal();
   document.getElementById('win-screen').classList.remove('show');
   // Clean up confetti
   document.querySelectorAll('.confetti-piece').forEach(el => el.remove());
@@ -1496,6 +1520,7 @@ function playAgain() {
 // Leave the current game and return to lobby WITHOUT deleting the Firebase room.
 // The game stays alive and can be rejoined via MATCHES.
 function returnToLobby() {
+  if (typeof undoSeal === 'function') undoSeal();
   // Detach listener but keep the room in Firebase
   if (gameRef) {
     gameRef.off();

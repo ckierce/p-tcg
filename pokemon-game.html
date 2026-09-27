@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
-<link rel="stylesheet" href="theme.css?v=50073741ab">
+<link rel="stylesheet" href="theme.css?v=4fd35172ec">
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -403,6 +403,37 @@ h1, h2, h3 { font-family: var(--font-title); }
 }
 .top-bar-btn.quiet:hover { border-color: var(--border2); color: var(--text); }
 .top-bar-btn.quiet .btn-label { display: none; }
+/* UNDO: greyed until the player has a rewindable action; only ever lit on
+   their own turn. RESIGN is quiet (icon only) — a flag, not a call to action. */
+.top-bar-btn:disabled,
+.top-bar-btn:disabled:hover { opacity: .35; cursor: default; border-color: var(--border2); color: var(--text); }
+#undo-btn:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+#undo-btn:not(:disabled):hover { background: rgba(232, 200, 74, .08); }
+/* Nothing to concede during SETUP (a misplaced Active can still be undone) */
+body[data-phase="SETUP"] #resign-btn { display: none; }
+
+/* ── CONFIRM DIALOG (resign) ── */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 1200;
+  background: rgba(0,0,0,.78);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(3px);
+}
+.confirm-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 22px 24px;
+  max-width: 340px; width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0,0,0,.7);
+}
+.confirm-title { font-size: 14px; letter-spacing: 2px; color: var(--p2color); margin-bottom: 10px; }
+.confirm-text  { font-size: 11px; color: var(--muted); line-height: 1.6; margin-bottom: 18px; }
+.confirm-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.win-btn.danger { border-color: var(--p2color); color: var(--p2color); }
+.win-btn.danger:hover { background: var(--p2color); color: #000; }
 
 /* ── FIELD BODY ───────────────────────────────────────────── */
 #field-body {
@@ -2334,7 +2365,12 @@ body.skin-sheet .card-badge.power .badge-glyph { display: none; }
   .top-bar-logo { font-size: 11px; }
   #turn-badge { font-size: 11px; padding: 5px 7px; }
   #phase-badge { display: none; }
+  /* The wordmark is decorative; with UNDO + RESIGN in the bar it was
+     squeezing the turn badge down to "YO…" on a 375px phone. */
+  .top-bar-logo { display: none; }
   .top-bar-btn { font-size: 11px; padding: 7px 10px; min-height: 36px; }
+  #undo-btn .btn-label { display: none; }
+  #undo-btn { font-size: 15px; line-height: 1; padding: 5px 9px; }
 
   /* ── Field body ── */
   #field-body { padding: 6px 4px; gap: 4px; }
@@ -3200,7 +3236,9 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       <span id="turn-badge" class="p1">P1 TURN</span>
       <span id="phase-badge">DRAW</span>
       <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
+      <button class="top-bar-btn" id="undo-btn" onclick="undoLastAction()" title="Nothing to undo" aria-label="Nothing to undo" disabled>↶ <span class="btn-label">UNDO</span></button>
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
+      <button class="top-bar-btn quiet" id="resign-btn" onclick="confirmResign()" title="Resign this game" aria-label="Resign this game">🏳</button>
       <button class="top-bar-btn quiet" id="skin-toggle-btn" onclick="toggleSkin()" title="Business Time: spreadsheet skin" aria-label="Business Time: spreadsheet skin">📊</button>
     </div>
 
@@ -3511,15 +3549,15 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=50073741ab"></script>
-<script src="game-render.js?v=50073741ab"></script>
-<script src="game-actions.js?v=50073741ab"></script>
-<script src="game-ai.js?v=50073741ab"></script>
+<script src="game-utils.js?v=4fd35172ec"></script>
+<script src="game-render.js?v=4fd35172ec"></script>
+<script src="game-actions.js?v=4fd35172ec"></script>
+<script src="game-ai.js?v=4fd35172ec"></script>
 
-<script src="pokemon-powers.js?v=50073741ab"></script>
-<script src="trainer-cards.js?v=50073741ab"></script>
-<script src="move-effects.js?v=50073741ab"></script>
-<script src="game-init.js?v=50073741ab"></script>
+<script src="pokemon-powers.js?v=4fd35172ec"></script>
+<script src="trainer-cards.js?v=4fd35172ec"></script>
+<script src="move-effects.js?v=4fd35172ec"></script>
+<script src="game-init.js?v=4fd35172ec"></script>
 
 <!-- Image cache: sw.js keeps card art, energy icons and coin faces in Cache
      Storage so they load instantly and survive deploys (GitHub Pages only
