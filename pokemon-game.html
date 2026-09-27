@@ -11,7 +11,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e63946' stroke='%23222' stroke-width='6'/><path d='M 8 50 A 42 42 0 0 1 92 50 Z' fill='%23e63946'/><path d='M 8 50 A 42 42 0 0 0 92 50 Z' fill='%23f5f5f5'/><rect x='5' y='46' width='90' height='8' fill='%23222'/><circle cx='50' cy='50' r='12' fill='%23ffffff' stroke='%23222' stroke-width='5'/><circle cx='50' cy='50' r='5' fill='%23ffffff'/></svg>">
 
 
-<link rel="stylesheet" href="theme.css?v=4fd35172ec">
+<link rel="stylesheet" href="theme.css?v=cfb5134aeb">
 <style>
 /* ── RESET & BASE ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -410,7 +410,43 @@ h1, h2, h3 { font-family: var(--font-title); }
 #undo-btn:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 #undo-btn:not(:disabled):hover { background: rgba(232, 200, 74, .08); }
 /* Nothing to concede during SETUP (a misplaced Active can still be undone) */
-body[data-phase="SETUP"] #resign-btn { display: none; }
+body[data-phase="SETUP"] #resign-btn, body[data-phase="SETUP"] #menu-resign { display: none; }
+
+/* ── Phone hamburger menu (shown under 600px, see the narrow media block) ── */
+#top-menu-btn { display: none; font-size: 16px; line-height: 1; padding: 5px 10px; }
+#top-menu-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+#top-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px); right: 8px;
+  min-width: 200px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 6px;
+  z-index: 895; /* above the sidebar drawer (890) so LOG is reachable while it's open */
+  box-shadow: 0 12px 40px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.04);
+}
+#top-menu.show { display: block; }
+.top-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.top-menu-item:hover, .top-menu-item:focus-visible { background: var(--surface2); outline: none; }
+.top-menu-item:disabled { opacity: .35; cursor: default; background: none; }
+.top-menu-item.danger { color: var(--p2color); }
+.top-menu-icon { width: 22px; text-align: center; font-size: 15px; }
 
 /* ── CONFIRM DIALOG (resign) ── */
 .confirm-overlay {
@@ -2369,8 +2405,10 @@ body.skin-sheet .card-badge.power .badge-glyph { display: none; }
      squeezing the turn badge down to "YO…" on a 375px phone. */
   .top-bar-logo { display: none; }
   .top-bar-btn { font-size: 11px; padding: 7px 10px; min-height: 36px; }
-  #undo-btn .btn-label { display: none; }
-  #undo-btn { font-size: 15px; line-height: 1; padding: 5px 9px; }
+  /* LOG / Business Time / UNDO / RESIGN live in the ☰ menu on phones */
+  #undo-btn, #sidebar-toggle-btn, #skin-toggle-btn, #resign-btn { display: none; }
+  #top-bar { position: relative; }
+  #top-menu-btn { display: inline-block; margin-left: auto; }
 
   /* ── Field body ── */
   #field-body { padding: 6px 4px; gap: 4px; }
@@ -3240,6 +3278,14 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
       <button class="top-bar-btn quiet" id="resign-btn" onclick="confirmResign()" title="Resign this game" aria-label="Resign this game">🏳</button>
       <button class="top-bar-btn quiet" id="skin-toggle-btn" onclick="toggleSkin()" title="Business Time: spreadsheet skin" aria-label="Business Time: spreadsheet skin">📊</button>
+      <!-- Phones: LOG / Business Time / UNDO / RESIGN collapse into this menu -->
+      <button class="top-bar-btn" id="top-menu-btn" onclick="toggleTopMenu()" title="Menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="top-menu">☰</button>
+      <div id="top-menu" role="menu" aria-label="Game menu">
+        <button class="top-menu-item" id="menu-undo" role="menuitem" onclick="topMenuRun(undoLastAction)"><span class="top-menu-icon">↶</span><span class="top-menu-label">Undo</span></button>
+        <button class="top-menu-item" id="menu-log" role="menuitem" onclick="topMenuRun(toggleSidebar)"><span class="top-menu-icon">📋</span><span class="top-menu-label">Log &amp; prizes</span></button>
+        <button class="top-menu-item" id="menu-skin" role="menuitem" onclick="topMenuRun(toggleSkin)"><span class="top-menu-icon">📊</span><span class="top-menu-label">Business Time</span></button>
+        <button class="top-menu-item danger" id="menu-resign" role="menuitem" onclick="topMenuRun(confirmResign)"><span class="top-menu-icon">🏳</span><span class="top-menu-label">Resign</span></button>
+      </div>
     </div>
 
     <!-- Promote banner — in the flow, below the top bar (never covers END TURN / LOG) -->
@@ -3549,15 +3595,15 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
      files — duplicate declarations silently shadow each other and cause
      regression bugs.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="game-utils.js?v=4fd35172ec"></script>
-<script src="game-render.js?v=4fd35172ec"></script>
-<script src="game-actions.js?v=4fd35172ec"></script>
-<script src="game-ai.js?v=4fd35172ec"></script>
+<script src="game-utils.js?v=cfb5134aeb"></script>
+<script src="game-render.js?v=cfb5134aeb"></script>
+<script src="game-actions.js?v=cfb5134aeb"></script>
+<script src="game-ai.js?v=cfb5134aeb"></script>
 
-<script src="pokemon-powers.js?v=4fd35172ec"></script>
-<script src="trainer-cards.js?v=4fd35172ec"></script>
-<script src="move-effects.js?v=4fd35172ec"></script>
-<script src="game-init.js?v=4fd35172ec"></script>
+<script src="pokemon-powers.js?v=cfb5134aeb"></script>
+<script src="trainer-cards.js?v=cfb5134aeb"></script>
+<script src="move-effects.js?v=cfb5134aeb"></script>
+<script src="game-init.js?v=cfb5134aeb"></script>
 
 <!-- Image cache: sw.js keeps card art, energy icons and coin faces in Cache
      Storage so they load instantly and survive deploys (GitHub Pages only

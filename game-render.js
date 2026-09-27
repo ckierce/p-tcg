@@ -572,6 +572,65 @@ function updateUndoBtn() {
   btn.disabled = !ok;
   btn.title = ok ? `Undo: ${undoLabel()}` : 'Nothing to undo';
   btn.setAttribute('aria-label', btn.title);
+  syncTopMenu();
+}
+
+// ══════════════════════════════════════════════════
+// PHONE MENU (☰) — LOG / Business Time / UNDO / RESIGN
+// ══════════════════════════════════════════════════
+// The four secondary top-bar buttons collapse into this dropdown under 600px
+// (CSS hides the buttons and shows #top-menu-btn). Items call the same
+// functions as the buttons; labels are re-read from live state on every open.
+function syncTopMenu() {
+  const undo = document.getElementById('menu-undo');
+  if (!undo) return;
+  const ok = typeof canUndo === 'function' && canUndo();
+  undo.disabled = !ok;
+  undo.querySelector('.top-menu-label').textContent = ok ? `Undo: ${undoLabel()}` : 'Nothing to undo';
+  const log = document.getElementById('menu-log');
+  const sidebarOpen = document.getElementById('game-board')?.classList.contains('sidebar-open');
+  if (log) log.querySelector('.top-menu-label').textContent = sidebarOpen ? 'Hide log & prizes' : 'Log & prizes';
+  const skin = document.getElementById('menu-skin');
+  if (skin) {
+    const sheet = typeof CURRENT_SKIN !== 'undefined' && CURRENT_SKIN === 'sheet';
+    skin.querySelector('.top-menu-icon').textContent = sheet ? '🃏' : '📊';
+    skin.querySelector('.top-menu-label').textContent = sheet ? 'Back to cards' : 'Business Time';
+  }
+}
+
+function toggleTopMenu(force) {
+  const menu = document.getElementById('top-menu');
+  const btn = document.getElementById('top-menu-btn');
+  if (!menu || !btn) return;
+  const open = typeof force === 'boolean' ? force : !menu.classList.contains('show');
+  if (open) syncTopMenu();
+  menu.classList.toggle('show', open);
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) menu.querySelector('.top-menu-item:not(:disabled)')?.focus();
+}
+
+function closeTopMenu() { toggleTopMenu(false); }
+
+// Menu items: close first so the action's own overlay (resign confirm, the
+// sidebar drawer) isn't stacked under an open dropdown.
+function topMenuRun(fn) {
+  closeTopMenu();
+  if (typeof fn === 'function') fn();
+}
+
+if (typeof document !== 'undefined') {
+  // Tap outside / Escape closes the menu.
+  document.addEventListener('pointerdown', e => {
+    const menu = document.getElementById('top-menu');
+    if (!menu || !menu.classList.contains('show')) return;
+    if (e.target.closest?.('#top-menu, #top-menu-btn')) return;
+    closeTopMenu();
+  }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const menu = document.getElementById('top-menu');
+    if (menu && menu.classList.contains('show')) { closeTopMenu(); document.getElementById('top-menu-btn')?.focus(); }
+  });
 }
 
 function updateTurnBadge() {
