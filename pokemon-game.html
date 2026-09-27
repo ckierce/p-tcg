@@ -336,7 +336,13 @@ h1, h2, h3 { font-family: var(--font-title); }
   font-size: 12px;
   color: var(--accent);
   letter-spacing: 1px;
-  margin-right: auto;
+}
+/* Right-hand action cluster. Status (wordmark, turn, phase) stays on the left. */
+.top-bar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 #turn-badge {
@@ -399,7 +405,6 @@ h1, h2, h3 { font-family: var(--font-title); }
   font-size: 15px;
   line-height: 1;
   padding: 3px 6px;
-  margin-left: 4px;
 }
 .top-bar-btn.quiet:hover { border-color: var(--border2); color: var(--text); }
 .top-bar-btn.quiet .btn-label { display: none; }
@@ -2408,7 +2413,8 @@ body.skin-sheet .card-badge.power .badge-glyph { display: none; }
   /* LOG / Business Time / UNDO / RESIGN live in the ☰ menu on phones */
   #undo-btn, #sidebar-toggle-btn, #skin-toggle-btn, #resign-btn { display: none; }
   #top-bar { position: relative; }
-  #top-menu-btn { display: inline-block; margin-left: auto; }
+  .top-bar-actions { gap: 6px; }
+  #top-menu-btn { display: inline-block; }
 
   /* ── Field body ── */
   #field-body { padding: 6px 4px; gap: 4px; }
@@ -3273,13 +3279,17 @@ body.skin-sheet #hand-p1 { justify-content: flex-start; }
       <span class="top-bar-logo">P-TCG</span>
       <span id="turn-badge" class="p1">P1 TURN</span>
       <span id="phase-badge">DRAW</span>
-      <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
-      <button class="top-bar-btn" id="undo-btn" onclick="undoLastAction()" title="Nothing to undo" aria-label="Nothing to undo" disabled>↶ <span class="btn-label">UNDO</span></button>
-      <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
-      <button class="top-bar-btn quiet" id="resign-btn" onclick="confirmResign()" title="Resign this game" aria-label="Resign this game">🏳</button>
-      <button class="top-bar-btn quiet" id="skin-toggle-btn" onclick="toggleSkin()" title="Business Time: spreadsheet skin" aria-label="Business Time: spreadsheet skin">📊</button>
-      <!-- Phones: LOG / Business Time / UNDO / RESIGN collapse into this menu -->
-      <button class="top-bar-btn" id="top-menu-btn" onclick="toggleTopMenu()" title="Menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="top-menu">☰</button>
+      <!-- Actions sit on the right, utilities first and the primary action
+           (END TURN / DONE SETUP / I'M READY) last, where the eye ends up. -->
+      <div class="top-bar-actions">
+        <button class="top-bar-btn" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle log/prizes panel">LOG ▸</button>
+        <button class="top-bar-btn quiet" id="skin-toggle-btn" onclick="toggleSkin()" title="Business Time: spreadsheet skin" aria-label="Business Time: spreadsheet skin">📊</button>
+        <button class="top-bar-btn quiet" id="resign-btn" onclick="confirmResign()" title="Resign this game" aria-label="Resign this game">🏳</button>
+        <button class="top-bar-btn" id="undo-btn" onclick="undoLastAction()" title="Nothing to undo" aria-label="Nothing to undo" disabled>↶ <span class="btn-label">UNDO</span></button>
+        <button class="top-bar-btn primary" id="end-turn-btn" onclick="handleEndTurnBtn()">END TURN</button>
+        <!-- Phones: LOG / Business Time / UNDO / RESIGN collapse into this menu -->
+        <button class="top-bar-btn" id="top-menu-btn" onclick="toggleTopMenu()" title="Menu" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="top-menu">☰</button>
+      </div>
       <div id="top-menu" role="menu" aria-label="Game menu">
         <button class="top-menu-item" id="menu-undo" role="menuitem" onclick="topMenuRun(undoLastAction)"><span class="top-menu-icon">↶</span><span class="top-menu-label">Undo</span></button>
         <button class="top-menu-item" id="menu-log" role="menuitem" onclick="topMenuRun(toggleSidebar)"><span class="top-menu-icon">📋</span><span class="top-menu-label">Log &amp; prizes</span></button>
