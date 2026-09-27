@@ -2,7 +2,7 @@
 // GAME-RENDER.JS — All rendering and UI display functions
 //
 // Depends on globals: G, myRole, vsComputer, CARD_DATA, addLog, flipCoin,
-//   showActionMenu, closeActionMenu, cancelAction, performAttack, playTrainer,
+//   showActionMenu, closeActionMenu, dismissActionMenu, cancelAction, performAttack, playTrainer,
 //   attachEnergy, evolve, playAsActive, startBenchPlay, attemptRetreat,
 //   showFieldActionMenu, handleBenchClick, onActiveClick, selectHandCard,
 //   doneSetup, endTurn, handleEndTurnBtn, isPowerActive, hasPower,
@@ -652,11 +652,43 @@ function showTab(tab) {
 // ══════════════════════════════════════════════════
 // ACTION MENU
 // ══════════════════════════════════════════════════
-function showActionMenu(title, actions, anchorEvent) {
+// Awaited menus (Metronome's "which attack to copy", …) wrap showActionMenu in
+// a Promise. The 4th arg used to be silently ignored, so cancelling — or
+// tapping anywhere outside the sheet — closed the menu without ever resolving
+// that Promise. Inside performAttack that meant _performAttackLocked stayed
+// true for the rest of the game: every later attack said "Action in progress".
+//   opts.onDismiss  — called exactly once if the menu goes away without a
+//                     choice (Cancel, outside tap, or a programmatic close).
+//   opts.noCancel   — no Cancel button and outside taps are ignored; for menus
+//                     that are part of an action already paid for.
+// A bare function is accepted as opts.onDismiss.
+let _actionMenuOnDismiss = null;
+let _actionMenuNoCancel = false;
+
+function showActionMenu(title, actions, anchorEvent, opts) {
+  if (typeof opts === 'function') opts = { onDismiss: opts };
+  // A noCancel menu that is still awaiting its choice cannot be replaced by a
+  // stray tap on a hand / field card: that click must not abort the action.
+  if (_actionMenuNoCancel && _actionMenuOnDismiss) return false;
+  // Replacing a still-pending awaited menu counts as dismissing it.
+  const prevDismiss = _actionMenuOnDismiss;
+  _actionMenuOnDismiss = null;
+  if (prevDismiss) prevDismiss();
+  _actionMenuOnDismiss = opts?.onDismiss || null;
+  _actionMenuNoCancel = !!opts?.noCancel;
   const menu = document.getElementById('action-menu');
   document.getElementById('action-menu-title').textContent = title;
   menu.querySelectorAll('.action-btn').forEach(b => b.remove());
   actions.forEach(a => {
+    // Committing a choice must clear the pending dismiss handler BEFORE the
+    // item's fn runs (it usually calls closeActionMenu itself). Wrapped on the
+    // action object, not just the button, so the guarantee holds however the
+    // item is invoked.
+    if (!a.disabled && !a._menuCommit) {
+      const fn = a.fn;
+      a.fn = () => { _actionMenuOnDismiss = null; return fn(); };
+      a._menuCommit = true;
+    }
     const btn = document.createElement('button');
     btn.className = 'action-btn' + (a.danger ? ' danger' : '') + (a.disabled ? ' disabled' : '');
     // Build label: attack buttons get a sub-line for cost/damage details
@@ -674,13 +706,15 @@ function showActionMenu(title, actions, anchorEvent) {
     }
     menu.appendChild(btn);
   });
-  const cancel = document.createElement('button');
-  cancel.className = 'action-btn';
-  cancel.textContent = 'Cancel';
-  cancel.style.color = 'var(--muted)';
-  cancel.style.marginTop = '2px';
-  cancel.onclick = e => { e.stopPropagation(); closeActionMenu(); cancelAction(); };
-  menu.appendChild(cancel);
+  if (!_actionMenuNoCancel) {
+    const cancel = document.createElement('button');
+    cancel.className = 'action-btn';
+    cancel.textContent = 'Cancel';
+    cancel.style.color = 'var(--muted)';
+    cancel.style.marginTop = '2px';
+    cancel.onclick = e => { e.stopPropagation(); dismissActionMenu(); };
+    menu.appendChild(cancel);
+  }
 
   // Smart positioning: bottom sheet on mobile, anchored near click on desktop
   menu.classList.add('show');
@@ -728,6 +762,21 @@ function showActionMenu(title, actions, anchorEvent) {
 function closeActionMenu() {
   document.getElementById('action-menu').classList.remove('show');
   document.querySelectorAll('.hand-card').forEach(el => el.classList.remove('selected'));
+  // A menu that is closed without a choice must still settle whoever is
+  // awaiting it (see showActionMenu). Fires at most once.
+  const cb = _actionMenuOnDismiss;
+  _actionMenuOnDismiss = null;
+  _actionMenuNoCancel = false;
+  if (cb) cb();
+}
+
+// User-initiated dismissal (Cancel button, tap outside the sheet). Ignored for
+// noCancel menus — the player must make a choice.
+function dismissActionMenu() {
+  if (_actionMenuNoCancel) return false;
+  closeActionMenu();
+  cancelAction();
+  return true;
 }
 
 function showCardDetail(imgSrc) {
@@ -741,10 +790,7 @@ function hideCardDetail() {
 
 document.addEventListener('click', e => {
   const menu = document.getElementById('action-menu');
-  if (menu.classList.contains('show') && !menu.contains(e.target)) {
-    closeActionMenu();
-    cancelAction();
-  }
+  if (menu.classList.contains('show') && !menu.contains(e.target)) dismissActionMenu();
 });
 document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();

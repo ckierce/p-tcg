@@ -1582,7 +1582,15 @@ async function executePlanTail(plan, delayMs) {
     const attackToUse = plan.attack;
     aiLog(`uses ${attackToUse.name}${plan.metronomeTarget ? ` (copying ${plan.metronomeTarget})` : ''}!`, true);
     aiThinking = false;
-    await performAttack(aiPlayerNum, attackToUse);
+    const res = await performAttack(aiPlayerNum, attackToUse);
+    // performAttack refused (its re-entry lock was still held by an earlier,
+    // unresolved attack). Without this the AI would have Gusted / attached and
+    // then sat there forever — the human saw "the AI pulled Abra and never
+    // attacked". End the turn so the game keeps moving.
+    if (res === 'locked') {
+      aiLog(`could not attack (an earlier action never finished) — ends turn.`, true);
+      if (G.started && G.turn === aiPlayerNum && G.phase !== 'PROMOTE') endTurn();
+    }
   } else {
     aiLog(`ends turn.`, true);
     aiThinking = false;

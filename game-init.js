@@ -609,6 +609,7 @@ async function _startGameInner() {
   G.energyPlayedThisTurn = false;
   // Fresh game (incl. rematch) — clear any leftover handoff-guard state.
   _preserveOwnPrivateZones = false;
+  if (typeof _performAttackLocked !== 'undefined') _performAttackLocked = false;
   document.getElementById('setup-screen').style.display = 'none';
   document.getElementById('end-turn-btn').textContent = 'DONE SETUP';
 
@@ -899,10 +900,7 @@ function selectHandCard(player, handIdx, evt) {
 
 document.addEventListener('click', e => {
   const menu = document.getElementById('action-menu');
-  if (menu.classList.contains('show') && !menu.contains(e.target)) {
-    closeActionMenu();
-    cancelAction();
-  }
+  if (menu.classList.contains('show') && !menu.contains(e.target)) dismissActionMenu();
 });
 document.getElementById('load-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeLoadModal();

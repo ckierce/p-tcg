@@ -6732,6 +6732,136 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       const mouseDrop = initSrc.slice(initSrc.indexOf("el.addEventListener('drop'"), initSrc.indexOf('// VS COMPUTER MODE'));
       assert('mouse drop and touch drop share executeDrop (no drifted inline copy)', /executeDrop\(/.test(mouseDrop) && !/attachEnergy\(/.test(mouseDrop));
 
+      // ═══════════════════════════════════════════════════════════════════
+      // REGRESSION: Metronome's "which attack to copy" menu left performAttack
+      // locked for the rest of the game.
+      //
+      // Craig's bug: "clefairy's metronome being played seems to trigger a
+      // state where that player cannot take their turn because it says
+      // 'action in progress' and is stuck in that state." showActionMenu
+      // ignored the on-dismiss callback Metronome passed, so Cancel / a tap
+      // outside the sheet closed the menu without resolving the awaited
+      // Promise and _performAttackLocked stayed true forever.
+      //
+      // The engine stubs showActionMenu/closeActionMenu out; re-install the
+      // real ones from game-render.js (they share the module-level
+      // _actionMenuOnDismiss / _actionMenuNoCancel declared at load).
+      // ═══════════════════════════════════════════════════════════════════
+      {
+        const fs = require('fs');
+        const grSrc = fs.readFileSync(__dirname + '/game-render.js', 'utf8');
+        const fnSrc = (name, next) => grSrc.slice(grSrc.indexOf(`function ${name}(`), grSrc.indexOf(`\nfunction ${next}(`));
+        run(`showActionMenu = ${fnSrc('showActionMenu', 'closeActionMenu')};
+             closeActionMenu = ${fnSrc('closeActionMenu', 'dismissActionMenu')};
+             dismissActionMenu = ${fnSrc('dismissActionMenu', 'showCardDetail')};
+             __realMenu = showActionMenu; __menu = null;
+             showActionMenu = function(t, a, e, o) { const r = __realMenu(t, a, e, o); if (r !== false) __menu = { title: t, actions: a, opts: o }; return r; };
+             myRole = 1; flipCoin = function(){ return Promise.resolve(true); };`);
+        const Li2 = Li;
+        // (a) The human's Metronome vs a multi-attack defender opens the copy menu.
+        G = freshG(); run('myRole = 1;'); // freshG resets myRole; the human seat must own the menu
+        const clefM = mkBy('Clefairy', 'Metronome', { attachedEnergy: [Li2, Li2, Li2] });
+        const buzzM = mkBy('Electabuzz', 'Thunderpunch'); // Thundershock + Thunderpunch (+ more)
+        G.players[1].active = clefM; G.players[2].active = buzzM;
+        const pendingAttack = run('performAttack')(1, clefM.attacks.find(a => a.name === 'Metronome'));
+        await settle();
+        const mMenu = run('__menu');
+        assert('Metronome: the copy menu opened and is uncancelable (attack already declared)', !!mMenu && /Metronome/.test(mMenu.title) && mMenu.opts?.noCancel === true);
+        assert('Metronome: attack is pending — lock held while the player chooses', run('_performAttackLocked') === true);
+        assert('Metronome: Cancel / outside tap is ignored while the choice is pending', run('dismissActionMenu')() === false && run('_performAttackLocked') === true);
+        assert('Metronome: a stray hand/field tap cannot replace the pending menu', run('showActionMenu')('stray', []) === false && run('_performAttackLocked') === true);
+        const punch = mMenu.actions.find(a => a.label === 'Thunderpunch');
+        assert('Metronome: Thunderpunch is offered', !!punch);
+        punch.fn();
+        await pendingAttack; await settle();
+        assertEqual('Metronome: chosen Thunderpunch (heads) dealt 40', buzzM.damage, 40);
+        assert('Metronome: lock released after the copy resolves', run('_performAttackLocked') === false);
+        assert('Metronome: the turn ended normally', G.turn === 2);
+
+        // (b) A programmatic close while the choice is pending resolves the
+        // attack as "copied nothing" instead of hanging the game.
+        G = freshG(); run('myRole = 1;');
+        const clefN = mkBy('Clefairy', 'Metronome', { attachedEnergy: [Li2, Li2, Li2] });
+        const buzzN = mkBy('Electabuzz', 'Thunderpunch');
+        G.players[1].active = clefN; G.players[2].active = buzzN;
+        run('__menu = null;');
+        const pending2 = run('performAttack')(1, clefN.attacks.find(a => a.name === 'Metronome'));
+        await settle();
+        assert('Metronome (closed): menu was pending', run('__menu') !== null && run('_performAttackLocked') === true);
+        run('closeActionMenu')();
+        await pending2; await settle();
+        assertEqual('Metronome (closed): nothing was copied', buzzN.damage, 0);
+        assert('Metronome (closed): lock released — next attack is possible', run('_performAttackLocked') === false);
+        assert('Metronome (closed): the turn still ended', G.turn === 2);
+
+        // (c) Choosing an item must NOT fire the dismiss handler (close-then-resolve order).
+        let dismissed = 0, chosen = 0;
+        run('__menu = null;');
+        run('showActionMenu')('pick', [{ label: 'A', fn: () => { run('closeActionMenu')(); chosen++; } }], null, { onDismiss: () => { dismissed++; } });
+        run('__menu').actions[0].fn();
+        assert('Action menu: choosing an item does not also fire onDismiss', chosen === 1 && dismissed === 0);
+        run('showActionMenu')('pick2', [{ label: 'A', fn: () => {} }], null, () => { dismissed++; });
+        run('dismissActionMenu')();
+        run('closeActionMenu')();
+        assert('Action menu: Cancel fires onDismiss exactly once (bare-function form)', dismissed === 1);
+
+        // (d) Safety nets for a lock that somehow went stale.
+        run('_performAttackLocked = true;');
+        G = freshG();
+        G.players[1].active = mkBy('Electabuzz', 'Thunderpunch', { attachedEnergy: [Li2, Li2, Li2] }); G.players[2].active = mk('Chansey');
+        const refused = await run('performAttack')(1, G.players[1].active.attacks.find(a => a.name === 'Thundershock'));
+        assert("performAttack reports a refused call ('locked') instead of silently returning", refused === 'locked' && G.players[2].active.damage === 0);
+        run('endTurn')(); await settle();
+        assert('endTurn clears a stale attack lock so the next turn is never frozen', run('_performAttackLocked') === false && G.turn === 2);
+        const initSrc2 = fs.readFileSync(__dirname + '/game-init.js', 'utf8');
+        assert('startGame resets the attack lock (a stuck lock never carries into the next game)', /G\.started = true;[\s\S]{0,400}_performAttackLocked = false/.test(initSrc2));
+        assert('game-init.js outside-tap handler routes through dismissActionMenu (respects noCancel)', /!menu\.contains\(e\.target\)\)\s*dismissActionMenu\(\)/.test(initSrc2));
+
+        // (e) AI: if performAttack refuses, the AI ends its turn rather than
+        // sitting forever after its Gust / attachments ("pulled Abra and never attacked").
+        G = freshG(); G.turn = 2;
+        const aiBuzz = mkBy('Electabuzz', 'Thunderpunch', { attachedEnergy: [Li2, Li2, Li2] });
+        const abra = mk('Abra');
+        G.players[2].active = aiBuzz; G.players[1].active = abra;
+        run('_performAttackLocked = true; aiThinking = true;');
+        await run('executePlanTail')({ attack: aiBuzz.attacks.find(a => a.name === 'Thundershock'), target: { benchIdx: null, card: abra, gustHandIdx: null }, attachList: [], plusPowerCount: 0 }, 0);
+        await settle();
+        assert('AI: refused attack → turn handed back to the human, lock cleared', G.turn === 1 && run('_performAttackLocked') === false && run('aiThinking') === false);
+        assert('AI: the refusal is narrated in the log', G.log.some(e => /could not attack/.test(e.msg)));
+
+        // Restore the engine's stubs and the AI-vs-AI role for later blocks.
+        run('showActionMenu = function(){}; closeActionMenu = function(){}; myRole = null; _performAttackLocked = false;');
+      }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // REGRESSION: Mr. Fuji cancelled → card discarded with no effect.
+      // Craig's bug: "mr fuji when played, then canceled, discards without
+      // taking any action." consume() ran before the bench picker.
+      // ═══════════════════════════════════════════════════════════════════
+      {
+        run('__realPicker = openCardPicker; __pick = null; openCardPicker = async () => __pick;');
+        G = freshG();
+        G.players[1].active = mk('Chansey');
+        const sq = mk('Squirtle'), rat = mk('Rattata');
+        G.players[1].bench[0] = sq; G.players[1].bench[1] = rat;
+        const fuji = mk('Mr. Fuji'), deckTop = mk('Bill');
+        G.players[1].hand = [fuji]; G.players[1].deck = [deckTop];
+        await run('playTrainer')(1, 0); await settle();
+        assert('Mr. Fuji cancelled: card stays in hand, nothing discarded', G.players[1].hand[0] === fuji && G.players[1].discard.length === 0);
+        assert('Mr. Fuji cancelled: bench untouched, deck untouched', G.players[1].bench[0] === sq && G.players[1].bench[1] === rat && G.players[1].deck.length === 1);
+        run('__pick = [1];');
+        await run('playTrainer')(1, 0); await settle();
+        assert('Mr. Fuji chosen: Rattata shuffled into the deck, Fuji discarded', G.players[1].bench[1] === null && G.players[1].deck.includes(rat) && G.players[1].discard.includes(fuji) && G.players[1].hand.length === 0);
+        // Single bench Pokémon: no picker, plays straight away.
+        G = freshG();
+        G.players[1].active = mk('Chansey'); const only = mk('Squirtle'); G.players[1].bench[0] = only;
+        const fuji2 = mk('Mr. Fuji'); G.players[1].hand = [fuji2]; G.players[1].deck = [mk('Bill')];
+        run('__pick = null;');
+        await run('playTrainer')(1, 0); await settle();
+        assert('Mr. Fuji with one bench Pokémon: no picker, shuffled in immediately', G.players[1].bench[0] === null && G.players[1].deck.includes(only) && G.players[1].discard.includes(fuji2));
+        run('openCardPicker = __realPicker;');
+      }
+
       // ── View Card off-turn (hand) and on the discard piles ──
       run("__menu = null; showActionMenu = function(title, actions){ __menu = { title, actions }; };");
       G = freshG();

@@ -650,15 +650,18 @@ const TRAINER_EFFECTS = {
 
   // ── Mr. Fuji ──────────────────────────────────────────────────────────────
   // Shuffle a bench Pokémon and all its attachments into your deck.
+  // The card is only consumed once a target is chosen — cancelling the picker
+  // leaves Mr. Fuji in hand (it used to be discarded with nothing happening).
   'Mr. Fuji': async ({ player, p, consume }) => {
     const bench = p.bench.filter(s => s !== null);
     if (!bench.length) { showToast('No bench Pokémon to choose!', true); return; }
-    consume();
     let target = bench[0];
     if (bench.length > 1) {
       const picked = await openCardPicker({ title: 'Mr. Fuji', subtitle: 'Choose a bench Pokémon to shuffle into deck', cards: bench, maxSelect: 1 });
-      if (picked && picked.length) target = bench[picked[0]];
+      if (!picked || !picked.length) return; // cancelled: Mr. Fuji stays in hand
+      target = bench[picked[0]];
     }
+    consume();
     const idx = p.bench.findIndex(s => s === target);
     p.bench[idx] = null;
     p.deck.push(target, ...(target.attachedEnergy || []));

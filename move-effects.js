@@ -1183,19 +1183,24 @@ const MOVE_EFFECTS = {
         // AI picks randomly among the opponent's attacks
         chosenAtk = oppActive.attacks[Math.floor(Math.random() * oppActive.attacks.length)];
       } else {
+        // The attack is already declared (energy checked, flash shown), so the
+        // choice cannot be cancelled: noCancel hides the Cancel button and
+        // ignores outside taps. onDismiss is the safety net for a programmatic
+        // close — the attack then simply copies nothing and the turn ends,
+        // instead of leaving performAttack locked for the rest of the game.
         chosenAtk = await new Promise(resolve => {
           showActionMenu(`Metronome — copy attack from ${oppActive.name}`,
             oppActive.attacks.map(a => ({
               label: a.name,
               sub: `${a.damage || '—'} dmg · ${a.text || 'No effect'}`,
-              fn: () => { closeActionMenu(); resolve(a); }
+              fn: () => { resolve(a); closeActionMenu(); }
             })),
             null,
-            () => resolve(null) // on dismiss
+            { noCancel: true, onDismiss: () => resolve(null) }
           );
         });
       }
-      if (!chosenAtk) return;
+      if (!chosenAtk) { addLog(`${atk.name}: no attack was chosen to copy — nothing happens.`, true); return; }
       // Propagate defender-protection flags onto the copied attack so its own
       // postAttack respects them (Agility/Barrier/Transparency on defender).
       if (atk._defenderEffectsBlocked) chosenAtk._defenderEffectsBlocked = true;

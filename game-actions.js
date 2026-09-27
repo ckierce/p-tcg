@@ -1459,7 +1459,7 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
 let _performAttackLocked = false;
 
 async function performAttack(player, atk) {
-  if (_performAttackLocked) { showToast('Action in progress — please wait.', true); return; }
+  if (_performAttackLocked) { showToast('Action in progress — please wait.', true); return 'locked'; }
   _performAttackLocked = true;
   try {
   const opp = player === 1 ? 2 : 1;
@@ -2183,6 +2183,12 @@ function endTurn() {
       return;
     }
   }
+  // An attack never spans a turn boundary: every path that ends the turn from
+  // inside performAttack returns straight after, and the normal path queues
+  // endTurn behind its own `finally`. So a lock still held here is stale (a
+  // prompt that was dismissed without resolving) and must not freeze the
+  // next turn — or the next game on the same page — with "Action in progress".
+  _performAttackLocked = false;
   const prev = G.turn;
   // Flip turn now so that if a poison/burn KO triggers PROMOTE and returns early,
   // G.turn is already correct and the game doesn't freeze on the attacker's turn.
