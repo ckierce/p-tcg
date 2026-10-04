@@ -6922,6 +6922,27 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         assert('Hurricane: both Energy cards returned to hand', hHand.includes(eA) && hHand.includes(eB) && hHand.length === 4);
         assert('Hurricane: nothing discarded, unrelated Dratini stays in the discard pile', G.players[2].discard.length === 1 && G.players[2].discard[0] === spareDratini);
 
+        // Room game: the forced player is on the OTHER client. Craig's bug: "in an
+        // active game whirlwind gets stuck in 'action in progress'." The attack must
+        // publish G.pendingForceSwitch and finish when the pick arrives through the
+        // room's forceSwitchChoice key.
+        run('vsComputer = false; __gameRefWas = gameRef; gameRef = { update(){ return Promise.resolve(); } };');
+        G = freshG(); run('myRole = 1;');
+        const n1 = mk('Squirtle'), n2 = mk('Bulbasaur'), nOld = mk('Charmander');
+        G.players[1].active = mk('Chansey'); G.players[2].active = nOld;
+        G.players[2].bench[0] = n1; G.players[2].bench[3] = n2;
+        let netDone = false;
+        const netP = run('forceOpponentSwitch')(2, false, 'Whirlwind').then(() => { netDone = true; });
+        await settle();
+        const pend = G.pendingForceSwitch;
+        assert('Room Whirlwind: pending switch is published in G for the other client', !!pend && pend.opp === 2 && pend.attackName === 'Whirlwind' && !!pend.id && !netDone);
+        assert('Room Whirlwind: a stale / foreign pick is ignored', run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: 'old', idx: 0 } }) === false && !netDone && G.players[2].active === nOld);
+        assert('Room Whirlwind: the matching pick is consumed', run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: pend.id, idx: 3 } }) === true);
+        await netP;
+        assert('Room Whirlwind: the chosen Pokémon is Active, old Active took its bench slot', G.players[2].active === n2 && G.players[2].bench[3] === nOld && G.players[2].bench[0] === n1);
+        assert('Room Whirlwind: pending switch cleared, pick not re-applied', !G.pendingForceSwitch && run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: pend.id, idx: 0 } }) === false);
+        run('gameRef = __gameRefWas; window._forceSwitchHandler = null;');
+
         run('forceOpponentSwitch = __stubFOS; vsComputer = __vsWas; aiPlayerNum = __aiNumWas; myRole = null; _performAttackLocked = false;');
       }
 

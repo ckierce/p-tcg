@@ -834,8 +834,14 @@ async function handleBenchClick(player, slotIdx, evt) {
   const slot = G.players[player].bench[slotIdx];
 
   // Force-switch handler (Whirlwind, Ram, Terror Strike — defending player chooses)
+  // Room game: I'm the one being forced to switch — send my pick to the attacker's client.
+  if (G.pendingForceSwitch && myRole !== null && G.pendingForceSwitch.opp === myRole && player === myRole && slot) {
+    if (typeof sendForceSwitchChoice === 'function') sendForceSwitchChoice(slotIdx);
+    return;
+  }
   if (window._forceSwitchHandler && window._forceSwitchHandler.opp === player && slot) {
     const handler = window._forceSwitchHandler;
+    if (handler.remoteId) { showToast(`${oppDisplayName()} chooses which Pokémon to switch in.`, true); return; }
     if (handler.benchSlots.some(x => x.i === slotIdx)) {
       handler.resolve(slotIdx);
       return;

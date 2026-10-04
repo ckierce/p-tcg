@@ -1481,8 +1481,10 @@ function resumeGame(code) {
       const data = snap.val();
       // Mirror the create/join listeners: stash a snapshot that lands mid-write
       // so the SETUP handshake isn't lost to a write collision.
+      if (consumeForceSwitchChoice(data)) return;
       if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleResumeSnapshot; return; }
       _handleResumeSnapshot(data);
+      consumeForceSwitchChoice(data);
     });
     addLog(`P${role} rejoined game ${code}.`, true);
   });
@@ -1694,8 +1696,10 @@ function enterWaitingRoom(code) {
     const data = snap.val();
     // Don't drop a snapshot that lands mid-write — stash it so pushGameState can
     // replay it (the SETUP READY handshake depends on this; see _pendingSetupSnap).
+    if (consumeForceSwitchChoice(data)) return;
     if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleRoomSnapshot; return; }
     _handleRoomSnapshot(data);
+    consumeForceSwitchChoice(data);
   });
 }
 
@@ -1787,8 +1791,10 @@ async function _joinRoomInner(code) {
     // Don't drop a snapshot that lands mid-write — stash it so pushGameState can
     // replay it. For P2 the dropped event is usually P1's SETUP→DRAW handoff,
     // which otherwise leaves P2 stuck on the SETUP screen. See _pendingSetupSnap.
+    if (consumeForceSwitchChoice(data)) return;
     if (isWriting) { _pendingSetupSnap = data; _setupSnapHandler = _handleJoinSnapshot; return; }
     _handleJoinSnapshot(data);
+    consumeForceSwitchChoice(data);
   });
 
   // Reload mid-lobby: the room still knows our deck — load it again.
@@ -1957,6 +1963,68 @@ function refreshSetupReadyUI(announce) {
   if (typeof setMidline === 'function') setMidline(line);
   if (announce && typeof showToast === 'function') {
     showToast(me ? `You're ready! Waiting for ${oppName}…` : `Ready cancelled — click ${myBtn} when you're set.`, !me, me ? 'ok' : '');
+  }
+}
+
+// ── Remote forced switch (Whirlwind, Terror Strike, Ram, Hurricane) ──────────
+// The attacker's client owns the attack and waits (forceOpponentSwitch in
+// move-effects.js) with G.pendingForceSwitch pushed to the room. The forced
+// player's client answers by writing its pick to the room's forceSwitchChoice
+// key — NOT by pushing state, so the attacker's in-flight attack keeps working
+// on its own G. Returns true when a pick was applied; the caller must then skip
+// the snapshot's `state` (it predates the switch).
+function consumeForceSwitchChoice(data) {
+  const h = window._forceSwitchHandler, c = data && data.forceSwitchChoice;
+  if (!h || !h.remoteId || !c || c.id !== h.remoteId) return false;
+  h.resolve(Number(c.idx));
+  return true;
+}
+
+function sendForceSwitchChoice(benchIdx) {
+  const pend = G.pendingForceSwitch;
+  if (!pend || !gameRef) return;
+  _forceSwitchSentId = pend.id;
+  clearHighlights();
+  setMidline('Switching in…');
+  gameRef.update({ forceSwitchChoice: { id: pend.id, idx: benchIdx } });
+}
+
+// Called after every received state: prompt the forced player, or — if the
+// attacker reloaded mid-wait and lost the in-flight attack — re-arm the wait so
+// the pick still lands and the attack's turn still ends.
+let _forceSwitchSentId = null;   // pick already sent for this pending switch
+let _forceSwitchPrompted = false; // my bench is highlighted for a forced switch
+function syncPendingForceSwitch() {
+  const pend = G.pendingForceSwitch;
+  if (!pend || myRole === null || !G.started) {
+    if (_forceSwitchPrompted) { _forceSwitchPrompted = false; clearHighlights(); }
+    return;
+  }
+  if (pend.opp === myRole) {
+    if (_forceSwitchSentId === pend.id) return; // answered; waiting for the attacker's client
+    _forceSwitchPrompted = true;
+    const benchPlayerNum = myRole === 2 ? 1 : myRole; // P2's own bench renders in the p1 slots
+    for (let i = 0; i < 5; i++) {
+      if (G.players[myRole].bench[i]) document.getElementById(`bench-p${benchPlayerNum}-${i}`)?.classList.add('highlight');
+    }
+    setMidline(`${pend.attackName}: choose a Benched Pokémon to switch in!`);
+  } else if (!window._forceSwitchHandler) {
+    const opp = pend.opp, id = pend.id, attackName = pend.attackName;
+    window._forceSwitchHandler = { opp, benchSlots: [], remoteId: id, resolve: (idx) => {
+      window._forceSwitchHandler = null;
+      G.pendingForceSwitch = null;
+      const oppP = G.players[opp];
+      if (!oppP.bench[idx]) idx = oppP.bench.findIndex(s => s !== null);
+      if (idx !== -1) {
+        const old = oppP.active;
+        if (old) { clearAllStatus(old); clearActiveOnlyEffects(old); }
+        oppP.active = oppP.bench[idx]; oppP.bench[idx] = old;
+        addLog(`${attackName}: P${opp}'s ${oppP.active.name} forced to Active!`, true);
+      }
+      renderAll();
+      if (G.turn === myRole && G.phase !== 'PROMOTE') endTurn();
+    }};
+    setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
   }
 }
 
@@ -2206,6 +2274,7 @@ function receiveGameState(state) {
   if (document.getElementById('tab-log').classList.contains('active')) renderLog();
   initDragDrop();
   applyRoleVisibility();
+  syncPendingForceSwitch();
   if (!G.started && wasStarted) {
     // Use the winner recorded by showWinScreen if available; fall back to prize
     // count heuristic only as a last resort (e.g. very old game states).

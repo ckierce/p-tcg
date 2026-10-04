@@ -313,12 +313,15 @@ function pickType(title) {
 }
 
 async function forceOpponentSwitch(opp, attackerChooses, attackName) {
-  const oppP = G.players[opp];
+  let oppP = G.players[opp];
   const bench = oppP.bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
   if (!bench.length) return;
   const doSwitch = (idx) => {
-    const entry = bench.find(x => x.i === idx);
-    if (!entry) return;
+    // Re-read the board: while a remote opponent is choosing, an incoming
+    // snapshot can replace G (and every card object) wholesale.
+    oppP = G.players[opp];
+    const entry = { s: oppP.bench[idx], i: idx };
+    if (!entry.s || !bench.some(x => x.i === idx)) return;
     const old = oppP.active;
     // Multi-status: per TCG rules, all special conditions are removed when
     // a Pokémon leaves the active spot — including via forced switches like
@@ -357,6 +360,26 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
       try { idx = aiChoosePromotion(oppP, G.players[opp === 1 ? 2 : 1]); } catch (e) { idx = -1; }
       doSwitch(bench.some(x => x.i === idx) ? idx : bench[0].i);
       return;
+    }
+    // Room game: the choice belongs to the player on the OTHER client. Publish
+    // the pending switch in G so their board prompts them; their pick comes
+    // back through the room's forceSwitchChoice key (consumeForceSwitchChoice
+    // in game-init.js). Without this the attack waited forever for a click
+    // that could only happen on the attacker's own screen.
+    if (typeof myRole !== 'undefined' && myRole !== null && opp !== myRole && typeof gameRef !== 'undefined' && gameRef) {
+      return new Promise(resolve => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        addLog(`P${opp} must choose a bench Pokémon to switch in (${attackName})!`, true);
+        G.pendingForceSwitch = { opp, attackName, id };
+        window._forceSwitchHandler = { opp, benchSlots: bench, remoteId: id, resolve: (idx) => {
+          window._forceSwitchHandler = null;
+          G.pendingForceSwitch = null;
+          const valid = bench.some(x => x.i === idx) && G.players[opp].bench[idx];
+          doSwitch(valid ? idx : bench[0].i); resolve();
+        }};
+        if (typeof setMidline === 'function') setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
+        renderAll(); // networked renderAll pushes the pending switch to the room
+      });
     }
     return new Promise(resolve => {
       addLog(`P${opp} must choose a bench Pokémon to switch in (${attackName})!`, true);
