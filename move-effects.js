@@ -350,6 +350,14 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
     });
     if (picked && picked.length) doSwitch(bench[picked[0]].i);
   } else {
+    // The AI doesn't click bench slots — when it's the one forced to switch,
+    // pick for it (otherwise the attack hangs waiting for a click).
+    if (typeof vsComputer !== 'undefined' && vsComputer && typeof aiPlayerNum !== 'undefined' && opp === aiPlayerNum) {
+      let idx = -1;
+      try { idx = aiChoosePromotion(oppP, G.players[opp === 1 ? 2 : 1]); } catch (e) { idx = -1; }
+      doSwitch(bench.some(x => x.i === idx) ? idx : bench[0].i);
+      return;
+    }
     return new Promise(resolve => {
       addLog(`P${opp} must choose a bench Pokémon to switch in (${attackName})!`, true);
       bench.forEach(({ i }) => document.getElementById(`bench-p${opp}-${i}`)?.classList.add('highlight'));
