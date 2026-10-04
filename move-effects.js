@@ -1112,7 +1112,7 @@ const MOVE_EFFECTS = {
       const benchLeft = oppP.bench.filter(s => s !== null);
       if (!benchLeft.length) { G.started = false; showWinScreen(player, 'OPPONENT HAS NO POKÉMON LEFT'); if (typeof pushGameState === 'function') pushGameState(); renderAll(); return true; }
       else if (benchLeft.length === 1) { const idx = oppP.bench.findIndex(s => s !== null); oppP.active = oppP.bench[idx]; oppP.bench[idx] = null; addLog(`${oppP.active.name} auto-promoted.`, true); }
-      else { await forceOpponentSwitch(opp, false, `${atk.name} (promote)`); if (!G.players[opp].active) { const idx = G.players[opp].bench.findIndex(s => s !== null); if (idx !== -1) { G.players[opp].active = G.players[opp].bench[idx]; G.players[opp].bench[idx] = null; } } }
+      else { await forceOpponentSwitch(opp, false, atk.name); if (!G.players[opp].active) { const idx = G.players[opp].bench.findIndex(s => s !== null); if (idx !== -1) { G.players[opp].active = G.players[opp].bench[idx]; G.players[opp].bench[idx] = null; } } }
       renderAll();
     }
   },
