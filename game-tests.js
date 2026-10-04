@@ -6862,6 +6862,47 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         run('openCardPicker = __realPicker;');
       }
 
+      // ═══════════════════════════════════════════════════════════════════
+      // REGRESSION: Whirlwind (defender-chooses forced switch) hung vs the AI.
+      // Craig's bug: "pidgey evolution line's whirlwind type attacks don't
+      // work against AI." forceOpponentSwitch waited for a bench click the
+      // computer never makes whenever it had 2+ Benched Pokémon.
+      //
+      // The engine stubs forceOpponentSwitch; re-install the real one from
+      // move-effects.js for this block.
+      // ═══════════════════════════════════════════════════════════════════
+      {
+        const meSrc2 = require('fs').readFileSync(__dirname + '/move-effects.js', 'utf8');
+        const fosSrc = meSrc2.slice(meSrc2.indexOf('async function forceOpponentSwitch('), meSrc2.indexOf('\nfunction prophecyModal('));
+        run(`__stubFOS = forceOpponentSwitch; __vsWas = vsComputer; __aiNumWas = aiPlayerNum;
+             forceOpponentSwitch = ${fosSrc};
+             vsComputer = true; aiPlayerNum = 2; window._forceSwitchHandler = null;`);
+        const C = { name: 'Double Colorless Energy', supertype: 'Energy' };
+        const hung = () => new Promise(r => setTimeout(() => r('HUNG'), 500));
+
+        G = freshG(); run('myRole = 1;');
+        const pidgeotto = mkBy('Pidgeotto', 'Whirlwind', { attachedEnergy: [C] });
+        const aiOld = mk('Charmander'), aiB1 = mk('Squirtle'), aiB2 = mk('Bulbasaur');
+        G.players[1].active = pidgeotto; G.players[2].active = aiOld;
+        G.players[2].bench[0] = aiB1; G.players[2].bench[2] = aiB2;
+        const res = await Promise.race([run('performAttack')(1, pidgeotto.attacks.find(a => a.name === 'Whirlwind')), hung()]);
+        await settle();
+        assert('Whirlwind vs AI (2 benched): attack resolves instead of waiting for a click', res !== 'HUNG' && !run('window._forceSwitchHandler'));
+        assert('Whirlwind vs AI: the computer switched in one of its Benched Pokémon', G.players[2].active === aiB1 || G.players[2].active === aiB2);
+        assert('Whirlwind vs AI: old Active went to the Bench with its damage', G.players[2].bench.includes(aiOld) && aiOld.damage === 20);
+        assert('Whirlwind vs AI: bench is still 5 slots with nothing lost', G.players[2].bench.length === 5 && G.players[2].bench.filter(Boolean).length === 2);
+
+        // Direct call with the AI as the forced player (Terror Strike / Ram path).
+        G = freshG(); run('myRole = 1;');
+        const d1 = mk('Squirtle'), d2 = mk('Bulbasaur'), d3 = mk('Rattata');
+        G.players[1].active = mk('Chansey'); G.players[2].active = mk('Charmander');
+        G.players[2].bench[1] = d1; G.players[2].bench[3] = d2; G.players[2].bench[4] = d3;
+        const res2 = await Promise.race([run('forceOpponentSwitch')(2, false, 'Ram'), hung()]);
+        assert('forceOpponentSwitch on the AI (3 benched): resolves and promotes a Benched Pokémon', res2 !== 'HUNG' && [d1, d2, d3].includes(G.players[2].active));
+
+        run('forceOpponentSwitch = __stubFOS; vsComputer = __vsWas; aiPlayerNum = __aiNumWas; myRole = null; _performAttackLocked = false;');
+      }
+
       // ── View Card off-turn (hand) and on the discard piles ──
       run("__menu = null; showActionMenu = function(title, actions){ __menu = { title, actions }; };");
       G = freshG();
