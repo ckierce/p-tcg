@@ -1980,11 +1980,30 @@ function consumeForceSwitchChoice(data) {
   return true;
 }
 
+// Forced-switch prompt in the same banner the promotion prompt uses — the
+// midline text + bench highlight alone were too easy to miss, and a missed
+// prompt leaves the attacker locked until the pick arrives.
+function showForceSwitchBanner(pend) {
+  const banner = document.getElementById('promote-banner');
+  const text = document.getElementById('promote-banner-text');
+  const sub = document.getElementById('promote-banner-sub');
+  if (!banner || !text || !sub) return;
+  const isMe = pend.opp === myRole;
+  text.textContent = isMe
+    ? `⚠ ${String(pend.attackName).toUpperCase()}: SWITCH IN A BENCHED POKÉMON`
+    : `⚠ ${oppDisplayName()} IS CHOOSING A BENCHED POKÉMON TO SWITCH IN`;
+  sub.textContent = isMe ? 'Tap one of your highlighted Benched Pokémon' : 'Waiting for opponent...';
+  text.style.color = pend.opp === 1 ? 'var(--p1color)' : 'var(--p2color)';
+  banner.style.borderBottomColor = pend.opp === 1 ? 'var(--p1color)' : 'var(--p2color)';
+  banner.classList.add('show');
+}
+
 function sendForceSwitchChoice(benchIdx) {
   const pend = G.pendingForceSwitch;
   if (!pend || !gameRef) return;
   _forceSwitchSentId = pend.id;
   clearHighlights();
+  hidePromoteBanner();
   setMidline('Switching in…');
   gameRef.update({ forceSwitchChoice: { id: pend.id, idx: benchIdx } });
 }
@@ -2008,6 +2027,8 @@ function syncPendingForceSwitch() {
       if (G.players[myRole].bench[i]) document.getElementById(`bench-p${benchPlayerNum}-${i}`)?.classList.add('highlight');
     }
     setMidline(`${pend.attackName}: choose a Benched Pokémon to switch in!`);
+    showForceSwitchBanner(pend);
+    return;
   } else if (!window._forceSwitchHandler) {
     const opp = pend.opp, id = pend.id, attackName = pend.attackName;
     window._forceSwitchHandler = { opp, benchSlots: [], remoteId: id, resolve: (idx) => {
@@ -2021,12 +2042,21 @@ function syncPendingForceSwitch() {
         oppP.active = oppP.bench[idx]; oppP.bench[idx] = old;
         addLog(`${attackName}: P${opp}'s ${oppP.active.name} forced to Active!`, true);
       }
+      hidePromoteBanner();
+      // The lost in-flight attack never reached its self-KO sweep (Ram: "switch
+      // the Pokémon even if Rhydon is knocked out").
+      const me = G.players[myRole].active;
+      if (me && isKnockedOut(me)) {
+        addLog(`${me.name} was knocked out by its own attack!`, true);
+        const ko = checkKO(myRole, opp, me, true);
+        if (ko === 'win' || ko === 'promote') { renderAll(); return; }
+      }
       renderAll();
       if (G.turn === myRole && G.phase !== 'PROMOTE') endTurn();
     }};
   }
   // Every received state resets the midline, so re-assert the waiting message.
-  if (pend.opp !== myRole) setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
+  if (pend.opp !== myRole) { setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`); showForceSwitchBanner(pend); }
 }
 
 // ── Push state to Firebase ────────────────────────

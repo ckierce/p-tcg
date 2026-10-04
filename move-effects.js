@@ -374,10 +374,12 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
         window._forceSwitchHandler = { opp, benchSlots: bench, remoteId: id, resolve: (idx) => {
           window._forceSwitchHandler = null;
           G.pendingForceSwitch = null;
+          if (typeof hidePromoteBanner === 'function') hidePromoteBanner();
           const valid = bench.some(x => x.i === idx) && G.players[opp].bench[idx];
           doSwitch(valid ? idx : bench[0].i); resolve();
         }};
         if (typeof setMidline === 'function') setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
+        if (typeof showForceSwitchBanner === 'function') showForceSwitchBanner(G.pendingForceSwitch);
         renderAll(); // networked renderAll pushes the pending switch to the room
       });
     }
