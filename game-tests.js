@@ -6922,6 +6922,49 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         assert('Hurricane: both Energy cards returned to hand', hHand.includes(eA) && hHand.includes(eB) && hHand.length === 4);
         assert('Hurricane: nothing discarded, unrelated Dratini stays in the discard pile', G.players[2].discard.length === 1 && G.players[2].discard[0] === spareDratini);
 
+        // Ram (Rhydon): "Do the damage before switching the Pokémon. Switch the
+        // Pokémon even if Rhydon is knocked out." Craig's bug: "rhydon's 'ram'
+        // prompts opponent to choose a pokemon to switch in before doing the 50 damage."
+        {
+          const F = { name: 'Fighting Energy', supertype: 'Energy' };
+          run(`__ramSeen = null; __fosReal = forceOpponentSwitch;
+               forceOpponentSwitch = async function(opp, ac, nm) { __ramSeen = { dmg: G.players[opp].active.damage || 0, self: G.players[G.turn].active.damage || 0 }; return __fosReal(opp, ac, nm); };`);
+          G = freshG(); run('myRole = 1;');
+          const rhydon = mkBy('Rhydon', 'Ram', { attachedEnergy: [F, F, F, F] });
+          const ramTarget = mk('Chansey'), rb1 = mk('Squirtle'), rb2 = mk('Bulbasaur');
+          G.players[1].active = rhydon; G.players[2].active = ramTarget;
+          G.players[2].bench[0] = rb1; G.players[2].bench[1] = rb2;
+          await Promise.race([run('performAttack')(1, rhydon.attacks.find(a => a.name === 'Ram')), hung()]);
+          await settle();
+          const seen = run('__ramSeen');
+          assert('Ram: the damage has landed before the opponent is asked to switch', !!seen && seen.dmg > 0 && seen.dmg === ramTarget.damage);
+          assert('Ram: damaged Defending Pokémon went to the Bench, a Benched one came up', G.players[2].bench.includes(ramTarget) && (G.players[2].active === rb1 || G.players[2].active === rb2));
+          assertEqual('Ram: Rhydon took 20 recoil', rhydon.damage, 20);
+
+          // Defender KO'd by Ram: no forced switch — the normal promotion takes over.
+          run('__ramSeen = null;');
+          G = freshG(); run('myRole = 1;');
+          const rhydon2 = mkBy('Rhydon', 'Ram', { attachedEnergy: [F, F, F, F] });
+          G.players[1].active = rhydon2; G.players[2].active = mk('Squirtle');
+          G.players[2].bench[0] = mk('Bulbasaur'); G.players[2].bench[1] = mk('Rattata');
+          await Promise.race([run('performAttack')(1, rhydon2.attacks.find(a => a.name === 'Ram')), hung()]);
+          await settle();
+          assert('Ram KO: no forced switch when the Defending Pokémon is knocked out', run('__ramSeen') === null && G.players[1].prizes.filter(Boolean).length === 2);
+
+          // Rhydon KO'd by its own recoil: the switch still happens first.
+          run('__ramSeen = null;');
+          G = freshG(); run('myRole = 1;');
+          const rhydon3 = mkBy('Rhydon', 'Ram', { attachedEnergy: [F, F, F, F], damage: 80 });
+          const ramTarget3 = mk('Chansey'), rc1 = mk('Squirtle'), rc2 = mk('Bulbasaur');
+          G.players[1].active = rhydon3; G.players[1].bench[0] = mk('Rattata'); G.players[2].active = ramTarget3;
+          G.players[2].bench[0] = rc1; G.players[2].bench[1] = rc2;
+          await Promise.race([run('performAttack')(1, rhydon3.attacks.find(a => a.name === 'Ram')), hung()]);
+          await settle();
+          assert('Ram self-KO: opponent still switched', run('__ramSeen') !== null && G.players[2].bench.includes(ramTarget3) && ramTarget3.damage > 0);
+          assert('Ram self-KO: Rhydon was knocked out and the opponent took a prize', G.players[1].discard.includes(rhydon3) && G.players[2].prizes.filter(Boolean).length === 2);
+          run('forceOpponentSwitch = __fosReal; _performAttackLocked = false;');
+        }
+
         // Room game: the forced player is on the OTHER client. Craig's bug: "in an
         // active game whirlwind gets stuck in 'action in progress'." The attack must
         // publish G.pendingForceSwitch and finish when the pick arrives through the
@@ -6936,6 +6979,11 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         await settle();
         const pend = G.pendingForceSwitch;
         assert('Room Whirlwind: pending switch is published in G for the other client', !!pend && pend.opp === 2 && pend.attackName === 'Whirlwind' && !!pend.id && !netDone);
+        // The attack lock doesn't survive a reload; the pending switch must block on its own.
+        const lockedRes = await run('performAttack')(1, G.players[1].active.attacks[0]);
+        run('endTurn')(); await settle();
+        assert('Room Whirlwind: no second attack while the pick is pending (even with the lock off)', lockedRes === 'locked' && run('_performAttackLocked') === false && nOld.damage === 0);
+        assert('Room Whirlwind: END TURN is refused while the pick is pending', G.turn === 1 && !!G.pendingForceSwitch);
         assert('Room Whirlwind: a stale / foreign pick is ignored', run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: 'old', idx: 0 } }) === false && !netDone && G.players[2].active === nOld);
         assert('Room Whirlwind: the matching pick is consumed', run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: pend.id, idx: 3 } }) === true);
         await netP;

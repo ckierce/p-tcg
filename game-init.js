@@ -2024,8 +2024,9 @@ function syncPendingForceSwitch() {
       renderAll();
       if (G.turn === myRole && G.phase !== 'PROMOTE') endTurn();
     }};
-    setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
   }
+  // Every received state resets the midline, so re-assert the waiting message.
+  if (pend.opp !== myRole) setMidline(`${oppDisplayName()} is choosing a Benched Pokémon to switch in…`);
 }
 
 // ── Push state to Firebase ────────────────────────

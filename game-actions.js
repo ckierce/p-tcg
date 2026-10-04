@@ -1637,8 +1637,16 @@ async function applyPostAttackTextEffects(player, opp, atk, myActive, oppActive,
 
 let _performAttackLocked = false;
 
+// Room game: a forced switch (Whirlwind, …) is waiting on the other player's
+// pick. The in-flight attack normally holds _performAttackLocked, but that lock
+// doesn't survive a reload — G.pendingForceSwitch does.
+function forceSwitchPending() {
+  return !!(G && G.pendingForceSwitch && myRole !== null);
+}
+
 async function performAttack(player, atk) {
   if (_performAttackLocked) { showToast('Action in progress — please wait.', true); return 'locked'; }
+  if (forceSwitchPending()) { showToast(`Waiting for Player ${G.pendingForceSwitch.opp} to choose a Benched Pokémon.`, true); return 'locked'; }
   _performAttackLocked = true;
   undoSeal();
   try {
@@ -1831,14 +1839,6 @@ async function performAttack(player, atk) {
     }
   }
 
-  // RAM (Rhydon) — force opponent switch before self-damage
-  if (/rhydon does 20 damage to itself.*switch/i.test(atk.text || '') || /switch.*even if rhydon is knocked out/i.test(atk.text || '')) {
-    const ramOppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
-    if (ramOppBench.length && typeof forceOpponentSwitch === 'function') {
-      await forceOpponentSwitch(opp, false, atk.name);
-    }
-  }
-
   // Unconditional self-damage (Selfdestruct/Explosion — not coin-gated)
   const selfDmgTextMatch = (atk.text || '').match(/\w+ does (\d+) damage to itself/i);
   const isCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(atk.text || '');
@@ -1963,6 +1963,17 @@ async function performAttack(player, atk) {
   if (dmgResult.done) return;
   dmg = dmgResult.dmg;
   const _dmgDealt = dmg;
+
+  // RAM (Rhydon) — "Do the damage before switching the Pokémon. Switch the
+  // Pokémon even if Rhydon is knocked out." So the forced switch comes after the
+  // 50 has landed (a KO'd defender returned above — promotion replaces the
+  // switch) and before Rhydon's own recoil KO is processed just below.
+  if (/rhydon does 20 damage to itself.*switch/i.test(atk.text || '') || /switch.*even if rhydon is knocked out/i.test(atk.text || '')) {
+    const ramOppBench = G.players[opp].bench.map((s, i) => ({ s, i })).filter(x => x.s !== null);
+    if (G.players[opp].active && ramOppBench.length && typeof forceOpponentSwitch === 'function') {
+      await forceOpponentSwitch(opp, false, atk.name);
+    }
+  }
 
   // ── Post-attack text effects (draw, protect, status, self-KO) ───────────────
   const postDone = await applyPostAttackTextEffects(player, opp, atk, myActive, oppActive, attackerSelfKOd);
@@ -2346,6 +2357,10 @@ function endTurn() {
   if (!G.started) return;
   if (G.phase === 'PROMOTE') {
     showToast(`Player ${G.pendingPromotion} must choose a new Active first!`, true);
+    return;
+  }
+  if (forceSwitchPending()) {
+    showToast(`Waiting for Player ${G.pendingForceSwitch.opp} to choose a Benched Pokémon.`, true);
     return;
   }
   // Safety: if any player has no active but still has bench Pokémon, they must promote first
