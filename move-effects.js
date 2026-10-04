@@ -1079,12 +1079,11 @@ const MOVE_EFFECTS = {
       if (!oppActive) return; // already KO'd — no return effect
       const toHand = [oppActive, ...(oppActive.attachedEnergy || [])];
       oppActive.attachedEnergy = []; oppActive.damage = 0; clearAllStatus(oppActive);
-      let evoName = oppActive.evolvesFrom;
-      while (evoName) {
-        const idx = oppP.discard.findIndex(c => c.name === evoName && c.supertype === 'Pokémon');
-        if (idx !== -1) { const pre = oppP.discard.splice(idx, 1)[0]; pre.damage = 0; pre.attachedEnergy = []; clearAllStatus(pre); toHand.push(pre); evoName = pre.evolvesFrom; }
-        else break;
-      }
+      // The cards it evolved from sit underneath it (prevStages), not in the
+      // discard pile — they go back to the hand with it.
+      toHand.push(...(oppActive.prevStages || []));
+      oppActive.prevStages = undefined;
+      if (typeof clearActiveOnlyEffects === 'function') clearActiveOnlyEffects(oppActive);
       oppP.active = null; oppP.hand.push(...toHand);
       addLog(`${atk.name}: ${oppActive.name} + attachments returned to P${opp}'s hand!`, true);
       const benchLeft = oppP.bench.filter(s => s !== null);

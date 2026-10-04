@@ -6900,6 +6900,28 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         const res2 = await Promise.race([run('forceOpponentSwitch')(2, false, 'Ram'), hung()]);
         assert('forceOpponentSwitch on the AI (3 benched): resolves and promotes a Benched Pokémon', res2 !== 'HUNG' && [d1, d2, d3].includes(G.players[2].active));
 
+        // Hurricane (Pidgeot): the Defending Pokémon, the cards it evolved from
+        // and its Energy all return to the hand. Craig's bug: "if i use whirlwind
+        // against a dragonair, the dragonair, the dratini under it, and all energy
+        // cards should return to the hand and not be discarded." The pre-evolutions
+        // were looked up in the discard pile instead of under the card.
+        G = freshG(); run('myRole = 1;');
+        const pidgeot = mkBy('Pidgeot', 'Hurricane', { attachedEnergy: [C, C] });
+        const dratini = mk('Dratini');
+        const eA = { name: 'Water Energy', supertype: 'Energy' }, eB = { name: 'Fire Energy', supertype: 'Energy' };
+        const dragonair = mk('Dragonair', { attachedEnergy: [eA, eB], prevStages: run('buildEvolutionStackUnder')(dratini) });
+        const spareDratini = mk('Dratini'), hb1 = mk('Squirtle'), hb2 = mk('Bulbasaur');
+        G.players[1].active = pidgeot; G.players[2].active = dragonair;
+        G.players[2].bench[0] = hb1; G.players[2].bench[1] = hb2; G.players[2].discard = [spareDratini];
+        // Call the effect directly so the AI's following turn can't touch the hand.
+        const res3 = await Promise.race([run('MOVE_EFFECTS')['Hurricane'].postAttack({ player: 1, opp: 2, myActive: pidgeot, atk: pidgeot.attacks.find(a => a.name === 'Hurricane') }), hung()]);
+        const hHand = G.players[2].hand;
+        assert('Hurricane vs AI: resolves and the computer promotes a Benched Pokémon', res3 !== 'HUNG' && (G.players[2].active === hb1 || G.players[2].active === hb2));
+        assert('Hurricane: Dragonair returned to hand, clean', hHand.includes(dragonair) && dragonair.damage === 0 && !dragonair.prevStages && dragonair.attachedEnergy.length === 0);
+        assert('Hurricane: the Dratini under it returned to hand', hHand.filter(c => c.name === 'Dratini').length === 1);
+        assert('Hurricane: both Energy cards returned to hand', hHand.includes(eA) && hHand.includes(eB) && hHand.length === 4);
+        assert('Hurricane: nothing discarded, unrelated Dratini stays in the discard pile', G.players[2].discard.length === 1 && G.players[2].discard[0] === spareDratini);
+
         run('forceOpponentSwitch = __stubFOS; vsComputer = __vsWas; aiPlayerNum = __aiNumWas; myRole = null; _performAttackLocked = false;');
       }
 
