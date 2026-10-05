@@ -6989,6 +6989,41 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
         await netP;
         assert('Room Whirlwind: the chosen Pokémon is Active, old Active took its bench slot', G.players[2].active === n2 && G.players[2].bench[3] === nOld && G.players[2].bench[0] === n1);
         assert('Room Whirlwind: pending switch cleared, pick not re-applied', !G.pendingForceSwitch && run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: pend.id, idx: 0 } }) === false);
+
+        // Attacker reloaded mid-wait: the in-flight attack is gone, so the received
+        // state re-arms the wait (syncPendingForceSwitch). Craig's stuck room: the
+        // pick landed after a reload and a Rhydon at 100/100 from Ram's recoil
+        // stayed in play — "switch the Pokémon even if Rhydon is knocked out".
+        {
+          const F2 = { name: 'Fighting Energy', supertype: 'Energy' };
+          G = freshG(); run('myRole = 1; window._forceSwitchHandler = null;');
+          const rhyhornUnder = mk('Rhyhorn');
+          const koRhydon = mkBy('Rhydon', 'Ram', { attachedEnergy: [F2, F2, F2, F2], damage: 100, prevStages: run('buildEvolutionStackUnder')(rhyhornUnder) });
+          const rlOld = mk('Chansey', { damage: 50 }), rl1 = mk('Squirtle'), rl2 = mk('Bulbasaur');
+          G.players[1].active = koRhydon; G.players[1].bench[0] = mk('Rattata'); G.players[1].bench[1] = mk('Pidgey');
+          G.players[2].active = rlOld; G.players[2].bench[0] = rl1; G.players[2].bench[1] = rl2;
+          G.pendingForceSwitch = { opp: 2, attackName: 'Ram', id: 'reload-1' };
+          run('syncPendingForceSwitch')();
+          assert('Reload re-arm: the wait is restored from the received state', run('window._forceSwitchHandler && window._forceSwitchHandler.remoteId') === 'reload-1');
+          assert('Reload re-arm: still no attacking while waiting', (await run('performAttack')(1, koRhydon.attacks[0])) === 'locked');
+          assert('Reload re-arm: the pick is consumed', run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: 'reload-1', idx: 1 } }) === true);
+          await settle();
+          assert('Reload re-arm: opponent switched to the chosen Pokémon', G.players[2].active === rl2 && G.players[2].bench[1] === rlOld && rlOld.damage === 50 && !G.pendingForceSwitch);
+          assert('Reload re-arm: self-KO\'d Rhydon is knocked out with the card under it and its Energy', G.players[1].active === null && G.players[1].discard.includes(koRhydon) && G.players[1].discard.some(c => c.name === 'Rhyhorn') && G.players[1].discard.filter(c => c.name === 'Fighting Energy').length === 4);
+          assert('Reload re-arm: opponent takes the prize and the attacker must promote (turn not ended yet)', G.players[2].prizes.filter(Boolean).length === 2 && G.phase === 'PROMOTE' && G.pendingPromotion === 1 && G.turn === 1);
+
+          // Same path with a healthy attacker: switch, then the turn simply ends.
+          G = freshG(); run('myRole = 1; window._forceSwitchHandler = null;');
+          const okRhydon = mkBy('Rhydon', 'Ram', { damage: 20 });
+          const ro = mk('Chansey'), ro1 = mk('Squirtle'), ro2 = mk('Bulbasaur');
+          G.players[1].active = okRhydon; G.players[2].active = ro; G.players[2].bench[0] = ro1; G.players[2].bench[1] = ro2;
+          G.pendingForceSwitch = { opp: 2, attackName: 'Ram', id: 'reload-2' };
+          run('syncPendingForceSwitch')();
+          run('consumeForceSwitchChoice')({ forceSwitchChoice: { id: 'reload-2', idx: 0 } });
+          await settle();
+          assert('Reload re-arm (no KO): switch applied, attacker stays, turn passes', G.players[2].active === ro1 && G.players[1].active === okRhydon && G.turn === 2 && !G.pendingForceSwitch);
+          run('myRole = 1;');
+        }
         run('gameRef = __gameRefWas; window._forceSwitchHandler = null;');
 
         run('forceOpponentSwitch = __stubFOS; vsComputer = __vsWas; aiPlayerNum = __aiNumWas; myRole = null; _performAttackLocked = false;');
