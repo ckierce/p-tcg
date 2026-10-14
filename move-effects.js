@@ -395,6 +395,38 @@ async function forceOpponentSwitch(opp, attackerChooses, attackName) {
   }
 }
 
+// Prophecy's "which deck?" prompt. Builds real elements and removes the whole
+// overlay by reference: the old inline onclick removed closest('div[style]'),
+// which from a <button> is the button ROW, so the backdrop and the
+// "Prophecy — Choose Deck" title stayed on screen after the attack.
+function prophecyDeckChoice(player, opp) {
+  return new Promise(resolve => {
+    const existing = document.getElementById('prophecy-deck-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'prophecy-deck-overlay';
+    overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;
+      display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;`;
+    const title = document.createElement('div');
+    title.textContent = 'Prophecy — Choose Deck';
+    title.style.cssText = 'font-family:var(--font);font-size:10px;color:var(--accent);';
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:12px;';
+    const mkBtn = (label, who) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = `font-family:var(--font);font-size:9px;padding:10px 18px;background:var(--surface2);
+        border:1px solid var(--p${who}color);color:var(--p${who}color);cursor:pointer;border-radius:4px;`;
+      b.addEventListener('click', () => { overlay.remove(); resolve(who); });
+      return b;
+    };
+    row.appendChild(mkBtn(`Your Deck (P${player})`, player));
+    row.appendChild(mkBtn(`Opponent's Deck (P${opp})`, opp));
+    overlay.appendChild(title); overlay.appendChild(row);
+    document.body.appendChild(overlay);
+  });
+}
+
 function prophecyModal(player, targetPlayer, numCards) {
   return new Promise(resolve => {
     const deck = G.players[targetPlayer].deck;
@@ -1373,20 +1405,9 @@ const MOVE_EFFECTS = {
   // Prophecy (Hypno): look at top 3 of either deck, rearrange
   'Prophecy': {
     postAttack: async ({ player, opp, atk }) => {
-      const deckChoice = await new Promise(resolve => {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1100;
-          display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;`;
-        overlay.innerHTML = `<div style="font-family:var(--font);font-size:10px;color:var(--accent)">Prophecy — Choose Deck</div>
-          <div style="display:flex;gap:12px;">
-            <button onclick="this.closest('div[style]').remove();window._prophecyChoice=${player}"
-              style="font-family:var(--font);font-size:9px;padding:10px 18px;background:var(--surface2);border:1px solid var(--p1color);color:var(--p1color);cursor:pointer;border-radius:4px;">Your Deck (P${player})</button>
-            <button onclick="this.closest('div[style]').remove();window._prophecyChoice=${opp}"
-              style="font-family:var(--font);font-size:9px;padding:10px 18px;background:var(--surface2);border:1px solid var(--p2color);color:var(--p2color);cursor:pointer;border-radius:4px;">Opponent's Deck (P${opp})</button>
-          </div>`;
-        document.body.appendChild(overlay);
-        const check = setInterval(() => { if (window._prophecyChoice !== undefined) { clearInterval(check); const v = window._prophecyChoice; window._prophecyChoice = undefined; resolve(v); } }, 100);
-      });
+      const aiAutoPick = (typeof vsComputer !== 'undefined' && vsComputer && typeof aiPlayerNum !== 'undefined' && player === aiPlayerNum);
+      if (aiAutoPick) { addLog(`${atk.name}: P${player} looked at the top cards of P${opp}'s deck.`); return; }
+      const deckChoice = await prophecyDeckChoice(player, opp);
       await prophecyModal(player, deckChoice, 3);
       renderAll();
     }

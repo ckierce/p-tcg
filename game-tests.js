@@ -7182,6 +7182,47 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       assert('Resign vs AI: computer cannot be resigned for', run('resignGame')(2) === false);
       assert('Resign vs AI: human resigns, computer wins', run('resignGame')(1) === true && H.G.winner === 2);
       run('vsComputer = false; undoSeal();');
+
+      // ── REGRESSION: Hypno's Prophecy left "Prophecy — Choose Deck" on screen ──
+      // Craig's bug: "Hypno prophecy text remains after move." The deck prompt's
+      // buttons ran this.closest('div[style]').remove() — from a <button> that
+      // is the button ROW, not the fixed overlay, so the dark backdrop and the
+      // title stayed up after the attack. The prompt now removes its overlay
+      // by reference. Driven against a tiny fake DOM inside the engine.
+      {
+        run(`__docWas = document; __prophArgs = null; __prophModalWas = prophecyModal;
+             prophecyModal = function(p, t, n){ __prophArgs = [p, t, n]; return Promise.resolve(); };
+             (function(){
+               const mkEl = () => { const el = { id: '', textContent: '', style: {}, children: [], _l: {}, parent: null,
+                 appendChild(c){ c.parent = el; el.children.push(c); return c; },
+                 remove(){ if (el.parent) { el.parent.children = el.parent.children.filter(x => x !== el); el.parent = null; } },
+                 addEventListener(ev, fn){ (el._l[ev] = el._l[ev] || []).push(fn); },
+                 click(){ (el._l.click || []).forEach(f => f()); } }; return el; };
+               const body = mkEl();
+               const all = el => [el, ...el.children.flatMap(all)];
+               document = { body, createElement: mkEl, getElementById: id => all(body).find(e => e.id === id) || null,
+                 _all: () => all(body) };
+             })();
+             vsComputer = false;`);
+        const hung2 = () => new Promise(r => setTimeout(() => r('HUNG'), 500));
+        const onScreen = () => run('document._all')().map(e => e.textContent).filter(Boolean);
+        const p = run('MOVE_EFFECTS')['Prophecy'].postAttack({ player: 1, opp: 2, atk: { name: 'Prophecy' } });
+        await settle();
+        const overlay = run('document.getElementById')('prophecy-deck-overlay');
+        assert('Prophecy: the deck prompt is on screen while waiting for a choice', !!overlay && onScreen().includes('Prophecy — Choose Deck'));
+        const oppBtn = run('document._all')().find(e => /Opponent's Deck/.test(e.textContent));
+        assert('Prophecy: both deck buttons are offered', !!oppBtn && run('document._all')().some(e => /Your Deck \(P1\)/.test(e.textContent)));
+        oppBtn.click();
+        const res = await Promise.race([p, hung2()]);
+        assert('Prophecy: clicking a deck resolves the attack', res !== 'HUNG');
+        assertEqual('Prophecy: the chosen deck is handed to the reorder modal', run('__prophArgs'), [1, 2, 3]);
+        assert('Prophecy: the prompt (backdrop + title) is gone after the choice', run('document.getElementById')('prophecy-deck-overlay') === null && !onScreen().includes('Prophecy — Choose Deck') && run('document.body').children.length === 0);
+        // The computer never sees a modal: no prompt, no hang.
+        run('__prophArgs = null; vsComputer = true; aiPlayerNum = 2;');
+        const aiRes = await Promise.race([run('MOVE_EFFECTS')['Prophecy'].postAttack({ player: 2, opp: 1, atk: { name: 'Prophecy' } }), hung2()]);
+        assert('Prophecy vs AI: the computer\'s attack resolves with no prompt', aiRes !== 'HUNG' && run('__prophArgs') === null && run('document.body').children.length === 0);
+        run('document = __docWas; prophecyModal = __prophModalWas; vsComputer = false;');
+      }
       eng.stop();
       __finish();
     })().catch(e => { console.error('  ✗  FAIL: bench-damage regression threw:', e.message); failed++; eng.stop(); __finish(); });
