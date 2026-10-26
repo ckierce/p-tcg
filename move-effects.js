@@ -1289,15 +1289,70 @@ const MOVE_EFFECTS = {
         addLog(`${atk.name}: ${oppActive.name} is fully protected — copied damage prevented.`);
         dmg = 0;
       }
+      // Generic text effects performAttack applies to a declared attack but that
+      // this copy path used to skip. Metronome only excludes Energy costs and
+      // things "required in order to use" the attack — self-damage and bench
+      // splash are effects, so a copied Double-edge / Selfdestruct / Take Down
+      // hurts the copier (and both benches) exactly as the original would.
+      // Mirror performAttack's order: splash + recoil land before the
+      // defender's damage so a double KO is resolved like computeFinalDamage.
+      const copiedText = chosenAtk.text || '';
+      const copySplash = copiedText.match(/does (\d+) damage to each pok[eé]mon on each player[''s]* bench/i);
+      if (copySplash) {
+        const splashDmg = parseInt(copySplash[1]);
+        for (const pNum of [1, 2]) {
+          const pObj = G.players[pNum];
+          for (let i = 0; i < pObj.bench.length; i++) {
+            const b = pObj.bench[i];
+            if (!b) continue;
+            b.damage = (b.damage || 0) + splashDmg;
+            addLog(`${b.name} (P${pNum} bench) took ${splashDmg} splash damage! (${b.damage}/${b.hp} HP)`);
+            const bHp = parseInt(b.hp) || 0;
+            if (bHp > 0 && b.damage >= bHp) {
+              addLog(`${b.name} was knocked out by splash damage!`, true);
+              if (koBenchAndPrize(pNum, i) === 'win') { renderAll(); return true; }
+            }
+          }
+        }
+      }
+      const copySelfDmg = copiedText.match(/\w+ does (\d+) damage to itself/i);
+      const copyCoinGatedRecoil = /if tails[^.]*does \d+ damage to itself/i.test(copiedText);
+      if (copySelfDmg && !copyCoinGatedRecoil && myActive) {
+        let selfDmg = parseInt(copySelfDmg[1]);
+        if (myActive.defender && selfDmg > 0) {
+          const reduced = Math.min(20, selfDmg);
+          selfDmg = Math.max(0, selfDmg - 20);
+          addLog(`Defender reduces ${myActive.name}'s recoil by ${reduced} (${selfDmg} self-damage).`);
+        }
+        if (selfDmg > 0) {
+          myActive.damage = (myActive.damage || 0) + selfDmg;
+          addLog(`${myActive.name} took ${selfDmg} recoil damage from ${chosenAtk.name}! (${myActive.damage}/${myActive.hp} HP)`);
+        }
+      }
       if (dmg > 0) {
         const currentOpp = G.players[opp].active;
         if (currentOpp) {
           currentOpp.damage = (currentOpp.damage || 0) + dmg;
           addLog(`${atk.name} (${chosenAtk.name}): ${dmg} damage to ${currentOpp.name}!`, true);
           const koResult = checkKO(player, opp, currentOpp, false);
-          if (koResult === 'win') { renderAll(); return true; }
+          // Double KO (copied Double-edge / Selfdestruct took the copier down
+          // too): discard the copier and give the opponent its prize, as
+          // computeFinalDamage does — performAttack's self-KO sweep can't,
+          // because checkKO already moved the game into the defender's PROMOTE.
+          const selfKOdToo = myActive && G.players[player].active === myActive && isKnockedOut(myActive);
+          if (koResult === 'win') {
+            if (selfKOdToo) { addLog(`${myActive.name} was also knocked out by recoil!`, true); discardSelfKOdActive(player, opp, myActive); }
+            renderAll(); return true;
+          }
+          if (koResult === 'promote' && selfKOdToo) {
+            addLog(`${myActive.name} was also knocked out by recoil!`, true);
+            discardSelfKOdActive(player, opp, myActive);
+            renderAll(); return true; // endTurn fires inside resolvePromotion
+          }
         }
       }
+      // A copier KO'd by its own recoil with the defender still standing is
+      // swept up by performAttack's self-KO check after applyMoveEffects.
       // Apply copied attack's post effects — but skip defender-targeting ones
       // when blocked, matching the same rule applyMoveEffects uses.
       if (copyEffect?.postAttack) {

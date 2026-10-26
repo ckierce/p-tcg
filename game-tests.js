@@ -6614,6 +6614,55 @@ section('REGRESSION: Blizzard / Spark bench damage survives a KO on the defender
       assertEqual('Metronome→Thunderpunch TAILS: 30 damage to Electabuzz', buzzT.damage, 30);
       assertEqual('Metronome→Thunderpunch TAILS: Clefairy takes the 10 recoil', clefT.damage, 10);
 
+      // REGRESSION: Metronome copying an attack with unconditional self-damage.
+      // Craig's bug: "if clefable uses metronome to copy chansey's double-edge,
+      // should clefable take the damage? it isn't." Metronome only excludes
+      // Energy costs; the recoil is an effect, so the copier takes it. The copy
+      // path skipped performAttack's "does N damage to itself" parser.
+      G = freshG();
+      const clefDE = mkId('base2-1', { attachedEnergy: [Li, Li, Li] }); // Clefable, 70 HP
+      const chanseyDE = mkId('base1-3');                                  // Chansey, 120 HP
+      chanseyDE.attacks = chanseyDE.attacks.filter(a => a.name === 'Double-edge');
+      G.players[1].active = clefDE; G.players[2].active = chanseyDE;
+      G.players[1].bench[0] = mk('Rattata');
+      const p2PrizesBeforeDE = G.players[2].prizes.filter(Boolean).length;
+      await run('performAttack')(1, clefDE.attacks.find(a => a.name === 'Metronome'));
+      await settle(); await settle();
+      assertEqual('Metronome→Double-edge: 80 damage to Chansey', chanseyDE.damage, 80);
+      assert('Metronome→Double-edge: Clefable takes the 80 recoil and is knocked out (in P1 discard, no longer Active)',
+        G.players[1].discard.includes(clefDE) && G.players[1].active !== clefDE);
+      assertEqual('Metronome→Double-edge: the opponent takes a prize for the self-KO', G.players[2].prizes.filter(Boolean).length, p2PrizesBeforeDE - 1);
+      assert('Metronome→Double-edge: P1 must promote from the bench', G.phase === 'PROMOTE' && G.pendingPromotion === 1);
+
+      // Defender reduces the copied recoil like it does the original's.
+      G = freshG();
+      const clefDef = mkId('base2-1', { attachedEnergy: [Li, Li, Li], defender: true });
+      const chanseyDef = mkId('base1-3');
+      chanseyDef.attacks = chanseyDef.attacks.filter(a => a.name === 'Double-edge');
+      G.players[1].active = clefDef; G.players[2].active = chanseyDef;
+      await run('performAttack')(1, clefDef.attacks.find(a => a.name === 'Metronome'));
+      await settle(); await settle();
+      assertEqual('Metronome→Double-edge with Defender: recoil reduced to 60, Clefable survives at 60/70', clefDef.damage, 60);
+      assert('Metronome→Double-edge with Defender: Clefable still Active', G.players[1].active === clefDef);
+
+      // Copied Selfdestruct: bench splash on both sides + recoil, double KO.
+      G = freshG();
+      const clefSD = mkId('base2-1', { attachedEnergy: [Li, Li, Li] });
+      const magnetonSD = mkBy('Magneton', 'Selfdestruct');               // 60 HP: the copied 80 KOs it
+      magnetonSD.attacks = magnetonSD.attacks.filter(a => a.name === 'Selfdestruct');
+      const p1BenchSD = mk('Rattata'), p2BenchSD = mk('Chansey');
+      G.players[1].active = clefSD; G.players[2].active = magnetonSD;
+      G.players[1].bench[0] = p1BenchSD; G.players[2].bench[0] = p2BenchSD;
+      const p1PrizesBeforeSD = G.players[1].prizes.filter(Boolean).length;
+      const p2PrizesBeforeSD = G.players[2].prizes.filter(Boolean).length;
+      await run('performAttack')(1, clefSD.attacks.find(a => a.name === 'Metronome'));
+      await settle(); await settle();
+      assert('Metronome→Selfdestruct: 20 splash to both benches', p1BenchSD.damage === 20 && p2BenchSD.damage === 20);
+      assert('Metronome→Selfdestruct: Magneton knocked out (P2 discard), P1 takes a prize',
+        G.players[2].discard.includes(magnetonSD) && G.players[1].prizes.filter(Boolean).length === p1PrizesBeforeSD - 1);
+      assert('Metronome→Selfdestruct: Clefable knocked out by the copied recoil (P1 discard), P2 takes a prize',
+        G.players[1].discard.includes(clefSD) && G.players[1].active !== clefSD && G.players[2].prizes.filter(Boolean).length === p2PrizesBeforeSD - 1);
+
       // REGRESSION: self-inflicted recoil that reaches the attacker's HP must KO it.
       // Electabuzz (70 HP) at 60 damage uses Thunderpunch, tails → 30 to the
       // defender + 10 recoil = 70/70. It used to keep fighting at 70/70; the
