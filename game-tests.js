@@ -6137,7 +6137,7 @@ section('AI v2: energy, hold values, energy removal, promotion, deck budget');
     const jab = { name: 'Jab', cost: ['Fighting'], damage: '20', text: '' };
     const lone = mkCard({ name: 'Lone', supertype: 'Pokémon', subtypes: ['Basic'], attacks: [jab], attachedEnergy: [Fi] });
     const buddy = mkCard({ name: 'Buddy', supertype: 'Pokémon', subtypes: ['Basic'], hp: '60', attacks: [jab] });
-    const p2 = mkPlayer({ active: lone, hand: [Fi, Fi, Fi], deck: [Fi, buddy, Fi, { name: 'Gust of Wind', supertype: 'Trainer' }] });
+    const p2 = mkPlayer({ active: lone, hand: [Fi, Fi, Fi], deck: [Fi, buddy, Fi, { name: 'Gust of Wind', supertype: 'Trainer' }], prizes: [] });
     const p1 = mkPlayer({ active: mkCard({ attacks: [jab], attachedEnergy: [Fi] }) });
     const wish = _wish(p2, p1);
     assertEqual('One Pokémon in play, no Basic in hand: the deck wish is a Basic', p2.deck[wish.idx]?.name, 'Buddy');
@@ -6164,6 +6164,86 @@ section('AI v2: energy, hold values, energy removal, promotion, deck budget');
     assertEqual('Defensive retreat picks the bench Pokémon closest to attacking', plan?.preStep?.benchIdx, 1);
     global.G.players = saved.players; global.G.evolvedThisTurn = saved.ev; global.G.energyPlayedThisTurn = saved.en;
   }
+}
+
+section('AI v2: decklist knowledge — knows its 60 cards, not the pile or the prizes');
+{
+  const ai = require('./game-ai.js');
+  const mkCard = (o = {}) => ({ name: 'Mon', hp: '70', damage: 0, types: ['Colorless'], attacks: [], attachedEnergy: [], weaknesses: [], resistances: [], ...o });
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: [], ...o });
+  const prize = c => ({ card: c, revealed: false });
+  const W = () => ({ name: 'Water Energy', supertype: 'Energy' });
+  const squirtle = () => mkCard({ name: 'Squirtle', supertype: 'Pokémon', subtypes: ['Basic'], hp: '40' });
+  const wartortle = () => mkCard({ name: 'Wartortle', supertype: 'Pokémon', subtypes: ['Stage 1'], evolvesFrom: 'Squirtle' });
+  const blastoise = () => mkCard({ name: 'Blastoise', supertype: 'Pokémon', subtypes: ['Stage 2'], evolvesFrom: 'Wartortle', hp: '100' });
+  const breeder = () => ({ name: 'Pokémon Breeder', supertype: 'Trainer' });
+  const filler = n => Array.from({ length: n }, (_, i) => ({ name: `Filler ${i}`, supertype: 'Trainer' }));
+  const names = cards => cards.map(c => c.name).sort().join('|');
+  const savedPlayers = global.G.players, savedSeen = global.G._aiDeckSeen;
+
+  // The decklist is every card the player owns; unseen = list − seen = pile + prizes
+  {
+    const active = { ...squirtle(), attachedEnergy: [W()] };
+    const evolved = { ...wartortle(), prevStages: [squirtle()], attachedEnergy: [W(), W()] };
+    const p = mkPlayer({ active, bench: [evolved, null, null, null, null], hand: [blastoise(), W()], discard: [breeder()],
+      deck: [W(), W(), breeder(), ...filler(4)], prizes: [prize(blastoise()), prize(W()), null, null] });
+    assertEqual('Decklist counts every zone, attached energy and the stages underneath', ai.aiDeckList(p).length, 18);
+    assertEqual('Unseen cards = pile + remaining prizes', ai.aiUnseenCards(p).length, 9);
+    const seenNames = ai.aiSeenCards(p).map(c => c.name);
+    const listMinusSeen = ai.aiDeckList(p).map(c => c.name);
+    for (const n of seenNames) listMinusSeen.splice(listMinusSeen.indexOf(n), 1);
+    assertEqual('Decklist minus everything seen is exactly the unseen pool', listMinusSeen.sort().join('|'), names(ai.aiUnseenCards(p)));
+    assertEqual('It knows one Blastoise is still unseen', ai.aiUnseenCount(p, c => c.name === 'Blastoise'), 1);
+  }
+  // No peeking: the same unseen cards split differently between pile and prizes look identical
+  {
+    const mk = prized => {
+      const key = breeder(), pad = { name: 'Pad', supertype: 'Trainer' };
+      return mkPlayer({ active: squirtle(), hand: [blastoise(), W()],
+        deck: [...filler(10), prized ? pad : key], prizes: [prize(prized ? key : pad), prize(W())] });
+    };
+    const inPile = mk(false), prized = mk(true), opp = mkPlayer({ active: mkCard() });
+    global.G.players = { 1: opp, 2: inPile }; global.G._aiDeckSeen = undefined;
+    const a = ai.aiHoldValue(inPile.hand[0], inPile, opp), wa = ai.aiDeckWish(inPile, opp).value;
+    global.G.players = { 1: opp, 2: prized };
+    const b = ai.aiHoldValue(prized.hand[0], prized, opp), wb = ai.aiDeckWish(prized, opp).value;
+    assertEqual('A Breeder that is secretly prized values Blastoise the same as one in the pile', a, b);
+    assert('...and the search wish is the same too', Math.abs(wa - wb) < 1e-9);
+    // Once a search has shown us the pile, we know the Breeder is not coming
+    ai.aiNoteDeckSeen(prized);
+    assert('After looking through the pile the AI knows what is prized', ai.aiDeckSeen(prized) === true
+      && ai.aiUnseenCount(prized, c => c.name === 'Pokémon Breeder') === 0);
+    assert('...so Blastoise without a Breeder or Wartortle to come is dead weight', ai.aiHoldValue(prized.hand[0], prized, opp) <= 5);
+    // The search itself looks at the real pile and takes the best card that is there
+    const pick = ai.aiDeckWish(prized, opp, c => c.name !== 'Pad', { look: true });
+    assert('A search picks from the real pile, never a prized card', pick.idx !== -1 && prized.deck[pick.idx] === pick.card);
+    global.G._aiDeckSeen = undefined;
+  }
+  // Odds that a wanted card is in the pile rather than prized
+  {
+    const p = mkPlayer({ deck: filler(48), prizes: filler(6).map(prize) });
+    global.G.players = { 1: mkPlayer(), 2: p };
+    assert('One unseen copy, 6 prizes in 54 unseen: 8/9 to be in the pile', Math.abs(ai.aiInDeckChance(p, 1) - 48 / 54) < 1e-9);
+    assert('Seven copies cannot all be prized', ai.aiInDeckChance(p, 7) === 1);
+    assert('No copies left: no chance', ai.aiInDeckChance(p, 0) === 0);
+  }
+  // Dead lines and last copies
+  {
+    const opp = mkPlayer({ active: mkCard() });
+    const b1 = blastoise();
+    const dead = mkPlayer({ active: mkCard(), hand: [b1], discard: [squirtle(), squirtle()], deck: [wartortle(), breeder(), ...filler(8)] });
+    global.G.players = { 1: opp, 2: dead };
+    assert('Stage 2 whose Basic can never arrive is discard fodder', ai.aiHoldValue(b1, dead, opp) <= 5);
+    const b2 = blastoise();
+    const last = mkPlayer({ active: mkCard(), hand: [b2], deck: [squirtle(), wartortle(), ...filler(8)] });
+    global.G.players = { 1: opp, 2: last };
+    assert('The last Blastoise of a live line is worth keeping', ai.aiIsLastCopy(b2, last) && ai.aiHoldValue(b2, last, opp) >= 25);
+    const b3 = blastoise();
+    const spare = mkPlayer({ active: mkCard(), hand: [b3], deck: [squirtle(), wartortle(), blastoise(), ...filler(8)] });
+    global.G.players = { 1: opp, 2: spare };
+    assert('With another copy still unseen it is replaceable', !ai.aiIsLastCopy(b3, spare) && ai.aiHoldValue(b3, spare, opp) < 25);
+  }
+  global.G.players = savedPlayers; global.G._aiDeckSeen = savedSeen;
 }
 
 section('AI v2: hooks cover the end-of-turn safety promotion');

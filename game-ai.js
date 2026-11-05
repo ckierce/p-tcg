@@ -17,6 +17,10 @@
 //      need. The legacy opponentThreatNextTurn() keeps its hand-peeking,
 //      worst-case semantics because tests pin it and because it is only used
 //      as a conservative fallback.
+//      The same honesty applies to the AI's own deck: it knows its 60-card
+//      decklist and everything it has seen, so it reasons about the UNSEEN
+//      cards (pile + prizes as one pool) and never reads the pile itself
+//      until a search card lets it look (see DECKLIST KNOWLEDGE).
 //   4. Turn planner — enumerates attacker configurations (stay / evolve /
 //      Breeder / retreat / Switch / Step In / Scoop Up) × energy attach ×
 //      PlusPower × Gust target × attack, scores each with the damage + threat
@@ -286,6 +290,85 @@ function aiDeckUrgency(p) {
 function prizesRemaining(playerObj) {
   if (!playerObj?.prizes) return 6;
   return playerObj.prizes.filter(p => p).length;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DECKLIST KNOWLEDGE — what a player legitimately knows about their own deck
+// ══════════════════════════════════════════════════════════════════════════════
+// A player built their deck, so they know all 60 cards in it, and they see
+// every card that leaves it. What they do NOT know is the order of the pile or
+// which cards are lying face down as prizes. So the AI reasons from "my
+// decklist minus everything I have seen" — the UNSEEN cards — and never from
+// the pile itself.
+//
+// Cards never change owner, so the decklist is always the union of a player's
+// zones, and decklist − seen is exactly pile + prizes taken together as one
+// unordered pool (the AI cannot tell which is which). Only once a search
+// effect (Computer Search, Poké Ball, Energy Search, Pokémon Trader, Call for
+// Family...) has let the player look through the pile do they know what is in
+// it — and from then on they can keep exact track, since every later change
+// to the pile happens in front of them (aiNoteDeckSeen).
+function aiPrizeCards(p) {
+  return (p?.prizes || []).map(pr => pr?.card || (pr?.name ? pr : null)).filter(Boolean);
+}
+// Every card the player can see on their own side: hand, discard, and in play
+// (with attached energy and the evolution stages underneath).
+function aiSeenCards(p) {
+  const out = [...(p?.hand || []), ...(p?.discard || [])].filter(Boolean);
+  for (const c of aiAllInPlay(p)) {
+    // A Clefairy Doll / Mysterious Fossil in play is a stand-in: the Trainer
+    // card it came from is already counted in the discard pile.
+    if (!c.isDoll) out.push(c);
+    out.push(...(c.attachedEnergy || []), ...(c.prevStages || []));
+  }
+  return out;
+}
+// The full decklist: every card the player owns, wherever it is now.
+function aiDeckList(p) {
+  return [...aiSeenCards(p), ...(p?.deck || []), ...aiPrizeCards(p)];
+}
+function aiSeatOf(p) {
+  if (typeof G === 'undefined' || !G?.players || !p) return null;
+  return G.players[1] === p ? 1 : G.players[2] === p ? 2 : null;
+}
+function aiDeckSeen(p) {
+  const n = aiSeatOf(p);
+  return !!(n && G._aiDeckSeen && G._aiDeckSeen[n]);
+}
+function aiNoteDeckSeen(p) {
+  const n = aiSeatOf(p);
+  if (!n) return;
+  if (!G._aiDeckSeen) G._aiDeckSeen = {};
+  G._aiDeckSeen[n] = true;
+}
+// Cards the player has not seen: still to be drawn, or (until they have
+// looked through the pile) possibly prized.
+function aiUnseenCards(p) {
+  return aiDeckSeen(p) ? [...(p?.deck || [])] : [...(p?.deck || []), ...aiPrizeCards(p)];
+}
+function aiUnseenCount(p, pred) {
+  let n = 0;
+  for (const c of aiUnseenCards(p)) if (pred(c)) n++;
+  return n;
+}
+function aiUnseenHas(p, pred) { return aiUnseenCards(p).some(pred); }
+// Chance that at least one of `copies` unseen copies of a card is in the pile
+// rather than among the prizes.
+function aiInDeckChance(p, copies) {
+  if (!(copies > 0)) return 0;
+  if (aiDeckSeen(p)) return 1;
+  const prizes = aiPrizeCards(p).length;
+  if (copies > prizes) return 1;
+  const total = (p?.deck || []).length + prizes;
+  let allPrized = 1;
+  for (let i = 0; i < copies; i++) allPrized *= (prizes - i) / (total - i);
+  return 1 - allPrized;
+}
+// Is `card` the last copy we will ever see (none in hand besides it, none unseen)?
+function aiIsLastCopy(card, p) {
+  const inHand = (p?.hand || []).filter(h => h && h !== card && h.name === card.name).length;
+  const unseen = aiUnseenCount(p, c => c !== card && c.name === card.name);
+  return inHand + unseen === 0;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -860,7 +943,10 @@ function aiProfileContext(attacker, defender, opts = {}) {
     energyInDiscard: owner ? (owner.discard || []).filter(c => c.supertype === 'Energy').length : 0,
     trainersInDiscard: owner ? (owner.discard || []).some(c => c.supertype === 'Trainer') : false,
     canBench: owner ? aiFreeBenchSlot(owner) !== -1 : false,
-    searchTargetInDeck: owner ? (owner.deck || []).some(c => aiIsBasic(c)) : false,
+    // Our own deck: is a Basic still unseen? The opponent's list is unknown to
+    // us, so assume their search finds something while they have a deck.
+    searchTargetInDeck: !owner ? false
+      : (ownerNum === aiPlayerNum ? aiUnseenHas(owner, c => aiIsBasic(c)) : (owner.deck || []).length > 0),
   };
 }
 
@@ -1436,7 +1522,7 @@ function breederRootBasicName(stage2Card, player) {
     const s1 = Object.values(CARD_DATA).find(c => c?.name === stage1Name && c.subtypes?.includes('Stage 1'));
     if (s1?.evolvesFrom) return s1.evolvesFrom;
   }
-  const allCards = [...(player?.hand || []), ...(player?.discard || []), ...(player?.deck || [])];
+  const allCards = aiDeckList(player); // card facts from our own list, wherever the copies are
   const stage1 = allCards.find(c => c?.name === stage1Name && c.subtypes?.includes('Stage 1'));
   return stage1?.evolvesFrom || null;
 }
@@ -1646,6 +1732,8 @@ async function executePlanTail(plan, delayMs) {
     aiLog(`uses ${attackToUse.name}${plan.metronomeTarget ? ` (copying ${plan.metronomeTarget})` : ''}!`, true);
     aiThinking = false;
     const res = await performAttack(aiPlayerNum, attackToUse);
+    // An attack that searches our deck (Call for Family...) shows us the pile.
+    if (res !== 'locked' && /search your deck/i.test(attackToUse.text || '')) aiNoteDeckSeen(aiMe());
     // performAttack refused (its re-entry lock was still held by an earlier,
     // unresolved attack). Without this the AI would have Gusted / attached and
     // then sat there forever — the human saw "the AI pulled Abra and never
@@ -2079,7 +2167,7 @@ function aiHoldValue(card, p2, p1) {
   if (card.supertype === 'Pokémon') {
     if (aiIsBasic(card)) {
       const room = aiFreeBenchSlot(p2) !== -1;
-      const evoInDeckOrHand = [...(p2.hand || []), ...(p2.deck || [])].some(c => c.evolvesFrom === card.name);
+      const evoInDeckOrHand = (p2.hand || []).some(c => c.evolvesFrom === card.name) || aiUnseenHas(p2, c => c.evolvesFrom === card.name);
       return (room ? 25 : 6) + (evoInDeckOrHand ? 8 : 0) + aiHp(card) / 10;
     }
     // Evolution: is its base on the field / in hand?
@@ -2089,17 +2177,24 @@ function aiHoldValue(card, p2, p1) {
       const root = breederRootBasicName(card, p2);
       const rootOnField = inPlay.some(c => c.name === root);
       const hasBreeder = (p2.hand || []).some(c => c.name === 'Pokémon Breeder');
-      const breederInDeck = (p2.deck || []).some(c => c.name === 'Pokémon Breeder');
+      const breederInDeck = aiUnseenHas(p2, c => c.name === 'Pokémon Breeder');
       if (baseOnField) return 60;
       if (rootOnField && hasBreeder) return 58;
+      // Decklist check: can the middle of the line still arrive (the Stage 1,
+      // or a Breeder to skip it), and can its Basic?
+      const stage1Coming = baseInHand || aiUnseenHas(p2, c => c.name === card.evolvesFrom);
+      const rootComing = !root || rootOnField || (p2.hand || []).some(c => c.name === root) || aiUnseenHas(p2, c => c.name === root);
+      if (!rootComing || !(stage1Coming || hasBreeder || breederInDeck)) return 4; // the line is dead
       if (rootOnField) return breederInDeck ? 48 : 40;
       if (baseInHand) return 38;
-      return 16;
+      // The only copy left of a line that can still come together is not fodder.
+      return aiIsLastCopy(card, p2) ? 30 : 16;
     }
     if (baseOnField) return 55;
     if (baseInHand) return 30;
-    const baseInDeck = (p2.deck || []).some(c => c.name === card.evolvesFrom);
-    return baseInDeck ? 14 : 5;
+    const baseInDeck = aiUnseenHas(p2, c => c.name === card.evolvesFrom);
+    if (!baseInDeck) return 5;
+    return aiIsLastCopy(card, p2) ? 26 : 14;
   }
   // Trainers
   const oppActiveEnergy = energyValue(p1?.active?.attachedEnergy || []);
@@ -2114,7 +2209,7 @@ function aiHoldValue(card, p2, p1) {
     case 'PlusPower': return 28;
     case 'Switch': return 26;
     case 'Scoop Up': return 20;
-    case 'Pokémon Breeder': return (p2.hand || []).some(c => c.subtypes?.includes('Stage 2')) || (p2.deck || []).some(c => c.subtypes?.includes('Stage 2')) ? 34 : 6;
+    case 'Pokémon Breeder': return (p2.hand || []).some(c => c.subtypes?.includes('Stage 2')) || aiUnseenHas(p2, c => !!c.subtypes?.includes('Stage 2')) ? 34 : 6;
     case 'Pokémon Trader': return 22;
     case 'Poké Ball': return 18;
     case 'Energy Search': return 20;
@@ -2135,21 +2230,30 @@ function aiHoldValue(card, p2, p1) {
     case 'Mr. Fuji': return 6;
     case 'Devolution Spray': return 3;
     case 'Clefairy Doll': return 8;
-    case 'Mysterious Fossil': return [...(p2.hand || []), ...(p2.deck || [])].some(c => c.evolvesFrom === 'Mysterious Fossil') ? 20 : 4;
+    case 'Mysterious Fossil': return (p2.hand || []).some(c => c.evolvesFrom === 'Mysterious Fossil') || aiUnseenHas(p2, c => c.evolvesFrom === 'Mysterious Fossil') ? 20 : 4;
     case 'Pokémon Flute': return 6;
     default: return 10;
   }
 }
 
-// Which card would we most like to fetch from the deck right now? Returns the
-// deck index or -1. Used by Computer Search / Pokémon Trader / Poké Ball.
-function aiDeckWish(p2, p1, filter = () => true) {
-  const deck = p2.deck || [];
-  let bestIdx = -1, bestVal = 0;
+// Which card would we most like to fetch from the deck right now? Used by
+// Computer Search / Pokémon Trader / Poké Ball.
+//
+// Deciding WHETHER to play a search card uses only what we know: the unseen
+// pool, where the card we want may turn out to be a prize. So the value is the
+// wanted card's worth weighted by the chance it is in the pile, falling back
+// to the runner-up otherwise. `look: true` is the search itself — the effect
+// lets us go through the pile, so pick from what is really there.
+//
+// Returns { idx, value, card }. With `look`, idx is the deck index (-1 = nothing
+// to take); without it, idx only says whether anything is worth fetching.
+function aiDeckWish(p2, p1, filter = () => true, { look = false } = {}) {
+  const deck = look ? (p2.deck || []) : aiUnseenCards(p2);
+  let bestIdx = -1, bestVal = 0, secondVal = 0;
   const seen = new Set();
   for (let i = 0; i < deck.length; i++) {
     const c = deck[i];
-    if (!filter(c) || seen.has(c.name)) continue;
+    if (!c || !filter(c) || seen.has(c.name)) continue;
     seen.add(c.name);
     let v = aiHoldValue(c, p2, p1);
     // A card we already hold a copy of is worth less
@@ -2162,9 +2266,15 @@ function aiDeckWish(p2, p1, filter = () => true) {
       if (inPlay <= 1 && !basicInHand) v += 60;
       else if (inPlay <= 2) v += 20;
     }
-    if (v > bestVal) { bestVal = v; bestIdx = i; }
+    if (v > bestVal) { secondVal = bestVal; bestVal = v; bestIdx = i; }
+    else if (v > secondVal) secondVal = v;
   }
-  return { idx: bestIdx, value: bestVal };
+  const card = bestIdx === -1 ? null : deck[bestIdx];
+  if (card && !look) {
+    const chance = aiInDeckChance(p2, deck.filter(c => c && c.name === card.name).length);
+    bestVal = bestVal * chance + secondVal * (1 - chance);
+  }
+  return { idx: bestIdx, value: bestVal, card };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2190,6 +2300,7 @@ function aiSetupScore(c, hand, forActive) {
 
 function aiDoSetup() {
   if (!vsComputer || G.phase !== 'SETUP') return;
+  if (G._aiDeckSeen) delete G._aiDeckSeen[aiPlayerNum]; // new game: the pile is unknown again
   const p2 = aiMe();
   if (p2.active) return; // idempotent
   const hand = p2.hand;
@@ -2273,19 +2384,31 @@ async function aiPlayDrawTrainers(delayMs) {
   {
     const i = hand.findIndex(c => c?.name === 'Energy Search');
     if (i !== -1 && deckLen() >= 3) {
-      const energies = p2.deck.map((c, di) => ({ c, di })).filter(x => x.c.supertype === 'Energy' && !/double colorless/i.test(x.c.name));
-      let best = null;
-      for (const e of energies) {
-        if (best && best.c.name === e.c.name) continue;
-        const v = Math.max(...aiAllInPlay(p2).map(pk => aiEnergyAttachValue(pk, e.c.name, { isActive: pk === p2.active, opp: p1 })), 0);
-        if (!best || v > best.v) best = { ...e, v };
-      }
-      if (best && best.v > 0) {
+      // Decide from the decklist (is a basic energy we can use still unseen?),
+      // then choose from the pile once the card lets us look through it.
+      const isBasicEnergy = c => c?.supertype === 'Energy' && !/double colorless/i.test(c.name);
+      const bestEnergy = cards => {
+        let best = null;
+        const names = new Set();
+        cards.forEach((c, di) => {
+          if (!isBasicEnergy(c) || names.has(c.name)) return;
+          names.add(c.name);
+          const v = Math.max(...aiAllInPlay(p2).map(pk => aiEnergyAttachValue(pk, c.name, { isActive: pk === p2.active, opp: p1 })), 0);
+          if (!best || v > best.v) best = { c, di, v };
+        });
+        return best;
+      };
+      const want = bestEnergy(aiUnseenCards(p2));
+      if (want && want.v > 0) {
         const card = hand.splice(i, 1)[0]; p2.discard.push(card);
-        const found = p2.deck.splice(best.di, 1)[0];
-        p2.hand.push(found);
+        aiNoteDeckSeen(p2);
+        const best = bestEnergy(p2.deck);
+        if (best) {
+          const found = p2.deck.splice(best.di, 1)[0];
+          p2.hand.push(found);
+          aiLog(`played Energy Search — took ${found.name}.`, true);
+        } else aiLog(`played Energy Search — no basic Energy left in the deck.`, true);
         p2.deck = shuffle(p2.deck);
-        aiLog(`played Energy Search — took ${found.name}.`, true);
         renderAll(); await aiDelay(delayMs * 0.4);
         return true;
       }
@@ -2300,10 +2423,14 @@ async function aiPlayDrawTrainers(delayMs) {
         const card = hand.splice(i, 1)[0]; p2.discard.push(card);
         const heads = await flipCoin('Poké Ball: Heads = search deck for any Pokémon');
         if (heads) {
-          const wish2 = aiDeckWish(p2, p1, c => c.supertype === 'Pokémon');
-          const found = p2.deck.splice(wish2.idx, 1)[0];
-          p2.hand.push(found); p2.deck = shuffle(p2.deck);
-          aiLog(`played Poké Ball — HEADS! Found ${found.name}.`, true);
+          aiNoteDeckSeen(p2);
+          const wish2 = aiDeckWish(p2, p1, c => c.supertype === 'Pokémon', { look: true });
+          if (wish2.idx !== -1) {
+            const found = p2.deck.splice(wish2.idx, 1)[0];
+            p2.hand.push(found);
+            aiLog(`played Poké Ball — HEADS! Found ${found.name}.`, true);
+          } else aiLog(`played Poké Ball — HEADS, but no Pokémon was left in the deck.`, true);
+          p2.deck = shuffle(p2.deck);
         } else aiLog(`played Poké Ball — TAILS, no effect.`);
         renderAll(); await aiDelay(delayMs * 0.4);
         return true;
@@ -2321,10 +2448,15 @@ async function aiPlayDrawTrainers(delayMs) {
       if (wish.idx !== -1 && handPoke.length && giveValue < 36 && wish.value >= giveValue + 15) {
         const card = hand.splice(i, 1)[0]; p2.discard.push(card);
         const give = handPoke[0].c;
-        hand.splice(hand.indexOf(give), 1);
-        const found = p2.deck.splice(wish.idx, 1)[0];
-        p2.deck.push(give); p2.hand.push(found); p2.deck = shuffle(p2.deck);
-        aiLog(`played Pokémon Trader — traded ${give.name} for ${found.name}.`, true);
+        aiNoteDeckSeen(p2);
+        const pick = aiDeckWish(p2, p1, c => c.supertype === 'Pokémon', { look: true });
+        if (pick.idx !== -1) {
+          hand.splice(hand.indexOf(give), 1);
+          const found = p2.deck.splice(pick.idx, 1)[0];
+          p2.deck.push(give); p2.hand.push(found);
+          aiLog(`played Pokémon Trader — traded ${give.name} for ${found.name}.`, true);
+        } else aiLog(`played Pokémon Trader — no Pokémon was left in the deck to trade for.`, true);
+        p2.deck = shuffle(p2.deck);
         renderAll(); await aiDelay(delayMs * 0.5);
         return true;
       }
@@ -2344,10 +2476,12 @@ async function aiPlayDrawTrainers(delayMs) {
           const card = hand.splice(i, 1)[0]; p2.discard.push(card);
           const d1 = others[0].c, d2 = others[1].c;
           for (const dc of [d1, d2]) { const hi = hand.indexOf(dc); if (hi !== -1) p2.discard.push(...hand.splice(hi, 1)); }
-          const wish2 = aiDeckWish(p2, p1);
-          const found = p2.deck.splice(wish2.idx, 1)[0];
-          p2.hand.push(found); p2.deck = shuffle(p2.deck);
-          aiLog(`played Computer Search — discarded ${d1.name} + ${d2.name}, found ${found.name}.`, true);
+          aiNoteDeckSeen(p2);
+          const wish2 = aiDeckWish(p2, p1, undefined, { look: true });
+          const found = wish2.idx !== -1 ? p2.deck.splice(wish2.idx, 1)[0] : null;
+          if (found) p2.hand.push(found);
+          p2.deck = shuffle(p2.deck);
+          aiLog(`played Computer Search — discarded ${d1.name} + ${d2.name}, found ${found ? found.name : 'nothing'}.`, true);
           renderAll(); await aiDelay(delayMs * 0.5);
           return true;
         }
@@ -2407,7 +2541,8 @@ async function aiPlayDrawTrainers(delayMs) {
       const deadHand = aiDifficulty === 'hard' ? (dev <= 1 && useful <= 3) : (dev === 0 && useful <= 2);
       // One Pokémon in play and nothing to bench: the next KO loses the game,
       // so dig for a Basic even if the hand is otherwise fine.
-      const lastPokemon = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && useful <= 4;
+      const lastPokemon = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && useful <= 4
+        && aiUnseenHas(p2, c => aiIsBasic(c));
       if (aiCanAffordDraw(7, p2) && hand.length <= 6 && (deadHand || hand.length <= 2 || lastPokemon)) {
         G._aiOakThisTurn = true;
         const discarded = hand.length - 1;
@@ -2498,7 +2633,7 @@ async function aiBenchBasics(delayMs) {
   {
     const i = hand.findIndex(c => c?.name === 'Mysterious Fossil');
     if (i !== -1 && aiFreeBenchSlot(p2) !== -1) {
-      const hasFossilLine = [...hand, ...p2.deck].some(c => c.evolvesFrom === 'Mysterious Fossil');
+      const hasFossilLine = hand.some(c => c.evolvesFrom === 'Mysterious Fossil') || aiUnseenHas(p2, c => c.evolvesFrom === 'Mysterious Fossil');
       const thinBoard = aiAllInPlay(p2).length <= 1;
       if (hasFossilLine || thinBoard) {
         const card = hand.splice(i, 1)[0];
@@ -2540,7 +2675,7 @@ function aiEvolutionIsBad(evoCard, target, p2) {
   // have nothing left to evolve.
   if (evoCard.abilities?.some(a => a.name === 'Prehistoric Power')) {
     const pendingEvos = (p2.hand || []).some(c => aiIsEvolution(c) && c !== evoCard);
-    const fieldCanEvolve = aiAllInPlay(p2).some(c => c !== target && (p2.deck || []).some(d => d.evolvesFrom === c.name));
+    const fieldCanEvolve = aiAllInPlay(p2).some(c => c !== target && aiUnseenHas(p2, d => d.evolvesFrom === c.name));
     if (pendingEvos || fieldCanEvolve) return true;
   }
   return false;
@@ -3274,7 +3409,8 @@ if (typeof module !== 'undefined') {
     aiEnergyRemovalTarget,
     aiSetupScore,
     aiCanAffordDraw,
-    aiDeckClock,
+    aiDeckClock, aiDeckList, aiSeenCards, aiUnseenCards, aiUnseenCount, aiInDeckChance,
+    aiDeckSeen, aiNoteDeckSeen, aiIsLastCopy,
     aiDeckWish,
     aiDeckUrgency,
     aiNextTurnPotential,
