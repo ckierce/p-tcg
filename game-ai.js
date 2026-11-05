@@ -34,6 +34,13 @@
 //      trades hits instead of hiding behind a wall until it decks out.
 //   6. Hooks into endTurn / resolvePromotion / checkKO / doneSetup / loadDeck.
 //
+// Above the turn planner sits the DECK PLAN: the AI reads its decklist once,
+// recognises an engine deck by its signature card and support (Rain Dance,
+// Damage Swap, Energy Trans, Do the Wave, a Muk / Aerodactyl lock) or a stall
+// deck by its shape, and lets that steer what searches fetch, what is never
+// discarded, which Pokémon stays off the Active spot, and — for stall — when
+// drawing is allowed at all. Unrecognised decks play the planner as-is.
+//
 // The AI is player-parametric (aiPlayerNum) so the headless simulator
 // (ai-sim.js) can seat it as either player. In the browser it is always P2.
 //
@@ -267,6 +274,10 @@ function aiDeckClock(p) {
 function aiCanAffordDraw(n, p) {
   const clock = aiDeckClock(p);
   if (clock.deck - n < 1) return false;
+  // A stall deck wins the deck race or loses: only draw while staying ahead.
+  if (aiPlanState(p || aiMe()).stall) {
+    return clock.oppDeck !== null && clock.deck - n >= clock.oppDeck + 3 && clock.deck - n >= 6;
+  }
   if (clock.slack >= n) return true;
   return clock.oppDeck !== null && clock.deck - n >= clock.oppDeck + 2 && clock.deck - n >= 4;
 }
@@ -369,6 +380,141 @@ function aiIsLastCopy(card, p) {
   const inHand = (p?.hand || []).filter(h => h && h !== card && h.name === card.name).length;
   const unseen = aiUnseenCount(p, c => c !== card && c.name === card.name);
   return inHand + unseen === 0;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DECK PLAN — what kind of deck are we playing, and what does it want?
+// ══════════════════════════════════════════════════════════════════════════════
+// Read once from the decklist (never the pile). A deck built around an engine
+// Pokémon — Blastoise's Rain Dance, Alakazam's Damage Swap... — is recognised
+// by that signature card PLUS the support that makes it work: copies of the
+// engine, its Basic, a way through the middle stage, and the right Energy. A
+// lone Blastoise in an off-colour deck scores too low and the deck plays as
+// 'generic', which is the planner's normal turn-by-turn behaviour.
+//
+// The plan then steers decisions that the turn planner cannot see:
+//   • which cards a search fetches and which are never discarded (aiHoldValue)
+//   • keeping a fragile engine (Alakazam, Muk) off the Active spot (setup, promotion)
+//   • a stall deck's win condition — out-lasting the opponent's deck — which
+//     means not drawing extra cards unless we stay ahead in the deck race.
+const AI_PLAN_ENGINES = [
+  { type: 'raindance',   label: 'Rain Dance',        power: 'Rain Dance',        energy: /water/i },
+  { type: 'damageswap',  label: 'Damage Swap',       power: 'Damage Swap',       walls: true, protect: true },
+  { type: 'energytrans', label: 'Energy Trans',      power: 'Energy Trans',      energy: /grass/i },
+  { type: 'lock',        label: 'Toxic Gas',         power: 'Toxic Gas',         protect: true },
+  { type: 'lock',        label: 'Prehistoric Power', power: 'Prehistoric Power', protect: true },
+  { type: 'wave',        label: 'Do the Wave',       attack: 'Do the Wave' },
+];
+const AI_PLAN_THRESHOLD = 75;
+// How much the plan wants each missing piece (hold-value scale), and how far it bends other choices.
+const AI_PLAN = { ROOT: 60, ENGINE: 58, BREEDER: 45, STAGE1: 35, UNROOTED: 0.6, SETUP_PROTECT: 40, PROMOTE_PROTECT: 0.3 };
+const AI_STALL_HEAL = /^(Scoop Up|Pokémon Center|Potion|Super Potion|Mr\. Fuji)$/;
+const AI_STALL_DENIAL = /^(Energy Removal|Super Energy Removal|Lass|Impostor Professor Oak)$/;
+function aiIsWall(c) {
+  if (c?.name === 'Clefairy Doll') return true;
+  if (!aiIsBasic(c)) return false;
+  return aiHp(c) >= 90 || (c.abilities || []).some(a => a.name === 'Invisible Wall');
+}
+
+// Pure classifier: a list of cards in → the plan it implies.
+function aiClassifyDeck(list) {
+  const cards = (list || []).filter(c => c && c.name);
+  const count = pred => cards.reduce((n, c) => n + (pred(c) ? 1 : 0), 0);
+  const energy = cards.filter(c => c.supertype === 'Energy');
+  const basicEnergy = energy.filter(c => !/double colorless/i.test(c.name));
+  let best = null;
+  for (const e of AI_PLAN_ENGINES) {
+    const card = cards.find(c => c.supertype === 'Pokémon' && (e.power
+      ? (c.abilities || []).some(a => a.name === e.power)
+      : (c.attacks || []).some(a => a.name === e.attack)));
+    if (!card) continue;
+    const copies = count(c => c.name === card.name);
+    const isEvo = aiIsEvolution(card);
+    const isStage2 = !!card.subtypes?.includes('Stage 2');
+    const stage1 = isStage2 ? card.evolvesFrom : null;
+    const root = !isEvo ? card.name : isStage2 ? breederRootBasicName(card, { hand: cards }) : card.evolvesFrom;
+    const roots = isEvo ? count(c => c.name === root) : copies;
+    const bridges = isStage2 ? count(c => c.name === stage1) + count(c => c.name === 'Pokémon Breeder') : 4;
+    if (!roots || !bridges) continue; // no way to get it into play
+    let score = [0, 15, 35, 50][Math.min(copies, 3)] + Math.min(roots, 4) * 5 + Math.min(bridges, 4) * 5;
+    if (e.energy) {
+      const share = basicEnergy.filter(c => e.energy.test(c.name)).length / Math.max(1, basicEnergy.length);
+      score += share >= 0.6 ? 20 : share >= 0.35 ? 8 : -20;
+    } else if (e.walls) score += Math.min(count(aiIsWall), 3) * 7;
+    else score += 15;
+    if (score >= AI_PLAN_THRESHOLD && (!best || score > best.score)) {
+      best = { type: e.type, label: e.label, score,
+        engine: { name: card.name, root, stage1, isStage2, protect: !!e.protect } };
+    }
+  }
+  // Stall: little Energy, many walls, and a trainer line-up of healing and
+  // denial. Such a deck wins by running the opponent out of cards.
+  const heal = count(c => AI_STALL_HEAL.test(c.name)), denial = count(c => AI_STALL_DENIAL.test(c.name));
+  const stall = cards.length >= 40 && energy.length <= 18 && heal + denial >= 10 && heal >= 4 && count(aiIsWall) >= 5;
+  if (best) return { ...best, stall };
+  return { type: stall ? 'stall' : 'generic', label: stall ? 'Stall' : 'Generic', score: 0, engine: null, stall };
+}
+
+const _aiPlanCache = new WeakMap();
+function aiDeckPlan(p) {
+  if (!p) return aiClassifyDeck([]);
+  const list = aiDeckList(p);
+  // Order-independent fingerprint of the list: cards move between zones all
+  // game, but the decklist itself never changes, so this classifies once.
+  let sig = list.length;
+  for (const c of list) {
+    const n = c?.name || '';
+    sig += n.length * 131 + (n.charCodeAt(0) || 7) * 31 + (n.charCodeAt(n.length - 1) || 3);
+  }
+  const hit = _aiPlanCache.get(p);
+  if (hit && hit.sig === sig) return hit.plan;
+  const plan = aiClassifyDeck(list);
+  _aiPlanCache.set(p, { sig, plan });
+  return plan;
+}
+
+// Where the plan stands right now: is the engine in play, which pieces are
+// still missing (name → how much we want that card), or is the plan dead
+// because the pieces can no longer arrive (the decklist tells us).
+function aiPlanState(p) {
+  const none = { plan: null, stall: false, online: false, dead: false, needed: null };
+  if (!p || aiDifficulty === 'easy') return none;
+  const plan = aiDeckPlan(p);
+  const e = plan.engine;
+  if (!e) return { ...none, plan, stall: plan.stall };
+  const inPlay = aiAllInPlay(p), hand = p.hand || [];
+  const have = name => hand.some(c => c?.name === name);
+  const coming = name => have(name) || aiUnseenHas(p, c => c.name === name);
+  const online = inPlay.some(c => c.name === e.name);
+  if (online) return { plan, stall: plan.stall, online: true, dead: false, needed: null };
+  const stage1Up = !!e.stage1 && inPlay.some(c => c.name === e.stage1);
+  const lineUp = stage1Up || (e.root !== e.name && inPlay.some(c => c.name === e.root));
+  const bridge = !e.isStage2 || stage1Up || coming(e.stage1) || coming('Pokémon Breeder');
+  if (!coming(e.name) || !(lineUp || coming(e.root)) || !bridge) {
+    return { plan, stall: plan.stall, online: false, dead: true, needed: null };
+  }
+  // A Stage 1 engine (Wigglytuff, Muk) on a 4-3 line assembles itself; paying
+  // cards to chase it measurably costs more than it gains. Only a Stage 2
+  // engine is worth steering searches toward.
+  if (!e.isStage2) return { plan, stall: plan.stall, online: false, dead: false, needed: null };
+  // The Basic comes first: until it is in play (or in hand, about to be), the
+  // upper stages are only promises and are valued at a discount.
+  const rooted = lineUp || e.root === e.name || have(e.root);
+  const k = rooted ? 1 : AI_PLAN.UNROOTED;
+  const needed = new Map();
+  if (e.root !== e.name && !lineUp) needed.set(e.root, AI_PLAN.ROOT);
+  needed.set(e.name, AI_PLAN.ENGINE * k);
+  if (e.isStage2 && !stage1Up) {
+    needed.set('Pokémon Breeder', AI_PLAN.BREEDER * k);
+    if (!have('Pokémon Breeder')) needed.set(e.stage1, AI_PLAN.STAGE1 * k);
+  }
+  return { plan, stall: plan.stall, online: false, dead: false, needed };
+}
+// Is `card` part of a fragile engine line that should stay off the Active spot?
+function aiIsProtectedEngine(card, p) {
+  if (!card || aiDifficulty === 'easy') return false;
+  const e = aiDeckPlan(p).engine;
+  return !!(e && e.protect && (card.name === e.name || card.name === e.root || card.name === e.stage1));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2146,6 +2292,9 @@ function aiChoosePromotion(p2, p1) {
         score -= AI_SCORE.SURVIVE * th.koProb * (0.4 + 0.6 * aiPokemonWorth(b));
       }
       if (b.isDoll) score -= 1000; // a Doll gives no prize but does nothing
+      // Alakazam, Muk, Aerodactyl: the engine stays on the bench unless it is
+      // the only way to win something big.
+      if (aiIsProtectedEngine(b, p2)) score -= AI_SCORE.KO * AI_PLAN.PROMOTE_PROTECT;
     }
     if (score > bestScore) { bestScore = score; bestIdx = i; }
   }
@@ -2155,8 +2304,20 @@ function aiChoosePromotion(p2, p1) {
 // ══════════════════════════════════════════════════════════════════════════════
 // CARD VALUE (for discard choices: Computer Search, Oak, Item Finder...)
 // ══════════════════════════════════════════════════════════════════════════════
-// Higher = more worth keeping in hand right now.
+// Higher = more worth keeping in hand right now. The deck plan lifts the
+// pieces its engine is still missing above everything else.
 function aiHoldValue(card, p2, p1) {
+  const base = aiHoldValueBase(card, p2, p1);
+  if (!card) return base;
+  const want = aiPlanState(p2).needed?.get(card.name);
+  if (!want) return base;
+  // One copy is the piece; a second copy in hand is a spare.
+  const hand = p2.hand || [];
+  const first = hand.find(h => h?.name === card.name);
+  if (first && first !== card && hand.includes(card)) return base;
+  return Math.max(base, want);
+}
+function aiHoldValueBase(card, p2, p1) {
   if (!card) return 0;
   const inPlay = aiAllInPlay(p2);
   if (card.supertype === 'Energy') {
@@ -2295,6 +2456,13 @@ function aiSetupScore(c, hand, forActive) {
   let score = hp / 2 + early - (c.convertedRetreatCost || 0) * 4;
   if (forActive && hasEvoInHand) score -= 12;   // keep evolving Basics safe on the bench
   if (forActive && c.isDoll) score -= 100;
+  // A fragile engine's Basic (Abra, Grimer) starts on the bench: the whole
+  // plan grows from it. Sturdier lines (Squirtle, Jigglypuff) open normally —
+  // benching those by rule measured slightly worse.
+  if (forActive && typeof G !== 'undefined' && G?.players) {
+    const e = aiDifficulty === 'easy' ? null : aiDeckPlan(aiMe()).engine;
+    if (e && e.protect && e.root !== e.name && c.name === e.root) score -= AI_PLAN.SETUP_PROTECT;
+  }
   return score;
 }
 
@@ -2445,7 +2613,9 @@ async function aiPlayDrawTrainers(delayMs) {
       const handPoke = hand.map((c, hi) => ({ c, hi })).filter(x => x.hi !== i && x.c.supertype === 'Pokémon')
         .sort((a, b) => aiHoldValue(a.c, p2, p1) - aiHoldValue(b.c, p2, p1));
       const giveValue = handPoke.length ? aiHoldValue(handPoke[0].c, p2, p1) : Infinity;
-      if (wish.idx !== -1 && handPoke.length && giveValue < 36 && wish.value >= giveValue + 15) {
+      // One Pokémon in play and no Basic to bench: any Pokémon card is worth a Basic.
+      const needBasic = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && aiIsBasic(wish.card);
+      if (wish.idx !== -1 && handPoke.length && (needBasic || (giveValue < 36 && wish.value >= giveValue + 15))) {
         const card = hand.splice(i, 1)[0]; p2.discard.push(card);
         const give = handPoke[0].c;
         aiNoteDeckSeen(p2);
@@ -2541,9 +2711,19 @@ async function aiPlayDrawTrainers(delayMs) {
       const deadHand = aiDifficulty === 'hard' ? (dev <= 1 && useful <= 3) : (dev === 0 && useful <= 2);
       // One Pokémon in play and nothing to bench: the next KO loses the game,
       // so dig for a Basic even if the hand is otherwise fine.
-      const lastPokemon = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && useful <= 4
-        && aiUnseenHas(p2, c => aiIsBasic(c));
-      if (aiCanAffordDraw(7, p2) && hand.length <= 6 && (deadHand || hand.length <= 2 || lastPokemon)) {
+      const noBackup = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && aiUnseenHas(p2, c => aiIsBasic(c));
+      // A healthy lone Pokémon with a good hand keeps the hand (throwing away
+      // the energy it needs loses more games than it saves)...
+      const lastPokemon = noBackup && useful <= 4;
+      // ...but if that last Pokémon is about to fall, nothing in hand matters:
+      // a new seven is the only out, whatever it discards and whatever the
+      // deck clock says (decking out later beats losing now).
+      let desperate = false;
+      if (noBackup && p2.active && aiDifficulty !== 'easy' && p2.deck.length >= 8) {
+        const th = aiThreatAgainst(p2.active, { opp: p1, me: p2 });
+        desperate = th.koProb >= 0.5;
+      }
+      if (desperate || (aiCanAffordDraw(7, p2) && hand.length <= 6 && (deadHand || hand.length <= 2 || lastPokemon))) {
         G._aiOakThisTurn = true;
         const discarded = hand.length - 1;
         p2.discard.push(...hand.splice(0));
@@ -3411,6 +3591,7 @@ if (typeof module !== 'undefined') {
     aiCanAffordDraw,
     aiDeckClock, aiDeckList, aiSeenCards, aiUnseenCards, aiUnseenCount, aiInDeckChance,
     aiDeckSeen, aiNoteDeckSeen, aiIsLastCopy,
+    aiClassifyDeck, aiDeckPlan, aiPlanState, aiIsProtectedEngine,
     aiDeckWish,
     aiDeckUrgency,
     aiNextTurnPotential,

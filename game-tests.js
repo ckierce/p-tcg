@@ -6246,6 +6246,101 @@ section('AI v2: decklist knowledge — knows its 60 cards, not the pile or the p
   global.G.players = savedPlayers; global.G._aiDeckSeen = savedSeen;
 }
 
+section('AI v2: deck plan — recognises the deck from its signature cards and plays toward it');
+{
+  const ai = require('./game-ai.js');
+  const cards = JSON.parse(require('fs').readFileSync('./cards.json', 'utf8'));
+  const card = name => { const c = cards.find(x => x.name === name); if (!c) throw new Error('no card ' + name); return c; };
+  const build = list => list.flatMap(([name, qty]) => Array.from({ length: qty }, () => ({ ...card(name), attachedEnergy: [], damage: 0 })));
+  const mkPlayer = (o = {}) => ({ active: null, bench: [null,null,null,null,null], hand: [], discard: [], deck: [], prizes: [], ...o });
+  const RAIN = [['Squirtle', 4], ['Wartortle', 2], ['Blastoise', 3], ['Lapras', 2], ['Articuno', 2], ['Pokémon Breeder', 4], ['Professor Oak', 3],
+    ['Bill', 4], ['Computer Search', 2], ['Energy Retrieval', 2], ['Gust of Wind', 2], ['Switch', 2], ['Pokémon Trader', 1], ['Item Finder', 2],
+    ['Super Potion', 2], ['Water Energy', 23]];
+  const SWAP = [['Abra', 4], ['Kadabra', 2], ['Alakazam', 2], ['Mewtwo', 3], ['Jynx', 2], ['Chansey', 2], ['Mr. Mime', 2], ['Bill', 4],
+    ['Professor Oak', 3], ['Computer Search', 2], ['Pokémon Breeder', 2], ['Gust of Wind', 2], ['Energy Removal', 2], ['Switch', 2], ['Scoop Up', 2],
+    ['Potion', 2], ['Psychic Energy', 18], ['Double Colorless Energy', 4]];
+  const WAVE = [['Jigglypuff', 4], ['Wigglytuff', 3], ['Scyther', 3], ['Kangaskhan', 2], ['Lickitung', 2], ['Bill', 4], ['Professor Oak', 3],
+    ['Computer Search', 2], ['Gust of Wind', 3], ['PlusPower', 2], ['Switch', 2], ['Energy Removal', 2], ['Super Energy Removal', 1], ['Poké Ball', 2],
+    ['Defender', 1], ['Double Colorless Energy', 4], ['Grass Energy', 20]];
+  const HAY = [['Hitmonchan', 4], ['Electabuzz', 4], ['Scyther', 3], ['Magmar', 2], ['Bill', 4], ['Professor Oak', 3], ['Computer Search', 2],
+    ['Gust of Wind', 3], ['Energy Removal', 4], ['Super Energy Removal', 2], ['PlusPower', 3], ['Switch', 2], ['Scoop Up', 1], ['Item Finder', 1],
+    ['Fighting Energy', 10], ['Lightning Energy', 8], ['Double Colorless Energy', 4]];
+  const STALL = [['Chansey', 4], ['Mr. Mime', 3], ['Abra', 4], ['Kadabra', 2], ['Alakazam', 3], ['Kangaskhan', 1], ['Scoop Up', 4], ['Pokémon Center', 3],
+    ['Energy Removal', 4], ['Super Energy Removal', 3], ['Pokémon Breeder', 3], ['Gust of Wind', 2], ['Switch', 2], ['Computer Search', 3],
+    ['Item Finder', 2], ['Bill', 2], ['Lass', 1], ['Psychic Energy', 10], ['Double Colorless Energy', 4]];
+  const SPLASH = [['Charmander', 4], ['Charmeleon', 3], ['Charizard', 2], ['Growlithe', 3], ['Arcanine', 2], ['Squirtle', 1], ['Wartortle', 1], ['Blastoise', 1],
+    ['Bill', 3], ['Professor Oak', 3], ['Pokémon Breeder', 2], ['Computer Search', 2], ['Gust of Wind', 2], ['Switch', 2], ['Potion', 2],
+    ['Fire Energy', 21], ['Water Energy', 4], ['Double Colorless Energy', 2]];
+
+  // Classification
+  const rain = ai.aiClassifyDeck(build(RAIN));
+  assert('Blastoise with its line and Water Energy is a Rain Dance deck', rain.type === 'raindance' && rain.engine.name === 'Blastoise');
+  assert('...and the plan knows the line: Squirtle, Wartortle, Stage 2', rain.engine.root === 'Squirtle' && rain.engine.stage1 === 'Wartortle' && rain.engine.isStage2);
+  const swap = ai.aiClassifyDeck(build(SWAP));
+  assert('Alakazam with Chansey and Mr. Mime is a Damage Swap deck with a protected engine', swap.type === 'damageswap' && swap.engine.protect === true && !swap.stall);
+  assertEqual('Wigglytuff is a Do the Wave deck', ai.aiClassifyDeck(build(WAVE)).type, 'wave');
+  {
+    const p = mkPlayer({ active: { ...card('Scyther'), attachedEnergy: [], damage: 0 }, deck: build(WAVE).slice(1) });
+    assert('A Stage 1 engine is recognised but not chased with search cards', ai.aiPlanState(p).plan.type === 'wave' && ai.aiPlanState(p).needed === null);
+  }
+  const hay = ai.aiClassifyDeck(build(HAY));
+  assert('Haymaker has no engine and is not a stall deck', hay.type === 'generic' && !hay.stall);
+  const stall = ai.aiClassifyDeck(build(STALL));
+  assert('Chansey / Alakazam / Scoop Up / Energy Removal with little Energy is a stall deck', stall.stall === true && stall.type === 'damageswap');
+  assertEqual('One Blastoise splashed into a Fire deck is not a Rain Dance deck', ai.aiClassifyDeck(build(SPLASH)).type, 'generic');
+
+  // Plan state: what is still missing
+  const savedPlayers = global.G.players, savedSeen = global.G._aiDeckSeen, savedTurn = global.G.turnNum;
+  global.G._aiDeckSeen = undefined;
+  const opp = mkPlayer({ active: { ...card('Hitmonchan'), attachedEnergy: [], damage: 0 }, deck: build(HAY).slice(0, 40) });
+  const deal = (list, take) => {            // move named cards out of a fresh deck
+    const deck = build(list), out = {};
+    for (const name of take) { const i = deck.findIndex(c => c.name === name); out[name] = (out[name] || []).concat(deck.splice(i, 1)); }
+    return { deck, out };
+  };
+  {
+    const { deck, out } = deal(RAIN, ['Lapras', 'Blastoise', 'Blastoise', 'Water Energy', 'Water Energy']);
+    const p = mkPlayer({ active: out.Lapras[0], hand: [...out.Blastoise, ...out['Water Energy']], deck });
+    global.G.players = { 1: opp, 2: p };
+    const st = ai.aiPlanState(p);
+    assert('No Squirtle in play: the Basic is the piece the plan wants most', st.needed.get('Squirtle') > st.needed.get('Blastoise'));
+    const wish = ai.aiDeckWish(p, opp);
+    assertEqual('...so a search goes for Squirtle', wish.card?.name, 'Squirtle');
+    assert('A spare Blastoise in hand is not treated as the piece', ai.aiHoldValue(p.hand[1], p, opp) < ai.aiHoldValue(p.hand[0], p, opp));
+  }
+  {
+    const { deck, out } = deal(RAIN, ['Squirtle', 'Lapras', 'Articuno', 'Water Energy', 'Water Energy', 'Bill']);
+    const p = mkPlayer({ active: out.Lapras[0], bench: [out.Squirtle[0], out.Articuno[0], null, null, null], hand: [...out['Water Energy'], ...out.Bill], deck });
+    global.G.players = { 1: opp, 2: p };
+    const st = ai.aiPlanState(p);
+    assert('Squirtle in play: now Blastoise and a Breeder are wanted', !st.needed.has('Squirtle') && st.needed.get('Blastoise') >= 50 && st.needed.get('Pokémon Breeder') >= 40);
+    assertEqual('...and a search goes for Blastoise', ai.aiDeckWish(p, opp).card?.name, 'Blastoise');
+    const blast = deck.splice(deck.findIndex(c => c.name === 'Blastoise'), 1)[0];
+    p.bench[1] = blast;
+    assert('Blastoise in play: the engine is online and nothing is chased', ai.aiPlanState(p).online === true && ai.aiPlanState(p).needed === null);
+  }
+  {
+    const { deck, out } = deal(RAIN, ['Lapras', 'Blastoise', 'Blastoise', 'Blastoise', 'Squirtle']);
+    const p = mkPlayer({ active: out.Lapras[0], bench: [out.Squirtle[0], null, null, null, null], discard: out.Blastoise, deck });
+    global.G.players = { 1: opp, 2: p };
+    assert('Every Blastoise discarded: the plan is dead and stops steering', ai.aiPlanState(p).dead === true && ai.aiPlanState(p).needed === null);
+  }
+  // Protected engine and the stall deck's draw discipline
+  {
+    const { deck, out } = deal(STALL, ['Chansey', 'Alakazam', 'Abra', 'Bill']);
+    const p = mkPlayer({ active: out.Chansey[0], bench: [out.Alakazam[0], out.Abra[0], null, null, null], hand: out.Bill, deck });
+    global.G.turnNum = 9;
+    global.G.players = { 1: mkPlayer({ active: opp.active, deck: new Array(p.deck.length).fill({ name: 'x' }) }), 2: p };
+    assert('Alakazam and its line stay off the Active spot', ai.aiIsProtectedEngine(p.bench[0], p) && ai.aiIsProtectedEngine(p.bench[1], p) && !ai.aiIsProtectedEngine(p.active, p));
+    assert('Stall deck level in the deck race: no drawing', ai.aiCanAffordDraw(2, p) === false);
+    global.G.players[1].deck = new Array(p.deck.length - 10).fill({ name: 'x' });
+    assert('Stall deck well ahead in the deck race: Bill is fine', ai.aiCanAffordDraw(2, p) === true);
+    const rp = mkPlayer({ active: { ...card('Lapras'), attachedEnergy: [], damage: 0 }, deck: build(RAIN).slice(0, 50) });
+    assert('Blastoise is an attacker, not a protected engine', !ai.aiIsProtectedEngine({ ...card('Blastoise') }, mkPlayer({ deck: build(RAIN) })) && rp.deck.length === 50);
+  }
+  global.G.players = savedPlayers; global.G._aiDeckSeen = savedSeen; global.G.turnNum = savedTurn;
+}
+
 section('AI v2: hooks cover the end-of-turn safety promotion');
 {
   const fs = require('fs');

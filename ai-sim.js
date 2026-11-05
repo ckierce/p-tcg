@@ -408,8 +408,22 @@ const DECKS = {
   ],
 };
 
+// Archetype decks for measuring the AI's deck plans. They are NOT part of
+// `--decks all`, so the long-standing 6×6 baselines stay comparable; ask for
+// them by name (`--decks stall,haymaker`).
+const EXTRA_DECKS = {
+  // Damage Swap stall: walls, healing and energy denial; wins by decking the opponent.
+  stall: [
+    ['Chansey', 4], ['Mr. Mime', 3], ['Abra', 4], ['Kadabra', 2], ['Alakazam', 3], ['Kangaskhan', 1],
+    ['Scoop Up', 4], ['Pokémon Center', 3], ['Energy Removal', 4], ['Super Energy Removal', 3],
+    ['Pokémon Breeder', 3], ['Gust of Wind', 2], ['Switch', 2], ['Computer Search', 3],
+    ['Item Finder', 2], ['Bill', 2], ['Lass', 1],
+    ['Psychic Energy', 10], ['Double Colorless Energy', 4],
+  ],
+};
+
 function buildDeck(listName, rng) {
-  const list = DECKS[listName];
+  const list = DECKS[listName] || EXTRA_DECKS[listName];
   if (!list) throw new Error(`Unknown deck ${listName}`);
   const out = [];
   for (const [name, qty, setPref] of list) {
@@ -622,4 +636,4 @@ if (require.main === module) {
   main().catch(e => { console.error(e); process.exit(1); });
 }
 
-module.exports = { loadEngine, playGame, makeAgent, buildDeck, DECKS };
+module.exports = { loadEngine, playGame, makeAgent, buildDeck, DECKS, EXTRA_DECKS };
