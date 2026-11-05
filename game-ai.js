@@ -24,7 +24,10 @@
 //      ≫ damage progress ≫ resource costs.
 //   5. Turn execution — draw/search trainers first (so drawn cards can be used
 //      this turn), bench, evolve, powers, disruption/heal trainers, plan,
-//      energy, attack.
+//      energy, attack. Draw cards are budgeted by the deck clock
+//      (aiDeckClock): the pace of THIS game decides how many turns the deck
+//      must still cover, and a stall raises aiDeckUrgency so the planner
+//      trades hits instead of hiding behind a wall until it decks out.
 //   6. Hooks into endTurn / resolvePromotion / checkKO / doneSetup / loadDeck.
 //
 // The AI is player-parametric (aiPlayerNum) so the headless simulator
@@ -212,14 +215,65 @@ function aiCanAttack(card) {
   return card.attacks.some(atk => canAffordAttack(card.attachedEnergy, atk.cost, card));
 }
 
-// Deck-out awareness: can we afford to draw `n` extra cards right now?
-// We need roughly two turns per prize still to take, plus a small cushion,
-// because the mandatory draw each turn will otherwise deck us out.
-function aiCanAffordDraw(n, p) {
+// ── Deck clock ───────────────────────────────────────────────────────────────
+// How many more turns can we afford before the mandatory draw decks us out,
+// versus how many the game will plausibly last? Each side's pace (turns per
+// prize) blends a prior with what this game has shown, ignoring the first
+// couple of setup turns. The game ends when EITHER side finishes, so if the
+// opponent is about to win our deck is irrelevant and we should dig for
+// answers; if nobody is scoring (a stall) the estimate grows and the AI stops
+// spending its deck on Oak / Bill.
+//   turnsNeeded — turns our deck must still cover
+//   slack       — deck cards beyond that need (negative = already behind)
+//   oppDeck     — the opponent decks out first in a mutual stall when our deck
+//                 stays strictly larger than theirs (we draw first each round)
+const AI_PACE_PRIOR = 3.5;   // turns per prize before we know better
+const AI_PACE_PRIOR_WEIGHT = 3;
+function aiPaceTurnsNeeded(player, turnsPlayed) {
+  const left = prizesRemaining(player);
+  const total = (player?.prizes || []).length || 6;
+  const taken = Math.max(0, total - left);
+  const rate = aiClamp((turnsPlayed + AI_PACE_PRIOR * AI_PACE_PRIOR_WEIGHT) / (taken + AI_PACE_PRIOR_WEIGHT), 2, 5);
+  return Math.ceil(left * rate) + 2;
+}
+function aiDeckClock(p) {
   const me = p || aiMe();
   const deck = (me.deck || []).length;
-  const turnsNeeded = Math.max(4, Math.round(prizesRemaining(me) * 2.5));
-  return deck - n >= turnsNeeded;
+  const prizesLeft = prizesRemaining(me);
+  const turnNum = (typeof G !== 'undefined' && G && G.turnNum) || 0;
+  const myTurns = Math.max(0, Math.ceil(turnNum / 2) - 2);
+  let turnsNeeded = aiPaceTurnsNeeded(me, myTurns);
+  let oppDeck = null;
+  if (typeof G !== 'undefined' && G?.players) {
+    const oppNum = me === G.players[1] ? 2 : me === G.players[2] ? 1 : null;
+    const opp = oppNum ? G.players[oppNum] : null;
+    if (opp) {
+      oppDeck = (opp.deck || []).length;
+      // They may end the game first; then we only need to last that long.
+      turnsNeeded = Math.min(turnsNeeded, aiPaceTurnsNeeded(opp, myTurns) + 1);
+    }
+  }
+  turnsNeeded = Math.max(4, turnsNeeded);
+  return { deck, prizesLeft, turnsNeeded, slack: deck - turnsNeeded, oppDeck };
+}
+
+// Deck-out awareness: can we afford to draw `n` extra cards right now?
+// Yes when the clock still has room, or when the opponent's deck is so much
+// smaller that they deck out first whatever we do (margin for Recycle etc.).
+function aiCanAffordDraw(n, p) {
+  const clock = aiDeckClock(p);
+  if (clock.deck - n < 1) return false;
+  if (clock.slack >= n) return true;
+  return clock.oppDeck !== null && clock.deck - n >= clock.oppDeck + 2 && clock.deck - n >= 4;
+}
+
+// 0 when the deck comfortably covers the prizes we still need, rising to 1 as
+// the deck runs out first. Used to prefer damage progress over setup.
+function aiDeckUrgency(p) {
+  const clock = aiDeckClock(p);
+  if (clock.oppDeck !== null && clock.deck > clock.oppDeck + 1) return 0; // they deck out first
+  if (clock.slack >= 0) return 0;
+  return aiClamp(-clock.slack / Math.max(1, clock.turnsNeeded), 0, 1);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -972,6 +1026,7 @@ function aiThreatAgainst(card, opts = {}) {
 // ══════════════════════════════════════════════════════════════════════════════
 const AI_SCORE = {
   WIN:        1_000_000,
+  URGENCY:    250,        // × deck urgency × expected damage (see aiDeckUrgency)
   KO:         100_000,
   SURVIVE:    50_000,     // scaled by how valuable the surviving Pokémon is
   SUICIDE_LAST_PRIZE: 200_000,
@@ -1075,6 +1130,7 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
 
   const myPrizesLeft = prizesRemaining(p2);
   const oppPrizesLeft = prizesRemaining(p1);
+  const deckUrgency = aiDeckUrgency(p2);
   const hpLeft = aiHpLeft(attacker);
   const worth = aiPokemonWorth(attacker);
   const oppHasBench = (p1.bench || []).some(b => b);
@@ -1223,8 +1279,11 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
             if (pSelfKO > 0 && !wouldWin) score -= pSelfKO * (AI_SCORE.KO * 0.8 + (oppPrizesLeft === 1 ? AI_SCORE.WIN : 0));
 
             // Damage progress (capped at target HP). Damage onto a gusted
-            // bench Pokémon is worth less: they can retreat it.
-            score += Math.min(expCapped, 999) * (isGust ? 0.6 : 1);
+            // bench Pokémon is worth less: they can retreat it. When the deck
+            // is running out first, progress now matters more than effects.
+            // AI_SCORE.URGENCY lifts damage into the survival bucket, so a
+            // stalled AI stops hiding behind a wall and trades hits instead.
+            score += Math.min(expCapped, 999) * (isGust ? 0.6 : 1) * (1 + deckUrgency * AI_SCORE.URGENCY);
             // Status value only matters if the target survives
             for (const st of prof.statusOpp) score += st.p * (1 - koProb) * aiStatusValue(st.status, targetCard, oppThreatExp);
             if (prof.disable) score += Math.min(40, oppThreatExp * 0.8) * (1 - koProb);
@@ -1277,8 +1336,9 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
               score -= n * (wouldWin ? 0 : 14);
             }
 
-            // Resource costs
-            score -= pp * AI_SCORE.PLUSPOWER;
+            // Resource costs (a PlusPower kept for later is worthless once the
+            // deck is about to run out)
+            score -= pp * AI_SCORE.PLUSPOWER * (1 - deckUrgency * 0.8);
             // PlusPower that raised the KO chance is reimbursed proportionally
             if (pp > 0) {
               const distNoPP = aiDamageDistribution(atk, plannedAttacker, targetCard, { plus: 0, attackerPlayerNum: meNum });
@@ -1324,6 +1384,9 @@ function evaluateAttackerPlan(attacker, p2, p1, preStep, opts = {}) {
     const pSurvive = baseline.pSurvive;
     if (pSurvive < 0.5) return null;
     let score = -AI_SCORE.SURVIVE * (1 - pSurvive) * (0.4 + 0.6 * worth);
+    // Tempo: among safe options, prefer the Pokémon closest to attacking
+    // (a loaded Blastoise over a fresh Articuno that needs three energy).
+    score += (aiNextTurnPotential(attacker, p1.active) - aiNextTurnPotential(p2.active, p1.active)) * 0.5;
     if (preStep.kind === 'evolve')  score -= AI_SCORE.EVOLVE;
     if (preStep.kind === 'breeder') score -= AI_SCORE.BREEDER;
     if (preStep.kind === 'switch')  score -= AI_SCORE.SWITCH;
@@ -1863,6 +1926,28 @@ function aiReadiness(card, attached) {
   return rs[0] + rs.slice(1).reduce((s, r) => s + r * 0.35, 0);
 }
 
+// Expected damage `card` could deal next turn against `defender` after one
+// more energy of the right type (any two with Rain Dance on a Water type).
+// 0 when it would still be short. Used as a tempo tiebreaker.
+function aiNextTurnPotential(card, defender) {
+  if (!card?.attacks?.length || card.isDoll) return 0;
+  const attached = card.attachedEnergy || [];
+  const extra = (typeof rainDanceActive === 'function' && rainDanceActive(aiPlayerNum)
+    && (card.types || []).some(t => /water/i.test(t))) ? 2 : 1;
+  let best = 0;
+  for (const atk of card.attacks) {
+    if (card.disabledAttack === atk.name) continue;
+    if (aiAttackDeficit(card, atk, attached) > extra) continue;
+    const base = aiBaseDamage(atk);
+    if (!base) { best = Math.max(best, 5); continue; }
+    const dmg = defender
+      ? computeDamageAfterWR(base, card.types || [], defender.weaknesses || [], defender.resistances || [])
+      : base;
+    best = Math.max(best, Math.min(dmg, defender ? aiHpLeft(defender) : dmg));
+  }
+  return best;
+}
+
 // Value of attaching `energyName` to `card` (0 = pointless).
 function aiEnergyAttachValue(card, energyName, { isActive, opp } = {}) {
   if (!card || card.isDoll) return 0;
@@ -2019,8 +2104,8 @@ function aiHoldValue(card, p2, p1) {
   // Trainers
   const oppActiveEnergy = energyValue(p1?.active?.attachedEnergy || []);
   switch (card.name) {
-    case 'Professor Oak': return (p2.deck || []).length > 12 ? 40 : 5;
-    case 'Bill': return (p2.deck || []).length > 4 ? 35 : 3;
+    case 'Professor Oak': return aiCanAffordDraw(7, p2) ? 40 : 5;
+    case 'Bill': return aiCanAffordDraw(2, p2) ? 35 : 3;
     case 'Computer Search': return 45;
     case 'Item Finder': return (p2.discard || []).some(c => c.supertype === 'Trainer') ? 30 : 10;
     case 'Gust of Wind': return 40;
@@ -2069,8 +2154,14 @@ function aiDeckWish(p2, p1, filter = () => true) {
     let v = aiHoldValue(c, p2, p1);
     // A card we already hold a copy of is worth less
     if ((p2.hand || []).some(h => h.name === c.name)) v *= 0.6;
-    // Basics matter more when the board is thin
-    if (aiIsBasic(c) && aiAllInPlay(p2).length <= 2) v += 20;
+    // Basics matter more when the board is thin — and with a single Pokémon
+    // in play and no Basic in hand, finding one is survival.
+    if (aiIsBasic(c) && !c.isDoll) {
+      const inPlay = aiAllInPlay(p2).length;
+      const basicInHand = (p2.hand || []).some(h => aiIsBasic(h));
+      if (inPlay <= 1 && !basicInHand) v += 60;
+      else if (inPlay <= 2) v += 20;
+    }
     if (v > bestVal) { bestVal = v; bestIdx = i; }
   }
   return { idx: bestIdx, value: bestVal };
@@ -2181,7 +2272,7 @@ async function aiPlayDrawTrainers(delayMs) {
   // Energy Search — a free basic energy when something can use it.
   {
     const i = hand.findIndex(c => c?.name === 'Energy Search');
-    if (i !== -1) {
+    if (i !== -1 && deckLen() >= 3) {
       const energies = p2.deck.map((c, di) => ({ c, di })).filter(x => x.c.supertype === 'Energy' && !/double colorless/i.test(x.c.name));
       let best = null;
       for (const e of energies) {
@@ -2203,7 +2294,7 @@ async function aiPlayDrawTrainers(delayMs) {
   // Poké Ball — free Pokémon search (coin flip).
   {
     const i = hand.findIndex(c => c?.name === 'Poké Ball');
-    if (i !== -1) {
+    if (i !== -1 && deckLen() >= 3) {
       const wish = aiDeckWish(p2, p1, c => c.supertype === 'Pokémon');
       if (wish.idx !== -1 && wish.value >= 20) {
         const card = hand.splice(i, 1)[0]; p2.discard.push(card);
@@ -2242,7 +2333,7 @@ async function aiPlayDrawTrainers(delayMs) {
   // Computer Search — discard the two least useful cards for the card we need.
   {
     const i = hand.findIndex(c => c?.name === 'Computer Search');
-    if (i !== -1 && deckLen() >= 1) {
+    if (i !== -1 && deckLen() >= 3) {
       const others = hand.map((c, hi) => ({ c, hi })).filter(x => x.hi !== i)
         .sort((a, b) => aiHoldValue(a.c, p2, p1) - aiHoldValue(b.c, p2, p1));
       if (others.length >= 2) {
@@ -2314,7 +2405,10 @@ async function aiPlayDrawTrainers(delayMs) {
       const useful = usefulCount() - 1; // excluding Oak itself
       const dev = devCount();
       const deadHand = aiDifficulty === 'hard' ? (dev <= 1 && useful <= 3) : (dev === 0 && useful <= 2);
-      if (aiCanAffordDraw(7, p2) && hand.length <= 6 && (deadHand || hand.length <= 2)) {
+      // One Pokémon in play and nothing to bench: the next KO loses the game,
+      // so dig for a Basic even if the hand is otherwise fine.
+      const lastPokemon = aiAllInPlay(p2).length <= 1 && !hand.some(c => aiIsBasic(c)) && useful <= 4;
+      if (aiCanAffordDraw(7, p2) && hand.length <= 6 && (deadHand || hand.length <= 2 || lastPokemon)) {
         G._aiOakThisTurn = true;
         const discarded = hand.length - 1;
         p2.discard.push(...hand.splice(0));
@@ -3180,6 +3274,10 @@ if (typeof module !== 'undefined') {
     aiEnergyRemovalTarget,
     aiSetupScore,
     aiCanAffordDraw,
+    aiDeckClock,
+    aiDeckWish,
+    aiDeckUrgency,
+    aiNextTurnPotential,
     aiReadiness,
     AI_SCORE,
   };

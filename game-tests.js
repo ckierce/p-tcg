@@ -6112,6 +6112,58 @@ section('AI v2: energy, hold values, energy removal, promotion, deck budget');
     assert('Deck 12, 6 prizes: Oak NOT affordable (would deck out)', _draw(7, mkPlayer({ deck: new Array(12).fill({}) })) === false);
     assert('Deck 9, 1 prize: Bill affordable (game nearly over)', _draw(2, mkPlayer({ deck: new Array(9).fill({}), prizes: onePrize() })) === true);
   }
+  // Deck clock: the budget follows the pace of THIS game and the deck race
+  {
+    const { aiDeckClock: _clock, aiDeckUrgency: _urg } = require('./game-ai.js');
+    const savedTurn = global.G.turnNum, savedPlayers = global.G.players;
+    const me = mkPlayer({ deck: new Array(30).fill({}) });
+    const opp = mkPlayer({ deck: new Array(30).fill({}) });
+    global.G.turnNum = 41; global.G.players = { 1: me, 2: opp };
+    assert('Stall (turn 41, nobody has taken a prize, deck 30): Oak NOT affordable', _draw(7, me) === false);
+    assert('Stall: deck urgency is positive (progress now outranks caution)', _urg(me) > 0);
+    opp.deck = new Array(15).fill({});
+    assert('Same stall but the opponent has 15 cards: Oak affordable (they deck out first)', _draw(7, me) === true);
+    assert('Opponent decks out first: no urgency', _urg(me) === 0);
+    const closing = mkPlayer({ deck: new Array(14).fill({}), prizes: onePrize() });
+    global.G.players = { 1: closing, 2: mkPlayer({ deck: new Array(30).fill({}) }) };
+    assert('Turn 41, one prize left, deck 14: Oak affordable (the game is nearly won)', _draw(7, closing) === true);
+    assert('Clock reports the turns still needed', _clock(closing).turnsNeeded >= 4 && _clock(closing).turnsNeeded <= 7);
+    global.G.turnNum = savedTurn; global.G.players = savedPlayers;
+  }
+  // Thin board: with one Pokémon in play and no Basic in hand, searches dig for a Basic
+  {
+    const { aiDeckWish: _wish } = require('./game-ai.js');
+    const Fi = { name: 'Fighting Energy', supertype: 'Energy' };
+    const jab = { name: 'Jab', cost: ['Fighting'], damage: '20', text: '' };
+    const lone = mkCard({ name: 'Lone', supertype: 'Pokémon', subtypes: ['Basic'], attacks: [jab], attachedEnergy: [Fi] });
+    const buddy = mkCard({ name: 'Buddy', supertype: 'Pokémon', subtypes: ['Basic'], hp: '60', attacks: [jab] });
+    const p2 = mkPlayer({ active: lone, hand: [Fi, Fi, Fi], deck: [Fi, buddy, Fi, { name: 'Gust of Wind', supertype: 'Trainer' }] });
+    const p1 = mkPlayer({ active: mkCard({ attacks: [jab], attachedEnergy: [Fi] }) });
+    const wish = _wish(p2, p1);
+    assertEqual('One Pokémon in play, no Basic in hand: the deck wish is a Basic', p2.deck[wish.idx]?.name, 'Buddy');
+    assert('...and it outvalues the two energy cards Computer Search would discard', wish.value >= 2 * _hold(Fi, p2, p1) + 20);
+    p2.hand.push(buddy);
+    assert('With a Basic already in hand the survival bonus is gone', _wish(p2, p1).value <= wish.value - 30);
+  }
+  // Tempo: a defensive retreat prefers the bench Pokémon closest to attacking
+  {
+    const { aiNextTurnPotential: _pot, aiBuildTurnPlan: _plan } = require('./game-ai.js');
+    const Fi = { name: 'Fighting Energy', supertype: 'Energy' };
+    const jab = { name: 'Jab', cost: ['Fighting'], damage: '20', text: '' };
+    const bigHit = { name: 'Big Hit', cost: ['Fighting','Fighting','Fighting'], damage: '50', text: '' };
+    const oppActive = mkCard({ hp: '80', attacks: [jab], attachedEnergy: [Fi] });
+    const loaded = mkCard({ name: 'Loaded', hp: '70', attacks: [bigHit], attachedEnergy: [Fi, Fi] });
+    const empty = mkCard({ name: 'Empty', hp: '70', attacks: [bigHit], attachedEnergy: [] });
+    assert('Next-turn potential: two of three energy counts, none does not', _pot(loaded, oppActive) > 0 && _pot(empty, oppActive) === 0);
+    const hurt = mkCard({ name: 'Hurt', hp: '60', damage: 50, attacks: [jab], attachedEnergy: [Fi, Fi], convertedRetreatCost: 1 });
+    const p2 = mkPlayer({ active: hurt, bench: [empty, loaded, null, null, null], hand: [] });
+    const p1 = mkPlayer({ active: oppActive, hand: [Fi] });
+    const saved = { players: global.G.players, ev: global.G.evolvedThisTurn, en: global.G.energyPlayedThisTurn };
+    global.G.players = { 1: p1, 2: p2 }; global.G.evolvedThisTurn = []; global.G.energyPlayedThisTurn = true;
+    const plan = _plan(p2, p1);
+    assertEqual('Defensive retreat picks the bench Pokémon closest to attacking', plan?.preStep?.benchIdx, 1);
+    global.G.players = saved.players; global.G.evolvedThisTurn = saved.ev; global.G.energyPlayedThisTurn = saved.en;
+  }
 }
 
 section('AI v2: hooks cover the end-of-turn safety promotion');
